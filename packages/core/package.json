@@ -14,9 +14,10 @@
     "@effect/platform-node": "catalog:",
     "chalk": "^5.3.0",
     "effect": "catalog:",
-    "gray-matter": "^4.0.3"
+    "js-yaml": "^4.3.1"
   },
   "devDependencies": {
-    "@effect/vitest": "catalog:"
+    "@effect/vitest": "catalog:",
+    "@types/js-yaml": "^4.0.9"
   }
 }

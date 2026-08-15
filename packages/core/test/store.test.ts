@@ -176,6 +176,76 @@ describe("EngramStore / project scope", () => {
   );
 });
 
+describe("EngramStore / file parsing", () => {
+  let orig = "";
+  let tmp = "";
+  const engramsDir = (): string => projectEngramsDir(tmp);
+  beforeEach(() => {
+    orig = process.cwd();
+    tmp = mkProject();
+    process.chdir(tmp);
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it.live("reads a hand-written file with a BOM", () =>
+    Effect.gen(function* () {
+      const file = path.join(engramsDir(), "0001-bom.md");
+      fs.writeFileSync(
+        file,
+        `\uFEFF---\nid: "0001"\ntitle: BOM file\ntype: note\ntags: []\nscope: project\ncreated: 2025-08-15T10:00:00.000Z\nupdated: 2025-08-15T10:00:00.000Z\n---\nBOM body\n`,
+      );
+      const store = yield* EngramStore;
+      const [m] = yield* store.list("project");
+      expect(m.title).toBe("BOM file");
+      expect(m.body).toBe("BOM body");
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("reads a hand-written CRLF file", () =>
+    Effect.gen(function* () {
+      const file = path.join(engramsDir(), "0001-crlf.md");
+      fs.writeFileSync(
+        file,
+        '---\r\nid: "0001"\r\ntitle: CRLF file\r\ntype: note\r\ntags: []\r\nscope: project\r\ncreated: 2025-08-15T10:00:00.000Z\r\nupdated: 2025-08-15T10:00:00.000Z\r\n---\r\nWindows body\r\n',
+      );
+      const store = yield* EngramStore;
+      const [m] = yield* store.list("project");
+      expect(m.title).toBe("CRLF file");
+      expect(m.body).toBe("Windows body");
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("preserves --- separators inside the body across update", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const m = yield* store.add("project", input({ body: "Intro\n\n---\n\nSection two" }));
+      const got = yield* store.get("project", m.id);
+      expect(got.body).toBe("Intro\n\n---\n\nSection two");
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("skips files with invalid YAML on list; get reports not-found", () =>
+    Effect.gen(function* () {
+      const file = path.join(engramsDir(), "0001-broken.md");
+      fs.writeFileSync(file, "---\ntitle: [unclosed\n---\nBody\n");
+      const store = yield* EngramStore;
+
+      // malformed files are skipped on list…
+      expect(yield* store.list("project")).toEqual([]);
+
+      // …and therefore surface as not-found on direct get (no crash, no defect)
+      return yield* store.get("project", "0001");
+    }).pipe(
+      Effect.provide(StoreLive),
+      Effect.flip,
+      Effect.map((e) => expect((e as { _tag: string })._tag).toBe("EngramNotFoundError")),
+    ),
+  );
+});
+
 describe("EngramStore / project not initialized", () => {
   let orig = "";
   let tmp = "";
