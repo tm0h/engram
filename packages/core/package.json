@@ -1,0 +1,21 @@
+{
+  "name": "@engram/core",
+  "version": "0.1.0",
+  "description": "The engram engine: git-native Markdown-backed engram for AI agents. Library consumed by the `engram` CLI and any other harness.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
+  },
+  "dependencies": {
+    "@effect/platform-node": "catalog:",
+    "chalk": "^5.3.0",
+    "effect": "catalog:",
+    "gray-matter": "^4.0.3"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:"
+  }
+}
