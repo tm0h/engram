@@ -1,5 +1,5 @@
 {
-  "name": "engram",
+  "name": "engram-cli",
   "version": "0.1.0",
   "description": "A git-native memory tool for AI agents. Personal + team/project memory that any harness (Pi, Claude Code, cloud review bots) can use. Built with Effect.",
   "keywords": [
@@ -23,15 +23,30 @@
   ],
   "type": "module",
   "main": "dist/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tm0h/engram.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/tm0h/engram/issues"
+  },
+  "homepage": "https://github.com/tm0h/engram#readme",
   "scripts": {
     "build": "vp pack",
+    "prepublishOnly": "cp ../../README.md ./README.md",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@engram/core": "workspace:*",
     "chalk": "^5.3.0",
     "commander": "^13.0.0",
     "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@engram/core": "workspace:*"
   }
 }

@@ -57,9 +57,6 @@ importers:
 
   packages/cli:
     dependencies:
-      '@engram/core':
-        specifier: workspace:*
-        version: link:../core
       chalk:
         specifier: ^5.3.0
         version: 5.6.2
@@ -69,6 +66,10 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.0.0-rc.108
+    devDependencies:
+      '@engram/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/core:
     dependencies:

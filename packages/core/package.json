@@ -1,6 +1,7 @@
 {
   "name": "@engram/core",
   "version": "0.1.0",
+  "private": true,
   "description": "The engram engine: git-native Markdown-backed engram for AI agents. Library consumed by the `engram` CLI and any other harness.",
   "type": "module",
   "exports": {
