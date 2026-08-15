@@ -64,8 +64,9 @@ npm install -g engram-cli
 # Or try it without installing
 npx engram-cli@latest init
 
-# pnpm / yarn / bun work too
+# Other package managers work too
 pnpm add -g engram-cli
+bun add -g engram-cli
 ```
 
 ---
