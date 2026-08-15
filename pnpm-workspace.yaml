@@ -1,0 +1,29 @@
+packages:
+  - "packages/*"
+
+catalog:
+  "@effect/platform-node": 4.0.0-rc.108
+  "@effect/vitest": 4.0.0-rc.108
+  "@types/node": ^22.5.0
+  effect: 4.0.0-rc.108
+  tsx: ^4.19.0
+  typescript: ^7.0.2
+  vite: npm:@voidzero-dev/vite-plus-core@0.2.9
+  vite-plus: 0.2.9
+  vitest: 4.1.10
+
+overrides:
+  vite: "catalog:"
+  vitest: "catalog:"
+
+peerDependencyRules:
+  allowAny:
+    - vite
+    - vitest
+  allowedVersions:
+    vite: "*"
+    vitest: "*"
+
+allowBuilds:
+  esbuild: false
+  msgpackr-extract: false
