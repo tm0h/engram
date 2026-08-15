@@ -17,11 +17,10 @@
  *   ---
  *   <markdown body>
  */
-import { Context, Effect, Layer, Option, Schema } from "effect";
+import { Context, Effect, Layer, Option, Result, Schema } from "effect";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
 import { PlatformError } from "effect/PlatformError";
-import matter from "gray-matter";
 import type { Engram, EngramInput, EngramPatch, Scope, Frontmatter } from "./domain.js";
 import { FrontmatterSchema } from "./domain.js";
 import {
@@ -33,6 +32,7 @@ import {
 import { globalEngramsDir, projectEngramsDir } from "./paths.js";
 import { findProjectRoot } from "./location.js";
 import { nowISO, padId, slugify, numericId } from "./util.js";
+import { parseFrontmatter, stringifyFrontmatter } from "./frontmatter.js";
 
 /** Errors the store can surface. */
 export type StoreError = ProjectNotInitializedError | FrontmatterParseError | PlatformError;
@@ -94,7 +94,7 @@ function serialize(m: Engram): string {
   };
   if (m.author) data.author = m.author;
   if (m.pinned) data.pinned = true;
-  return matter.stringify(m.body ? m.body + "\n" : "", data);
+  return stringifyFrontmatter(m.body ? m.body + "\n" : "", data);
 }
 
 /* ----------------------------- live layer ----------------------------- */
@@ -111,7 +111,10 @@ export const EngramStoreLive: Layer.Layer<EngramStore, never, FileSystem | Path>
         const raw = yield* fs
           .readFileString(file)
           .pipe(Effect.mapError(() => new FrontmatterParseError({ file, message: "read failed" })));
-        const parsed = matter(raw);
+        const parsed = yield* Result.match(parseFrontmatter(raw), {
+          onSuccess: (value) => Effect.succeed(value),
+          onFailure: (message) => Effect.fail(new FrontmatterParseError({ file, message })),
+        });
         return yield* Effect.try({
           try: () =>
             toEngram(
