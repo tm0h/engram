@@ -1,5 +1,8 @@
 # engram
 
+[![npm](https://img.shields.io/npm/v/engram-cli?label=engram-cli)](https://www.npmjs.com/package/engram-cli)
+[![Node](https://img.shields.io/node/v/engram-cli)](https://www.npmjs.com/package/engram-cli)
+
 > An engram CLI for AI agents — durable, human-readable memory for any
 > AI-assisted workflow. Works with any harness: Pi, Claude Code, Cursor, cloud
 > code-review bots, CI, or plain scripts.
@@ -45,6 +48,25 @@ git add .engram && git commit -m "engram: replaced moment with date-fns"
 
 Now every teammate's agent — and the cloud code-review bot that clones the repo —
 runs `engram context` and immediately knows the decision and its rationale.
+
+---
+
+## Install
+
+The CLI is published to npm as
+[`engram-cli`](https://www.npmjs.com/package/engram-cli); the binary it installs
+is `engram`. Requires Node >= 20.
+
+```sh
+# Install globally
+npm install -g engram-cli
+
+# Or try it without installing
+npx engram-cli@latest init
+
+# pnpm / yarn / bun work too
+pnpm add -g engram-cli
+```
 
 ---
 
