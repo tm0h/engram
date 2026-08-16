@@ -25,5 +25,7 @@ peerDependencyRules:
     vitest: "*"
 
 allowBuilds:
+  "@google/genai": false
   esbuild: false
   msgpackr-extract: false
+  protobufjs: false
