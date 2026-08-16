@@ -1,0 +1,8 @@
+#!/bin/sh
+# engram launcher for the Claude Code plugin.
+# Prefers a locally installed engram CLI; falls back to npx with a pinned
+# version so the plugin works with zero setup (slow on first run).
+if command -v engram >/dev/null 2>&1; then
+  exec engram "$@"
+fi
+exec npx -y engram-cli@0.2.0 "$@"
