@@ -283,6 +283,10 @@ unit tests.
 
 ---
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 MIT
