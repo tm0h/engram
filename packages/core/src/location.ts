@@ -7,11 +7,18 @@ import { Effect } from "effect";
 import type { FileSystem } from "effect/FileSystem";
 import type { Path } from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
-import { projectConfigPath } from "./paths.js";
+import { projectConfigPath, globalConfigPath } from "./paths.js";
 
 const SEP = "/";
 
-/** Walk up from `start` to the nearest dir whose `.engram/config.json` exists. */
+/** Walk up from `start` to the nearest dir whose `.engram/config.json` exists.
+ *
+ * Two boundaries keep discovery local:
+ * - The walk stops at the nearest `.git`: a project engram lives inside its
+ *   repo, so an `.engram` above the git root (e.g. the global `~/.engram` for a
+ *   repo under $HOME) is never treated as this project's root.
+ * - The global `~/.engram` is the personal scope, never a project root.
+ */
 export const findProjectRoot = (
   fs: FileSystem,
   path: Path,
@@ -21,8 +28,9 @@ export const findProjectRoot = (
     let dir = path.resolve(start);
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const exists = yield* fs.exists(projectConfigPath(dir));
-      if (exists) return dir;
+      const isGlobalRoot = projectConfigPath(dir) === globalConfigPath();
+      if (!isGlobalRoot && (yield* fs.exists(projectConfigPath(dir)))) return dir;
+      if (yield* fs.exists(`${dir}${SEP}.git`)) return null;
       const parent = path.dirname(dir);
       if (parent === dir) return null;
       dir = parent;
