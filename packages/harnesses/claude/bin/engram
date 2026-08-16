@@ -23,4 +23,4 @@ IFS=$ifs_save
 if [ -n "$found" ]; then
   exec "$found" "$@"
 fi
-exec npx -y engram-cli@0.2.0 "$@"
+exec npx -y engram-cli@0.3.0 "$@"
