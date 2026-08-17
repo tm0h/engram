@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   coordination: any machine, session, or CI run can mint one, merged branches
   can never collide, and lexicographic order equals creation order so listing
   stays chronological. Prefix references still work (`engram show 01jb3`).
-  Legacy 4-digit ids remain readable and addressable.
+  Legacy 4-digit ids remain readable and addressable. ([#12])
 - `engram add` now creates files exclusively (`wx`) and retries with a fresh
   id if the exact filename already exists — it can no longer overwrite an
   existing engram.
@@ -64,4 +64,5 @@ Initial public release.
 
 [0.1.1]: https://github.com/tm0h/engram/releases/tag/v0.1.1
 [0.1.0]: https://github.com/tm0h/engram/releases/tag/v0.1.0
+[#12]: https://github.com/tm0h/engram/pull/12
 [#3]: https://github.com/tm0h/engram/pull/3
