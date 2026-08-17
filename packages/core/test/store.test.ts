@@ -13,8 +13,10 @@ import type { EngramInput } from "../src/domain.js";
 const StoreLive = EngramStoreLive.pipe(Layer.provide(NodeServices.layer));
 
 /** A store whose first `n` exclusive (`wx`) writes fail with EEXIST —
- * simulates another process winning the exact-filename race. */
+ * simulates another process winning the exact-filename race. Records every
+ * path attempted with `wx` so tests can assert retries use fresh filenames. */
 const flakyWxStoreLive = (failures: number) => {
+  const wxPaths: string[] = [];
   const FlakyFs = Layer.effect(
     FileSystem,
     Effect.gen(function* () {
@@ -25,8 +27,10 @@ const flakyWxStoreLive = (failures: number) => {
         ...real,
         writeFileString: (...args: WriteStringArgs) => {
           const [p, d, o] = args;
-          return o?.flag === "wx" && left-- > 0
-            ? Effect.fail(
+          if (o?.flag === "wx") {
+            wxPaths.push(p);
+            if (left-- > 0) {
+              return Effect.fail(
                 systemError({
                   _tag: "AlreadyExists",
                   module: "FileSystem",
@@ -35,14 +39,17 @@ const flakyWxStoreLive = (failures: number) => {
                   syscall: "open",
                   cause: new Error("simulated EEXIST"),
                 }),
-              )
-            : real.writeFileString(p, d, o);
+              );
+            }
+          }
+          return real.writeFileString(p, d, o);
         },
       };
       return wrapped;
     }),
   ).pipe(Layer.provide(NodeServices.layer));
-  return EngramStoreLive.pipe(Layer.provide(FlakyFs), Layer.provide(NodeServices.layer));
+  const layer = EngramStoreLive.pipe(Layer.provide(FlakyFs), Layer.provide(NodeServices.layer));
+  return { layer, wxPaths };
 };
 
 /** New-format ids: 26 lowercase Crockford-base32 chars (timestamp + randomness). */
@@ -359,15 +366,20 @@ describe("EngramStore / id allocation & duplicates", () => {
     }).pipe(Effect.provide(StoreLive)),
   );
 
-  it.live("add retries past an EEXIST race on the exact filename", () =>
-    Effect.gen(function* () {
+  it.live("add retries past an EEXIST race on the exact filename", () => {
+    const { layer, wxPaths } = flakyWxStoreLive(2);
+    return Effect.gen(function* () {
       const store = yield* EngramStore;
-      // both exclusive writes race-losses — add must retry with fresh ids
+      // two exclusive-write race losses — add must retry, each time with a
+      // fresh filename (retrying the same path could never succeed)
       const m = yield* store.add("project", input());
       expect(m.id).toMatch(ULID);
       expect(fs.existsSync(m.path)).toBe(true);
-    }).pipe(Effect.provide(flakyWxStoreLive(2))),
-  );
+      expect(wxPaths).toHaveLength(3); // 2 losses + the successful write
+      expect(new Set(wxPaths).size).toBe(3);
+      expect(wxPaths[2]).toBe(m.path);
+    }).pipe(Effect.provide(layer));
+  });
 
   it.live("get fails with DuplicateIdError when two files share an id", () => {
     const a = handWrite("0001-a.md", "0001", "A");
