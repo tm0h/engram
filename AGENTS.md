@@ -86,7 +86,10 @@ already be in the published tarball.
 ## Map of the code
 
 - `packages/core/src/`
-  - `store.ts` — `EngramStore`: CRUD over `NNNN-<slug>.md` files
+  - `store.ts` — `EngramStore`: CRUD over `<id>-<slug>.md` files (ULID-style
+    ids: collision-resistant across machines, sortable by creation time;
+    legacy 4-digit numeric ids still supported; `dedupe` repairs
+    legacy/hand-written duplicate ids)
   - `config.ts` — `ConfigRepo`: global + project JSON configs (Schema-validated)
   - `location.ts` — `findProjectRoot` / `findGitRoot` (git-boundary rules)
   - `paths.ts` — pure path math (`~/.engram` vs `<repo>/.engram`), no I/O
@@ -95,5 +98,6 @@ already be in the published tarball.
 - `packages/cli/src/`
   - `index.ts` — commander dispatch + error rendering
   - `commands/` — one file per subcommand (`init`, `add`, `list`, `show`,
-    `edit`, `remove`, `search`, `context`, `config`, `inject`, `where`)
+    `edit`, `remove`, `search`, `context`, `config`, `inject`, `where`,
+    `dedupe`)
   - `interactive.ts`, `io.ts` — TTY prompts, output helpers

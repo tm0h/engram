@@ -27,7 +27,12 @@ export const ENGRAM_TYPES: ReadonlyArray<EngramType> = [
 export const ScopeSchema = Schema.Literals(["personal", "project"]);
 export type Scope = Schema.Schema.Type<typeof ScopeSchema>;
 
-/** Raw frontmatter as read from an engram Markdown file. */
+/** Raw frontmatter as read from an engram Markdown file.
+ *
+ * `id`: ULID-style (26 lowercase base32 chars — see `newId`) for new
+ * engrams; legacy 4-digit numeric ids ("0001") remain valid. Both are
+ * unique-per-store by contract; duplicates are a repairable defect
+ * (see `EngramStore.dedupe`). */
 export const FrontmatterSchema = Schema.Struct({
   id: Schema.String,
   title: Schema.String,

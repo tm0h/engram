@@ -90,7 +90,7 @@ git add .engram && git commit -m "engram: tooling preferences"
 
 # 5. Search later
 engram search "tooling"
-engram show 0001
+engram show 01jb3            # id or unique prefix
 ```
 
 ---
@@ -171,11 +171,15 @@ engram add --title "..." --type decision "..."   # record a durable finding
 
 ## File format
 
-Each engram is `<scope-dir>/NNNN-<slug>.md`:
+Each engram is `<scope-dir>/<id>-<slug>.md`. Ids are ULID-style (timestamp +
+randomness): collision-resistant across machines without coordination (80-bit
+random suffix), sortable by creation time to the millisecond, and new engrams
+merge cleanly in git. Legacy `NNNN`-style ids from older
+versions still work:
 
 ```markdown
 ---
-id: "0001"
+id: "01jb3x1q2v7k9m4t8z0c2d5e6h" # collision-resistant ULID; legacy stores use 0001-style
 title: Replaced moment with date-fns
 type: decision
 tags: [deps, date, moment]
@@ -190,8 +194,12 @@ moment.js is frozen/in-maintenance and ships a large bundle…
 
 All frontmatter fields except `id`, `title`, `type`, and `created` are optional.
 
-You can edit these by hand — they're just files — but prefer the CLI so ids and
-frontmatter stay consistent.
+You can edit these by hand — they're just files — but never invent an id:
+`engram add` mints a globally-unique one (timestamp + randomness), so several
+sessions, machines, or merged branches can record concurrently with only a
+negligible chance of colliding on id. Ids are also sort keys: lexicographic
+order follows creation order to the millisecond. If you ever do hit
+duplicates (hand-written or legacy `0001`-style), `engram dedupe` repairs them.
 
 ---
 
@@ -222,10 +230,10 @@ engram add                                                 # opens $EDITOR (inte
 `edit` highlights:
 
 ```sh
-engram edit 0001 --title "New title" --tags a,b             # replace fields
-engram edit 0001 --pinned                                  # pin (or --no-pinned)
-echo "updated body" | engram edit 0001 --stdin             # pipe from agents
-engram edit 0001                                           # opens $EDITOR (interactive)
+engram edit 01jb3 --title "New title" --tags a,b           # replace fields (id or prefix)
+engram edit 01jb3 --pinned                                # pin (or --no-pinned)
+echo "updated body" | engram edit 01jb3 --stdin           # pipe from agents
+engram edit 01jb3                                         # opens $EDITOR (interactive)
 ```
 
 ---

@@ -30,9 +30,21 @@ export const contextCommand = (opts: ContextOptions) =>
     const scopes = scopesToQuery(opts.scope, projectRootOpt);
 
     const blocks: string[] = [];
+    const duplicateWarnings: string[] = [];
     let first = true;
     for (const scope of scopes) {
       let engrams = yield* store.list(scope);
+      // Ids must be unique; surface duplicates loudly — this digest is what
+      // agents read at session start.
+      const byId = new Map<string, string[]>();
+      for (const m of engrams) {
+        byId.set(m.id, [...(byId.get(m.id) ?? []), m.path]);
+      }
+      for (const [id, files] of byId) {
+        if (files.length > 1) {
+          duplicateWarnings.push(`- id ${id}: ${files.join(", ")}`);
+        }
+      }
       if (opts.query) {
         engrams = searchEngrams(engrams, opts.query, opts.limit).map((r) => r.engram);
       } else if (typeof opts.limit === "number") {
@@ -51,6 +63,18 @@ export const contextCommand = (opts: ContextOptions) =>
         first = false;
       }
       blocks.push(rendered);
+    }
+
+    if (duplicateWarnings.length) {
+      blocks.unshift(
+        [
+          "# WARNING: duplicate engram ids",
+          "",
+          "Multiple files claim the same id — `engram show <id>` fails until they are renumbered",
+          "(filename prefix + frontmatter id). Offenders:",
+          ...duplicateWarnings,
+        ].join("\n"),
+      );
     }
 
     yield* out(blocks.length ? blocks.join("\n\n") : "(no engrams available)");

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vite-plus/test";
-import { slugify, parseTags, padId, numericId, truncate, nowISO } from "../src/util.js";
+import { slugify, parseTags, padId, numericId, truncate, nowISO, newId } from "../src/util.js";
 
 describe("slugify", () => {
   it("lowercases and hyphenates", () => {
@@ -38,6 +38,33 @@ describe("numericId", () => {
   it("parses leading digits", () => {
     expect(numericId("0007")).toBe(7);
     expect(numericId("abc")).toBe(0);
+  });
+});
+
+describe("newId", () => {
+  it("yields 26 lowercase Crockford-base32 chars (no i/l/o/u)", () => {
+    for (let i = 0; i < 100; i++) expect(newId()).toMatch(/^[0-9a-hjkmnp-tv-z]{26}$/);
+  });
+  it("never collides across many draws", () => {
+    const ids = new Set(Array.from({ length: 10000 }, () => newId()));
+    expect(ids.size).toBe(10000);
+  });
+  it("is monotonic within a process (sort order == creation order)", () => {
+    const ids = Array.from({ length: 1000 }, () => newId());
+    expect([...ids].sort()).toEqual(ids);
+  });
+  it("stays monotonic when the clock steps backwards", () => {
+    const first = newId();
+    const realNow = Date.now.bind(Date);
+    Date.now = () => realNow() - 60_000; // NTP correction / VM resume
+    try {
+      const second = newId();
+      const third = newId();
+      expect(second >= first).toBe(true);
+      expect(third >= second).toBe(true);
+    } finally {
+      Date.now = realNow;
+    }
   });
 });
 

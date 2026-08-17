@@ -1,7 +1,11 @@
 /**
  * The EngramStore service: CRUD over Markdown files with YAML frontmatter.
  *
- * File layout per engram:   <scope-dir>/NNNN-<slug>.md
+ * File layout per engram:   <scope-dir>/<id>-<slug>.md
+ *
+ * `id` is a ULID-style string (timestamp + randomness, see `newId`) — unique
+ * across machines without coordination, and lexicographically sortable by
+ * creation time. Legacy 4-digit numeric ids are still read and addressable.
  *
  * Each file is self-describing:
  *   ---
@@ -25,13 +29,14 @@ import type { Engram, EngramInput, EngramPatch, Scope, Frontmatter } from "./dom
 import { FrontmatterSchema } from "./domain.js";
 import {
   AmbiguousIdError,
+  DuplicateIdError,
   FrontmatterParseError,
   EngramNotFoundError,
   ProjectNotInitializedError,
 } from "./errors.js";
 import { globalEngramsDir, projectEngramsDir } from "./paths.js";
 import { findProjectRoot } from "./location.js";
-import { nowISO, padId, slugify, numericId } from "./util.js";
+import { nowISO, slugify, newId } from "./util.js";
 import { parseFrontmatter, stringifyFrontmatter } from "./frontmatter.js";
 
 /** Errors the store can surface. */
@@ -46,27 +51,43 @@ export interface EngramStoreShape {
   readonly get: (
     scope: Scope,
     id: string,
-  ) => Effect.Effect<Engram, StoreError | EngramNotFoundError | AmbiguousIdError>;
+  ) => Effect.Effect<
+    Engram,
+    StoreError | EngramNotFoundError | AmbiguousIdError | DuplicateIdError
+  >;
   readonly add: (scope: Scope, input: EngramInput) => Effect.Effect<Engram, StoreError>;
   readonly update: (
     scope: Scope,
     id: string,
     patch: EngramPatch,
-  ) => Effect.Effect<Engram, StoreError | EngramNotFoundError | AmbiguousIdError>;
+  ) => Effect.Effect<
+    Engram,
+    StoreError | EngramNotFoundError | AmbiguousIdError | DuplicateIdError
+  >;
   readonly remove: (
     scope: Scope,
     id: string,
-  ) => Effect.Effect<Engram, StoreError | EngramNotFoundError | AmbiguousIdError>;
+  ) => Effect.Effect<
+    Engram,
+    StoreError | EngramNotFoundError | AmbiguousIdError | DuplicateIdError
+  >;
+  /** Repair duplicate ids (e.g. after a git merge): the first file per id
+   * keeps it, the rest are renumbered to fresh ids. */
+  readonly dedupe: (scope: Scope) => Effect.Effect<
+    {
+      readonly renumbered: ReadonlyArray<{
+        readonly from: string;
+        readonly to: string;
+        readonly title: string;
+      }>;
+    },
+    StoreError
+  >;
 }
 
 export class EngramStore extends Context.Service<EngramStore, EngramStoreShape>()("EngramStore") {}
 
 /* ----------------------------- helpers ----------------------------- */
-
-const idFromFilename = (filename: string): number => {
-  const m = filename.match(/^(\d+)/);
-  return m ? parseInt(m[1], 10) : 0;
-};
 
 const toEngram = (fm: Frontmatter, body: string, file: string): Engram => ({
   id: fm.id,
@@ -98,6 +119,20 @@ function serialize(m: Engram): string {
 }
 
 /* ----------------------------- live layer ----------------------------- */
+
+/** Chronological order: by creation time, then id (ULIDs sort by creation;
+ * legacy numeric ids tie-break lexicographically). */
+const chronological = (a: Engram, b: Engram): number =>
+  a.created.localeCompare(b.created) || a.id.localeCompare(b.id);
+
+/** EEXIST from the platform fs surfaces as a PlatformError whose
+ * `reason._tag` is "AlreadyExists" (the wrapper `_tag` is always
+ * "PlatformError", so that is not a discriminator). */
+const isAlreadyExists = (e: unknown): boolean => {
+  if (typeof e !== "object" || e === null || !("reason" in e)) return false;
+  const reason = (e as { reason?: { _tag?: string } }).reason;
+  return reason?._tag === "AlreadyExists";
+};
 
 /** Build the live EngramStore from the platform FileSystem + Path services. */
 export const EngramStoreLive: Layer.Layer<EngramStore, never, FileSystem | Path> = Layer.effect(
@@ -154,14 +189,19 @@ export const EngramStoreLive: Layer.Layer<EngramStore, never, FileSystem | Path>
         const parsed = yield* Effect.forEach(files, (f) => parseFile(f).pipe(Effect.option));
         return parsed
           .flatMap((o) => Option.match(o, { onNone: () => [], onSome: (m) => [m] }))
-          .sort((a, b) => numericId(a.id) - numericId(b.id));
+          .sort(chronological);
       });
 
     const get: EngramStoreShape["get"] = (scope, id) =>
       Effect.gen(function* () {
         const all = yield* list(scope);
-        const exact = all.find((m) => m.id === id);
-        if (exact) return exact;
+        const exact = all.filter((m) => m.id === id);
+        if (exact.length === 1) return exact[0];
+        if (exact.length > 1) {
+          // Two files claim the same id (e.g. hand-written with a guessed id) —
+          // refuse to pick one silently.
+          return yield* Effect.fail(new DuplicateIdError({ id, files: exact.map((m) => m.path) }));
+        }
         const matches = all.filter((m) => m.id.startsWith(id));
         if (matches.length === 1) return matches[0];
         if (matches.length > 1) {
@@ -175,40 +215,50 @@ export const EngramStoreLive: Layer.Layer<EngramStore, never, FileSystem | Path>
         return yield* Effect.fail(new EngramNotFoundError({ id, scope }));
       });
 
-    const nextId = (scope: Scope): Effect.Effect<string, StoreError> =>
-      Effect.gen(function* () {
-        const dir = yield* dirForScope(scope);
-        const exists = yield* fs.exists(dir);
-        let max = 0;
-        if (exists) {
-          const entries = yield* fs.readDirectory(dir);
-          for (const f of entries) max = Math.max(max, idFromFilename(f));
-        }
-        return padId(max + 1);
-      });
-
     const add: EngramStoreShape["add"] = (scope, input) =>
       Effect.gen(function* () {
         const dir = yield* dirForScope(scope);
         yield* fs.makeDirectory(dir, { recursive: true });
         const now = nowISO();
-        const id = yield* nextId(scope);
-        const engram: Engram = {
-          id,
-          title: input.title.trim(),
-          type: input.type,
-          tags: [...input.tags],
-          scope,
-          created: now,
-          updated: now,
-          author: input.author,
-          pinned: input.pinned,
-          body: input.body.trim(),
-          path: "",
+        const title = input.title.trim();
+        const slug = slugify(title);
+
+        /**
+         * Ids are globally unique by construction (see `newId`), so no scan
+         * or shared counter is needed — different machines, sessions, and CI
+         * runs can record concurrently and merged branches can never collide
+         * on id. The exclusive `wx` write is belt-and-braces: it never
+         * overwrites an existing file and retries with a fresh id on the
+         * (astronomically unlikely) exact-filename race.
+         */
+        const writeWith = (id: string): Effect.Effect<Engram, StoreError> => {
+          const file = path.join(dir, `${id}-${slug}.md`);
+          const engram: Engram = {
+            id,
+            title,
+            type: input.type,
+            tags: [...input.tags],
+            scope,
+            created: now,
+            updated: now,
+            author: input.author,
+            pinned: input.pinned,
+            body: input.body.trim(),
+            path: file,
+          };
+          return Effect.as(fs.writeFileString(file, serialize(engram), { flag: "wx" }), engram);
         };
-        const file = path.join(dir, `${id}-${slugify(engram.title)}.md`);
-        yield* fs.writeFileString(file, serialize(engram));
-        return { ...engram, path: file };
+
+        const attempt = (tries: number): Effect.Effect<Engram, StoreError> =>
+          Effect.flatMap(Effect.result(writeWith(newId())), (r) =>
+            Result.isSuccess(r)
+              ? Effect.succeed(r.success)
+              : tries <= 0 || !isAlreadyExists(r.failure)
+                ? Effect.fail(r.failure)
+                : attempt(tries - 1),
+          );
+
+        return yield* attempt(5);
       });
 
     const update: EngramStoreShape["update"] = (scope, id, patch) =>
@@ -238,6 +288,40 @@ export const EngramStoreLive: Layer.Layer<EngramStore, never, FileSystem | Path>
         return mem;
       });
 
+    const dedupe: EngramStoreShape["dedupe"] = (scope) =>
+      Effect.gen(function* () {
+        const dir = yield* dirForScope(scope);
+        const all = yield* list(scope);
+        const byId = new Map<string, Engram[]>();
+        for (const m of all) byId.set(m.id, [...(byId.get(m.id) ?? []), m]);
+        const renumbered: Array<{ from: string; to: string; title: string }> = [];
+        for (const group of byId.values()) {
+          if (group.length < 2) continue;
+          // The oldest record keeps the disputed id; equal `created` values
+          // fall back to the alphabetically-first path. Both keys come from
+          // file content and file names, so the outcome is deterministic
+          // across machines. The displaced records get fresh globally-unique
+          // ids — note that a repair should be merged before another clone
+          // repairs the same duplicate: two independent repairs mint
+          // different ids and the merge would keep both copies.
+          const [, ...rest] = [...group].sort(
+            (a, b) => a.created.localeCompare(b.created) || a.path.localeCompare(b.path),
+          );
+          for (const m of rest) {
+            // Fresh globally-unique id (see the note above on convergent
+            // repairs for why the winner rule alone is not enough).
+            const id = newId();
+            const file = path.join(dir, `${id}-${slugify(m.title)}.md`);
+            yield* fs.writeFileString(file, serialize({ ...m, id, updated: nowISO() }), {
+              flag: "wx",
+            });
+            yield* fs.remove(m.path);
+            renumbered.push({ from: m.id, to: id, title: m.title });
+          }
+        }
+        return { renumbered };
+      });
+
     return {
       projectRoot,
       dirForScope,
@@ -246,6 +330,7 @@ export const EngramStoreLive: Layer.Layer<EngramStore, never, FileSystem | Path>
       add,
       update,
       remove,
+      dedupe,
     } satisfies EngramStoreShape;
   }),
 );

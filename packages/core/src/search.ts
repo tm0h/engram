@@ -12,7 +12,6 @@
  * layered behind the same interface later.
  */
 import type { Engram } from "./domain.js";
-import { numericId } from "./util.js";
 
 export interface SearchResult {
   readonly engram: Engram;
@@ -56,13 +55,13 @@ export function searchEngrams(
       .sort(
         (a, b) =>
           b.engram.updated.localeCompare(a.engram.updated) ||
-          numericId(a.engram.id) - numericId(b.engram.id),
+          a.engram.id.localeCompare(b.engram.id),
       );
   } else {
     results = list
       .map((engram) => ({ engram, score: scoreEngram(engram, tokens) }))
       .filter((r) => r.score > 0)
-      .sort((a, b) => b.score - a.score || numericId(a.engram.id) - numericId(b.engram.id));
+      .sort((a, b) => b.score - a.score || a.engram.id.localeCompare(b.engram.id));
   }
   return typeof limit === "number" ? results.slice(0, limit) : results;
 }
