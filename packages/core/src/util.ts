@@ -48,7 +48,9 @@ const incrementBase32 = (s: string): string => {
  * Legacy stores use 4-digit numeric ids ("0001"); both formats coexist.
  */
 export const newId = (): string => {
-  const t = Date.now();
+  // A backwards clock step (NTP correction, VM resume) must not produce a
+  // smaller id than the last one issued — clamp to the high-water mark.
+  const t = Math.max(Date.now(), lastTime);
   if (t === lastTime && lastRandom) {
     lastRandom = incrementBase32(lastRandom);
     return encodeTime(t) + lastRandom;

@@ -27,6 +27,6 @@ describe("injectSnippet", () => {
     const s = injectSnippet();
     expect(s).toContain("never guess an id");
     expect(s).toContain("globally-unique id");
-    expect(s).toContain("merged branches never collide");
+    expect(s).toContain("safe from id collisions");
   });
 });

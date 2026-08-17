@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "@effect/vitest";
 import { Effect, Layer } from "effect";
+import { FileSystem } from "effect/FileSystem";
+import { systemError } from "effect/PlatformError";
 import { NodeServices } from "@effect/platform-node";
 import fs from "node:fs";
 import os from "node:os";
@@ -10,8 +12,41 @@ import type { EngramInput } from "../src/domain.js";
 
 const StoreLive = EngramStoreLive.pipe(Layer.provide(NodeServices.layer));
 
-/** New-format ids: 26 lowercase base32 chars (timestamp + randomness). */
-const ULID = /^[0-9a-z]{26}$/;
+/** A store whose first `n` exclusive (`wx`) writes fail with EEXIST —
+ * simulates another process winning the exact-filename race. */
+const flakyWxStoreLive = (failures: number) => {
+  const FlakyFs = Layer.effect(
+    FileSystem,
+    Effect.gen(function* () {
+      const real = yield* FileSystem;
+      let left = failures;
+      type WriteStringArgs = Parameters<typeof real.writeFileString>;
+      const wrapped: FileSystem = {
+        ...real,
+        writeFileString: (...args: WriteStringArgs) => {
+          const [p, d, o] = args;
+          return o?.flag === "wx" && left-- > 0
+            ? Effect.fail(
+                systemError({
+                  _tag: "AlreadyExists",
+                  module: "FileSystem",
+                  method: "writeFile",
+                  pathOrDescriptor: p,
+                  syscall: "open",
+                  cause: new Error("simulated EEXIST"),
+                }),
+              )
+            : real.writeFileString(p, d, o);
+        },
+      };
+      return wrapped;
+    }),
+  ).pipe(Layer.provide(NodeServices.layer));
+  return EngramStoreLive.pipe(Layer.provide(FlakyFs), Layer.provide(NodeServices.layer));
+};
+
+/** New-format ids: 26 lowercase Crockford-base32 chars (timestamp + randomness). */
+const ULID = /^[0-9a-hjkmnp-tv-z]{26}$/;
 
 const input = (over: Partial<EngramInput> = {}): EngramInput => ({
   title: "Replaced libfoo with libbar",
@@ -260,11 +295,16 @@ describe("EngramStore / id allocation & duplicates", () => {
   let tmp = "";
   const engramsDir = (): string => projectEngramsDir(tmp);
   /** Simulate a harness/agent hand-writing an engram file with a guessed id. */
-  const handWrite = (filename: string, id: string, title: string): string => {
+  const handWrite = (
+    filename: string,
+    id: string,
+    title: string,
+    created = "2025-08-15T10:00:00.000Z",
+  ): string => {
     const file = path.join(engramsDir(), filename);
     fs.writeFileSync(
       file,
-      `---\nid: "${id}"\ntitle: ${title}\ntype: note\ntags: []\nscope: project\ncreated: 2025-08-15T10:00:00.000Z\nupdated: 2025-08-15T10:00:00.000Z\n---\nhand-written body\n`,
+      `---\nid: "${id}"\ntitle: ${title}\ntype: note\ntags: []\nscope: project\ncreated: ${created}\nupdated: ${created}\n---\nhand-written body\n`,
     );
     return file;
   };
@@ -319,6 +359,16 @@ describe("EngramStore / id allocation & duplicates", () => {
     }).pipe(Effect.provide(StoreLive)),
   );
 
+  it.live("add retries past an EEXIST race on the exact filename", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      // both exclusive writes race-losses — add must retry with fresh ids
+      const m = yield* store.add("project", input());
+      expect(m.id).toMatch(ULID);
+      expect(fs.existsSync(m.path)).toBe(true);
+    }).pipe(Effect.provide(flakyWxStoreLive(2))),
+  );
+
   it.live("get fails with DuplicateIdError when two files share an id", () => {
     const a = handWrite("0001-a.md", "0001", "A");
     const b = handWrite("0001-b.md", "0001", "B");
@@ -334,24 +384,23 @@ describe("EngramStore / id allocation & duplicates", () => {
       }),
     );
   });
-  it.live("dedupe renumbers duplicate ids, preserves content, and is idempotent", () => {
-    handWrite("0001-a.md", "0001", "A");
-    handWrite("0001-b.md", "0001", "B");
+  it.live("dedupe: earliest-created keeps the id, rest get fresh ULIDs", () => {
+    // written out of order to prove file order doesn't matter; B is newer
+    handWrite("0001-b.md", "0001", "B", "2025-08-16T09:00:00.000Z");
+    handWrite("0001-a.md", "0001", "A", "2025-08-15T09:00:00.000Z");
     return Effect.gen(function* () {
       const store = yield* EngramStore;
       const { renumbered } = yield* store.dedupe("project");
-      // deterministic: the alphabetically-first file keeps the id; the loser
-      // gets a fresh globally-unique id (so independently-run dedupes on
-      // different clones can never collide either)
-      expect(renumbered).toEqual([{ from: "0001", to: expect.any(String), title: "B" }]);
-      expect(renumbered[0].to).toMatch(ULID);
+      expect(renumbered).toEqual([{ from: "0001", to: expect.stringMatching(ULID), title: "B" }]);
 
       const all = yield* store.list("project");
-      expect(all.map((m) => m.id).sort()).toEqual(["0001", expect.any(String)]);
+      const ids = all.map((m) => m.id);
+      expect(ids).toContain("0001");
+      expect(ids.filter((id) => id !== "0001")).toEqual([expect.stringMatching(ULID)]);
       expect(all.map((m) => m.title).sort()).toEqual(["A", "B"]);
       expect(all.every((m) => m.body === "hand-written body")).toBe(true);
 
-      // ids are usable again
+      // the survivor of the disputed id is the earliest-created record
       const got = yield* store.get("project", "0001");
       expect(got.title).toBe("A");
 

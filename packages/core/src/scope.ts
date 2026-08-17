@@ -31,3 +31,9 @@ export const scopesToQuery = (
       ? ["project", "personal"]
       : ["personal"]
     : [resolveScope(explicit, projectRoot)];
+
+/** True when an explicit CLI scope argument names a real scope. Mutating
+ * commands use this to reject typos (e.g. `--scope persoanl`) instead of
+ * letting `resolveScope`'s default silently re-target another store. */
+export const isValidScopeArg = (value: string): boolean =>
+  value === "personal" || value === "project";

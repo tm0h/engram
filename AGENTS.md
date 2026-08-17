@@ -87,9 +87,9 @@ already be in the published tarball.
 
 - `packages/core/src/`
   - `store.ts` — `EngramStore`: CRUD over `<id>-<slug>.md` files (ULID-style
-    ids: unique across machines, sortable by creation time; legacy 4-digit
-    numeric ids still supported; `dedupe` repairs legacy/hand-written
-    duplicate ids)
+    ids: collision-resistant across machines, sortable by creation time;
+    legacy 4-digit numeric ids still supported; `dedupe` repairs
+    legacy/hand-written duplicate ids)
   - `config.ts` — `ConfigRepo`: global + project JSON configs (Schema-validated)
   - `location.ts` — `findProjectRoot` / `findGitRoot` (git-boundary rules)
   - `paths.ts` — pure path math (`~/.engram` vs `<repo>/.engram`), no I/O

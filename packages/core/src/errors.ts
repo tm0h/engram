@@ -69,8 +69,8 @@ export function formatDomainError(err: DomainError): string {
       return (
         `Duplicate id "${err.id}" — ${err.files.length} files claim it:\n` +
         err.files.map((f) => `  ${f}`).join("\n") +
-        `\nIds must be unique. Renumber one of the files (filename prefix and frontmatter id), ` +
-        `or remove it.`
+        `\nIds must be unique. Run \`engram dedupe\` to assign fresh ids automatically, ` +
+        `or renumber one file by hand (filename prefix and frontmatter id), or remove it.`
       );
     case "InvalidTypeError":
       return `Unknown type "${err.type}". Valid: ${[

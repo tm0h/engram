@@ -2,7 +2,8 @@
 import { Effect } from "effect";
 import chalk from "chalk";
 import { EngramStore } from "@engram/core";
-import { resolveScope } from "@engram/core";
+import { resolveScope, isValidScopeArg } from "@engram/core";
+import { ValidationError } from "@engram/core";
 import { out } from "../io.js";
 
 export interface DedupeOptions {
@@ -11,6 +12,15 @@ export interface DedupeOptions {
 
 export const dedupeCommand = (opts: DedupeOptions) =>
   Effect.gen(function* () {
+    // This command rewrites files — an invalid explicit scope must fail, not
+    // silently fall back to the default store.
+    if (opts.scope !== undefined && !isValidScopeArg(opts.scope)) {
+      return yield* Effect.fail(
+        new ValidationError({
+          message: `Invalid scope "${opts.scope}" — expected "personal" or "project".`,
+        }),
+      );
+    }
     const store = yield* EngramStore;
     const projectRoot = yield* store.projectRoot();
     const scope = resolveScope(opts.scope, projectRoot);

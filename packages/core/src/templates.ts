@@ -37,7 +37,7 @@ Each file in \`engrams/\` is Markdown with YAML frontmatter:
 
 \`\`\`markdown
 ---
-id: "01jb3x1q2v7k9m4t8z0c2d5e6h"   # unique by construction; legacy stores use 0001-style
+id: "01jb3x1q2v7k9m4t8z0c2d5e6h"   # collision-resistant ULID; legacy stores use 0001-style
 title: Replaced libfoo with libbar
 type: decision        # decision | fact | preference | note | issue | context
 tags: [deps, auth]
@@ -59,10 +59,10 @@ ${
 
 Edit by hand if you like — they are just files — but never invent an id:
 \`engram add\` mints a globally-unique one (timestamp + randomness), so several
-sessions, machines, or merged branches can record concurrently without ever
-colliding on id. Ids sort lexicographically by creation time. If you ever do
-hit duplicates (hand-written or legacy \`0001\`-style), \`engram dedupe\`
-repairs them.
+sessions, machines, or merged branches can record concurrently with only a
+negligible chance of colliding on id. Ids sort lexicographically by creation
+time (millisecond precision). If you ever do hit duplicates (hand-written or
+legacy \`0001\`-style), \`engram dedupe\` repairs them.
 `;
 }
 
@@ -75,7 +75,7 @@ You have access to a shared memory tool via the \`engram\` CLI.
 - At the start of a session, run \`engram context\` to load the team's recorded context (decisions, gotchas, conventions).
 - When you need specifics, run \`engram search "<topic>"\`.
 - When you learn a durable fact, decision, or gotcha worth remembering for the team, record it with \`engram add\` (use \`--type decision\` for important choices and their rationale).
-- Never create \`.md\` files in \`.engram/engrams/\` by hand and never guess an id — \`engram add\` mints a globally-unique id (timestamp + randomness), so concurrent sessions and merged branches never collide. Reference existing engrams by id or a unique prefix.
+- Never create \`.md\` files in \`.engram/engrams/\` by hand and never guess an id — \`engram add\` mints a globally-unique id (timestamp + randomness), so concurrent sessions and merged branches are safe from id collisions. Reference existing engrams by id or a unique prefix.
 - Personal notes that should NOT be shared with the team use \`--scope personal\` (stored globally on your machine, never committed).
 
 Engrams live as plain Markdown in \`.engram/\` and (for this project) are committed to git, so the whole team and every cloud session share them.`;

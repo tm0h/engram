@@ -42,8 +42,8 @@ describe("numericId", () => {
 });
 
 describe("newId", () => {
-  it("yields 26 lowercase base32 chars", () => {
-    for (let i = 0; i < 100; i++) expect(newId()).toMatch(/^[0-9a-z]{26}$/);
+  it("yields 26 lowercase Crockford-base32 chars (no i/l/o/u)", () => {
+    for (let i = 0; i < 100; i++) expect(newId()).toMatch(/^[0-9a-hjkmnp-tv-z]{26}$/);
   });
   it("never collides across many draws", () => {
     const ids = new Set(Array.from({ length: 10000 }, () => newId()));
@@ -52,6 +52,19 @@ describe("newId", () => {
   it("is monotonic within a process (sort order == creation order)", () => {
     const ids = Array.from({ length: 1000 }, () => newId());
     expect([...ids].sort()).toEqual(ids);
+  });
+  it("stays monotonic when the clock steps backwards", () => {
+    const first = newId();
+    const realNow = Date.now.bind(Date);
+    Date.now = () => realNow() - 60_000; // NTP correction / VM resume
+    try {
+      const second = newId();
+      const third = newId();
+      expect(second >= first).toBe(true);
+      expect(third >= second).toBe(true);
+    } finally {
+      Date.now = realNow;
+    }
   });
 });
 

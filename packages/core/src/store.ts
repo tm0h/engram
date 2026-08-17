@@ -125,6 +125,15 @@ function serialize(m: Engram): string {
 const chronological = (a: Engram, b: Engram): number =>
   a.created.localeCompare(b.created) || a.id.localeCompare(b.id);
 
+/** EEXIST from the platform fs surfaces as a PlatformError whose
+ * `reason._tag` is "AlreadyExists" (the wrapper `_tag` is always
+ * "PlatformError", so that is not a discriminator). */
+const isAlreadyExists = (e: unknown): boolean => {
+  if (typeof e !== "object" || e === null || !("reason" in e)) return false;
+  const reason = (e as { reason?: { _tag?: string } }).reason;
+  return reason?._tag === "AlreadyExists";
+};
+
 /** Build the live EngramStore from the platform FileSystem + Path services. */
 export const EngramStoreLive: Layer.Layer<EngramStore, never, FileSystem | Path> = Layer.effect(
   EngramStore,
@@ -244,7 +253,7 @@ export const EngramStoreLive: Layer.Layer<EngramStore, never, FileSystem | Path>
           Effect.flatMap(Effect.result(writeWith(newId())), (r) =>
             Result.isSuccess(r)
               ? Effect.succeed(r.success)
-              : tries <= 0 || (r.failure as { _tag?: string })._tag !== "AlreadyExists"
+              : tries <= 0 || !isAlreadyExists(r.failure)
                 ? Effect.fail(r.failure)
                 : attempt(tries - 1),
           );
@@ -288,12 +297,19 @@ export const EngramStoreLive: Layer.Layer<EngramStore, never, FileSystem | Path>
         const renumbered: Array<{ from: string; to: string; title: string }> = [];
         for (const group of byId.values()) {
           if (group.length < 2) continue;
-          // `list` yields files in sorted order, so the alphabetically-first
-          // filename keeps the disputed id — deterministic across machines.
-          const [, ...rest] = group;
+          // The oldest record keeps the disputed id; equal `created` values
+          // fall back to the alphabetically-first path. Both keys come from
+          // file content and file names, so the outcome is deterministic
+          // across machines. The displaced records get fresh globally-unique
+          // ids — note that a repair should be merged before another clone
+          // repairs the same duplicate: two independent repairs mint
+          // different ids and the merge would keep both copies.
+          const [, ...rest] = [...group].sort(
+            (a, b) => a.created.localeCompare(b.created) || a.path.localeCompare(b.path),
+          );
           for (const m of rest) {
-            // Fresh globally-unique id: two clones repairing the same merge
-            // independently cannot collide either.
+            // Fresh globally-unique id (see the note above on convergent
+            // repairs for why the winner rule alone is not enough).
             const id = newId();
             const file = path.join(dir, `${id}-${slugify(m.title)}.md`);
             yield* fs.writeFileString(file, serialize({ ...m, id, updated: nowISO() }), {

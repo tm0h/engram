@@ -172,13 +172,14 @@ engram add --title "..." --type decision "..."   # record a durable finding
 ## File format
 
 Each engram is `<scope-dir>/<id>-<slug>.md`. Ids are ULID-style (timestamp +
-randomness): unique across machines without coordination, sortable by
-creation time, and safe under `git merge`. Legacy `NNNN`-style ids from older
+randomness): collision-resistant across machines without coordination (80-bit
+random suffix), sortable by creation time to the millisecond, and new engrams
+merge cleanly in git. Legacy `NNNN`-style ids from older
 versions still work:
 
 ```markdown
 ---
-id: "01jb3x1q2v7k9m4t8z0c2d5e6h" # unique by construction; legacy stores use 0001-style
+id: "01jb3x1q2v7k9m4t8z0c2d5e6h" # collision-resistant ULID; legacy stores use 0001-style
 title: Replaced moment with date-fns
 type: decision
 tags: [deps, date, moment]
@@ -195,10 +196,10 @@ All frontmatter fields except `id`, `title`, `type`, and `created` are optional.
 
 You can edit these by hand — they're just files — but never invent an id:
 `engram add` mints a globally-unique one (timestamp + randomness), so several
-sessions, machines, or merged branches can record concurrently without ever
-colliding on id. Ids are also sort keys: lexicographic order equals creation
-order. If you ever do hit duplicates (hand-written or legacy `0001`-style),
-`engram dedupe` repairs them.
+sessions, machines, or merged branches can record concurrently with only a
+negligible chance of colliding on id. Ids are also sort keys: lexicographic
+order follows creation order to the millisecond. If you ever do hit
+duplicates (hand-written or legacy `0001`-style), `engram dedupe` repairs them.
 
 ---
 
