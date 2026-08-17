@@ -7,6 +7,7 @@ describe("projectReadmeContent", () => {
     expect(md).toContain("File format");
     expect(md).toContain("engram context");
     expect(md).toContain("type: decision");
+    expect(md).toContain("never invent an id");
   });
   it("reflects tracked vs gitignored", () => {
     expect(projectReadmeContent(true)).toContain("tracked in git");
@@ -21,5 +22,11 @@ describe("injectSnippet", () => {
     expect(s).toContain("engram search");
     expect(s).toContain("engram add");
     expect(s).toContain("--scope personal");
+  });
+  it("warns agents never to hand-write files or guess ids", () => {
+    const s = injectSnippet();
+    expect(s).toContain("never guess an id");
+    expect(s).toContain("globally-unique id");
+    expect(s).toContain("merged branches never collide");
   });
 });

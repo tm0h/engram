@@ -26,11 +26,13 @@ import * as Context from "./commands/context.js";
 import * as Config from "./commands/configCmd.js";
 import * as Inject from "./commands/inject.js";
 import * as Where from "./commands/where.js";
+import * as Dedupe from "./commands/dedupe.js";
 
 const DOMAIN_TAGS = new Set([
   "ProjectNotInitializedError",
   "EngramNotFoundError",
   "AmbiguousIdError",
+  "DuplicateIdError",
   "InvalidTypeError",
   "ValidationError",
   "FrontmatterParseError",
@@ -224,6 +226,18 @@ program
   .command("where")
   .description("Show resolved engram paths and current default scope.")
   .action(() => run(Where.whereCommand()));
+
+program
+  .command("dedupe")
+  .description("Renumber duplicate engram ids (e.g. after merging branches).")
+  .option("-s, --scope <scope>", "personal | project (default: project if initialized)")
+  .action((opts: Record<string, string | undefined>) =>
+    run(
+      Dedupe.dedupeCommand({
+        scope: opts.scope,
+      }),
+    ),
+  );
 
 program.parseAsync(process.argv).catch((err) => {
   // commander emits its own errors (e.g. unknown command); surface cleanly.

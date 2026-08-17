@@ -18,6 +18,11 @@ export class AmbiguousIdError extends Data.TaggedError("AmbiguousIdError")<{
   readonly matches: ReadonlyArray<string>;
 }> {}
 
+export class DuplicateIdError extends Data.TaggedError("DuplicateIdError")<{
+  readonly id: string;
+  readonly files: ReadonlyArray<string>;
+}> {}
+
 export class InvalidTypeError extends Data.TaggedError("InvalidTypeError")<{
   readonly type: string;
 }> {}
@@ -40,6 +45,7 @@ export type DomainError =
   | ProjectNotInitializedError
   | EngramNotFoundError
   | AmbiguousIdError
+  | DuplicateIdError
   | InvalidTypeError
   | ValidationError
   | FrontmatterParseError
@@ -59,6 +65,13 @@ export function formatDomainError(err: DomainError): string {
         : `No engram with id "${err.id}".`;
     case "AmbiguousIdError":
       return `Ambiguous id "${err.id}" — matches: ${err.matches.join(", ")}`;
+    case "DuplicateIdError":
+      return (
+        `Duplicate id "${err.id}" — ${err.files.length} files claim it:\n` +
+        err.files.map((f) => `  ${f}`).join("\n") +
+        `\nIds must be unique. Renumber one of the files (filename prefix and frontmatter id), ` +
+        `or remove it.`
+      );
     case "InvalidTypeError":
       return `Unknown type "${err.type}". Valid: ${[
         "decision",
