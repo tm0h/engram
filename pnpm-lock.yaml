@@ -95,6 +95,9 @@ importers:
 
   packages/harnesses:
     dependencies:
+      '@engram/core':
+        specifier: workspace:*
+        version: link:../core
       effect:
         specifier: 'catalog:'
         version: 4.0.0-rc.108
@@ -105,9 +108,9 @@ importers:
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-rc.108(effect@4.0.0-rc.108)(vitest@4.1.10)
-      '@engram/core':
-        specifier: workspace:*
-        version: link:../core
+      vite-plus:
+        specifier: 'catalog:'
+        version: 0.2.9(@types/node@22.20.1)(@voidzero-dev/vite-plus-core@0.2.9(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.12)(typescript@7.0.2))(esbuild@0.28.2)(tsx@4.23.12)(typescript@7.0.2)
 
 packages:
 

@@ -11,11 +11,12 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
+    "@engram/core": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
-    "@engram/core": "workspace:*"
+    "vite-plus": "catalog:"
   }
 }

@@ -26,7 +26,7 @@ import {
   type Scope,
 } from "@engram/core";
 import { PERSONAL_ONLY_NOTE, projectUninitialized } from "./degraded.js";
-import { capText, pageFooter, paginate } from "./pagination.js";
+import { MAX_RESULT_CHARS, capText, pageFooter, paginate } from "./pagination.js";
 import type {
   AddOptions,
   ContextOptions,
@@ -127,6 +127,17 @@ const dateShort = (iso: string): string => {
   return Number.isNaN(d.getTime()) ? iso : d.toISOString().slice(0, 10);
 };
 
+/** Cap a rendered block while reserving room for a trailing footer line. */
+const capWithFooter = (block: string, footer: string): { text: string; truncated: boolean } => {
+  const capped = capText(block, MAX_RESULT_CHARS - footer.length - 1);
+  return capped.truncated
+    ? {
+        text: `${capped.text}\n${footer}\n(list truncated to fit the size cap)`,
+        truncated: true,
+      }
+    : { text: `${block}\n${footer}`, truncated: false };
+};
+
 const applyCap = (text: string): string => {
   const capped = capText(text);
   return capped.truncated ? `${capped.text}\n(result truncated)` : capped.text;
@@ -194,14 +205,18 @@ export const contextDigest = (
 
       const from = page.offset + 1;
       const to = page.offset + page.items.length;
+      let footer: string | null = null;
       if (page.nextOffset !== null && page.items.length > 0) {
-        const nextCall = `engram_context(${JSON.stringify({ offset: page.nextOffset })})`;
-        lines.push(
-          `${pageFooter({ from, to, total: page.total, nextOffset: page.nextOffset, nextCall })}; use engram_show({"id":"…"}) to read one`,
-        );
+        const nextParams: Record<string, unknown> = { offset: page.nextOffset };
+        if (opts.scope !== undefined) nextParams.scope = opts.scope;
+        if (opts.limit !== undefined) nextParams.limit = opts.limit;
+        const nextCall = `engram_context(${JSON.stringify(nextParams)})`;
+        footer = `${pageFooter({ from, to, total: page.total, nextOffset: page.nextOffset, nextCall })}; use engram_show({"id":"…"}) to read one`;
       }
 
-      return ok(applyCap(lines.join("\n")), {
+      const body = lines.join("\n");
+      const text = footer === null ? applyCap(body) : capWithFooter(body, footer).text;
+      return ok(text, {
         total: page.total,
         offset: page.offset,
         limit: page.limit,
@@ -220,11 +235,13 @@ export const searchOp = (opts: SearchOptions): Effect.Effect<OpResult, never, En
       const resolved = resolveScopes(opts.scope ?? "both", root);
       if (resolved === null) return err(projectUninitialized("read"));
 
-      const matched: Engram[] = [];
+      // Rank once across the combined candidates so relevance (not scope
+      // grouping) decides the order.
+      const candidates: Engram[] = [];
       for (const scope of resolved.scopes) {
-        const list = yield* store.list(scope);
-        matched.push(...searchEngrams(list, opts.query).map((r) => r.engram));
+        candidates.push(...(yield* store.list(scope)));
       }
+      const matched = searchEngrams(candidates, opts.query).map((r) => r.engram);
       const multiScope = resolved.scopes.length > 1;
       const page = paginate(matched, opts.offset ?? 0, opts.limit ?? DEFAULT_SEARCH_LIMIT);
 
@@ -240,14 +257,18 @@ export const searchOp = (opts: SearchOptions): Effect.Effect<OpResult, never, En
 
       const from = page.offset + 1;
       const to = page.offset + page.items.length;
+      let footer: string | null = null;
       if (page.nextOffset !== null && page.items.length > 0) {
-        const nextCall = `engram_search(${JSON.stringify({ query: opts.query, offset: page.nextOffset })})`;
-        lines.push(
-          `${pageFooter({ from, to, total: page.total, nextOffset: page.nextOffset, nextCall })}; use engram_show({"id":"…"}) to read one`,
-        );
+        const nextParams: Record<string, unknown> = { query: opts.query, offset: page.nextOffset };
+        if (opts.scope !== undefined) nextParams.scope = opts.scope;
+        if (opts.limit !== undefined) nextParams.limit = opts.limit;
+        const nextCall = `engram_search(${JSON.stringify(nextParams)})`;
+        footer = `${pageFooter({ from, to, total: page.total, nextOffset: page.nextOffset, nextCall })}; use engram_show({"id":"…"}) to read one`;
       }
 
-      return ok(applyCap(lines.join("\n")), {
+      const body = lines.join("\n");
+      const text = footer === null ? applyCap(body) : capWithFooter(body, footer).text;
+      return ok(text, {
         total: page.total,
         offset: page.offset,
         limit: page.limit,
@@ -263,18 +284,16 @@ export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, Engram
     Effect.gen(function* () {
       const store = yield* EngramStore;
       const root = yield* store.projectRoot();
+      // Explicit project scope outside a project gets the friendly hint
+      // (same contract as contextDigest/searchOp) instead of a raw store error.
+      if (opts.scope === "project" && Option.isNone(root)) {
+        return err(projectUninitialized("read"));
+      }
       const scope: Scope = opts.scope ?? (Option.isSome(root) ? "project" : "personal");
 
       const m = yield* store.get(scope, opts.id);
 
-      const bodyOffset = Math.max(0, Math.floor(opts.offset ?? 0));
-      const bodyLimit =
-        opts.limit === undefined ? m.body.length : Math.max(0, Math.floor(opts.limit));
-      const slice = m.body.slice(bodyOffset, bodyOffset + bodyLimit);
-      const nextOffset =
-        slice.length > 0 && bodyOffset + bodyLimit < m.body.length ? bodyOffset + bodyLimit : null;
-
-      const lines: string[] = [
+      const header = [
         `# [${m.id}] ${m.title}`,
         `type: ${m.type}`,
         ...(m.tags.length ? [`tags:${tagsSuffix(m.tags)}`] : []),
@@ -283,17 +302,36 @@ export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, Engram
         ...(m.author ? [`author: ${m.author}`] : []),
         ...(m.pinned ? ["pinned: true"] : []),
         "",
-      ];
+      ].join("\n");
 
       let text: string;
+      let nextOffset: number | null = null;
       if (m.body) {
-        text = lines.join("\n") + slice;
-        if (nextOffset !== null) {
-          const nextCall = `engram_show(${JSON.stringify({ id: m.id, offset: nextOffset })})`;
+        const bodyOffset = Math.max(0, Math.floor(opts.offset ?? 0));
+        const bodyLimit =
+          opts.limit === undefined ? m.body.length : Math.max(0, Math.floor(opts.limit));
+
+        // Reserve room for the continuation footer so the hard cap can never
+        // cut it off, and derive nextOffset from what was actually returned.
+        const nextParams: Record<string, unknown> = { id: m.id };
+        if (opts.scope !== undefined) nextParams.scope = opts.scope;
+        const footerReserve = 200;
+        const available = Math.max(0, MAX_RESULT_CHARS - header.length - footerReserve);
+        const sliceLen = Math.min(bodyLimit, available);
+        const slice = m.body.slice(bodyOffset, bodyOffset + sliceLen);
+        const consumed = bodyOffset + slice.length;
+        const hasMore = slice.length > 0 && consumed < m.body.length;
+
+        text = header + slice;
+        if (hasMore) {
+          nextOffset = consumed;
+          nextParams.offset = nextOffset;
+          if (opts.limit !== undefined) nextParams.limit = opts.limit;
+          const nextCall = `engram_show(${JSON.stringify(nextParams)})`;
           text += `\n\n(body truncated - call ${nextCall} for the rest)`;
         }
       } else {
-        text = lines.join("\n") + "(no body)";
+        text = header + "(no body)";
       }
 
       return ok(applyCap(text), {

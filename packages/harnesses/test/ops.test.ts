@@ -122,7 +122,7 @@ describe("shared ops / contextDigest", () => {
 
     const page1 = await run(contextDigest({ scope: "project" }));
     expect(page1.details).toMatchObject({ total: 30, nextOffset: 25 });
-    expect(page1.text).toContain('engram_context({"offset":25})');
+    expect(page1.text).toContain('engram_context({"offset":25,"scope":"project"})');
 
     const page2 = await run(contextDigest({ scope: "project", offset: 25 }));
     expect(page2.details).toMatchObject({ total: 30, nextOffset: null });
@@ -178,15 +178,22 @@ describe("shared ops / contextDigest", () => {
 
 describe("shared ops / searchOp", () => {
   let orig = "";
+  let origHome: string | undefined;
   let tmp = "";
+  let home = "";
   beforeEach(() => {
     orig = process.cwd();
+    origHome = process.env.HOME;
     tmp = mkProject();
+    home = mkHome();
     process.chdir(tmp);
+    process.env.HOME = home;
   });
   afterEach(() => {
     process.chdir(orig);
+    process.env.HOME = origHome;
     fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
   });
 
   it("matches by title and tag, orders by relevance", async () => {
@@ -212,11 +219,23 @@ describe("shared ops / searchOp", () => {
 
     const page1 = await run(searchOp({ query: "auth", scope: "project" }));
     expect(page1.details).toMatchObject({ total: 15, nextOffset: 10 });
-    expect(page1.text).toContain('engram_search({"query":"auth","offset":10})');
+    expect(page1.text).toContain('engram_search({"query":"auth","offset":10,"scope":"project"})');
 
     const page2 = await run(searchOp({ query: "auth", scope: "project", offset: 10 }));
     expect(page2.details).toMatchObject({ nextOffset: null });
     expect(page2.text).toContain("auth thing 15");
+  });
+
+  it("ranks across scopes: a strong personal match outranks a weak project match", async () => {
+    seed(tmp, "0001", { title: "Unrelated", body: "mentions auth once" });
+    seedPersonal(home, "0005", { title: "Auth flow", tags: ["auth"], body: "b" });
+
+    const res = await run(searchOp({ query: "auth", scope: "both" }));
+    const iProject = res.text.indexOf("Unrelated");
+    const iPersonal = res.text.indexOf("Auth flow");
+    expect(iPersonal).toBeGreaterThan(-1);
+    expect(iProject).toBeGreaterThan(-1);
+    expect(iPersonal).toBeLessThan(iProject);
   });
 
   it("no matches is not an error", async () => {
@@ -292,11 +311,48 @@ describe("shared ops / showOp", () => {
 
     const page1 = await run(showOp({ id: "0002", scope: "project", limit: 100 }));
     expect(page1.details).toMatchObject({ id: "0002", nextOffset: 100 });
-    expect(page1.text).toContain('engram_show({"id":"0002","offset":100})');
+    expect(page1.text).toContain(
+      'engram_show({"id":"0002","scope":"project","offset":100,"limit":100})',
+    );
 
     const page2 = await run(showOp({ id: "0002", scope: "project", offset: 400 }));
     expect(page2.details).toMatchObject({ nextOffset: null });
     expect(page2.text).toContain("y".repeat(100));
+  });
+
+  it("cap-aligned cursor: oversized bodies keep a valid continuation offset", async () => {
+    seed(tmp, "0003", { title: "Huge", body: "z".repeat(30_000) });
+
+    const page1 = await run(showOp({ id: "0003", scope: "project" }));
+    expect(page1.text.length).toBeLessThanOrEqual(8192);
+    expect(page1.text).toContain("body truncated - call");
+    const next = page1.details.nextOffset as number;
+    expect(next).toBeGreaterThan(0);
+    expect(next).toBeLessThanOrEqual(8192);
+
+    // following the cursor repeatedly returns every char without skipping
+    let offset = 0;
+    let total = 0;
+    for (let guard = 0; guard < 10; guard++) {
+      const r = await run(showOp({ id: "0003", scope: "project", offset }));
+      total += (r.text.match(/z/g) ?? []).length;
+      const next = r.details.nextOffset as number | null;
+      if (next === null) break;
+      offset = next;
+    }
+    expect(total).toBe(30_000);
+  });
+
+  it("explicit project scope without a project root returns the init hint", async () => {
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), "engram-empty-"));
+    process.chdir(empty);
+    try {
+      const res = await run(showOp({ id: "0001", scope: "project" }));
+      expect(res.isError).toBe(true);
+      expect(res.text).toContain("engram init");
+    } finally {
+      fs.rmSync(empty, { recursive: true, force: true });
+    }
   });
 
   it("unknown id is an error", async () => {
