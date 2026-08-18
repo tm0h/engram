@@ -3,7 +3,15 @@
  */
 import { describe, it, expect } from "vite-plus/test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+  chmodSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -70,5 +78,46 @@ describe("claude plugin shim dispatch", () => {
     const shim = readFileSync(join(pluginRoot, "bin", "engram"), "utf8");
     const cli = JSON.parse(readFileSync(join(repoRoot, "packages", "cli", "package.json"), "utf8"));
     expect(shim).toContain(`npx -y engram-cli@${cli.version}`);
+  });
+
+  it("skips itself when the plugin bin dir is first on PATH (no recursion)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "engram-selfskip-"));
+    // a real engram later on PATH must win
+    const otherBin = join(dir, "other");
+    mkdirSync(otherBin, { recursive: true });
+    writeFileSync(join(otherBin, "engram"), '#!/bin/sh\necho "real-engram:$*"\n');
+    chmodSync(join(otherBin, "engram"), 0o755);
+
+    const res = spawnSync(join(pluginRoot, "bin", "engram"), ["--version"], {
+      encoding: "utf8",
+      env: {
+        PATH: [join(pluginRoot, "bin"), otherBin, process.env.PATH].join(":"),
+      },
+      timeout: 10_000,
+    });
+    expect(res.status).toBe(0);
+    expect(res.stdout.trim()).toBe("real-engram:--version");
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("falls through to npx when only itself is on PATH (network-free stub)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "engram-npxstub-"));
+    const npxDir = join(dir, "npxdir");
+    mkdirSync(npxDir, { recursive: true });
+    writeFileSync(join(npxDir, "npx"), '#!/bin/sh\necho "npx-stub:$*"\n');
+    chmodSync(join(npxDir, "npx"), 0o755);
+
+    const res = spawnSync(join(pluginRoot, "bin", "engram"), ["--version"], {
+      encoding: "utf8",
+      env: {
+        PATH: [join(pluginRoot, "bin"), npxDir, "/usr/bin", "/bin"].join(":"),
+      },
+      timeout: 10_000,
+    });
+    expect(res.status).toBe(0);
+    expect(res.stdout.trim()).toBe("npx-stub:-y engram-cli@0.2.0 --version");
+
+    rmSync(dir, { recursive: true, force: true });
   });
 });

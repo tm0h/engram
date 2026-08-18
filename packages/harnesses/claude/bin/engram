@@ -1,8 +1,26 @@
 #!/bin/sh
 # engram launcher for the Claude Code plugin.
-# Prefers a locally installed engram CLI; falls back to npx with a pinned
-# version so the plugin works with zero setup (slow on first run).
-if command -v engram >/dev/null 2>&1; then
-  exec engram "$@"
+# Claude Code puts this plugin's bin/ directory on the Bash tool's PATH, so a
+# plain `command -v engram` would find *this script* and recurse forever.
+# Walk PATH manually, skip our own directory, and fall back to npx (pinned to
+# the CLI version) when no real engram exists elsewhere.
+self_dir=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd -P) || self_dir=""
+
+found=""
+ifs_save=$IFS
+IFS=:
+for dir in $PATH; do
+  [ -n "$dir" ] || dir=.
+  [ -x "$dir/engram" ] || continue
+  [ -d "$dir/engram" ] && continue
+  resolved=$(CDPATH= cd -- "$dir" 2>/dev/null && pwd -P) || resolved=""
+  [ -n "$self_dir" ] && [ "$resolved" = "$self_dir" ] && continue
+  found="$dir/engram"
+  break
+done
+IFS=$ifs_save
+
+if [ -n "$found" ]; then
+  exec "$found" "$@"
 fi
 exec npx -y engram-cli@0.2.0 "$@"
