@@ -92,5 +92,4 @@ Initial public release.
 [0.1.0]: https://github.com/tm0h/engram/releases/tag/v0.1.0
 [#12]: https://github.com/tm0h/engram/pull/12
 [#3]: https://github.com/tm0h/engram/pull/3
-[#6]: https://github.com/tm0h/engram/pull/6
 [#10]: https://github.com/tm0h/engram/pull/10
