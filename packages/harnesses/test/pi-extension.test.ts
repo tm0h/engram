@@ -292,4 +292,29 @@ describe("engram extension / /engram command", () => {
     await commands.get("engram")!.handler("search", ctx);
     expect(notified(ctx)[0].level).toBe("error");
   });
+
+  it("invalid --scope is rejected, not silently defaulted", async () => {
+    const { pi, commands } = fakePi();
+    engramExtension(pi);
+    const ctx = fakeCtx();
+    await commands.get("engram")!.handler("add Should not record --scope persoanl -- body", ctx);
+    const notes = notified(ctx);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].level).toBe("error");
+    expect(notes[0].text).toContain('"persoanl"');
+    // nothing was written: the project store stays empty
+    expect(fs.readdirSync(projectEngramsDir(tmp))).toEqual([]);
+  });
+
+  it("invalid --type is rejected, not silently defaulted", async () => {
+    const { pi, commands } = fakePi();
+    engramExtension(pi);
+    const ctx = fakeCtx();
+    await commands.get("engram")!.handler("add Also not recorded --type descision -- body", ctx);
+    const notes = notified(ctx);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].level).toBe("error");
+    expect(notes[0].text).toContain('"descision"');
+    expect(fs.readdirSync(projectEngramsDir(tmp))).toEqual([]);
+  });
 });

@@ -1,6 +1,6 @@
 {
   "name": "@engram/harnesses",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Harness integrations for engram: a shared operations layer over @engram/core plus per-harness adapters (Pi coding-agent extension, Claude Code plugin).",
   "type": "module",
@@ -12,15 +12,15 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
+    "@earendil-works/pi-ai": "^0.84.2",
     "@engram/core": "workspace:*",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "typebox": "^1.1.38"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "^0.84.2",
     "@earendil-works/pi-coding-agent": "^0.84.2",
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
-    "typebox": "^1.1.38",
     "vite-plus": "catalog:"
   }
 }

@@ -39,7 +39,9 @@ interface ParsedAdd {
   pinned?: boolean;
 }
 
-function parseAdd(rest: string): ParsedAdd {
+const parseAddError = (error: string): { ok: false; error: string } => ({ ok: false, error });
+
+function parseAdd(rest: string): ParsedAdd | { ok: false; error: string } {
   const parsed: ParsedAdd = { title: "", body: "" };
   let work = ` ${rest} `;
   const flag = (name: string): string | null => {
@@ -49,9 +51,19 @@ function parseAdd(rest: string): ParsedAdd {
     return m[1];
   };
   const type = flag("--type");
-  if (type && (ENGRAM_TYPES as readonly string[]).includes(type)) parsed.type = type as EngramType;
+  if (type !== null) {
+    if (!(ENGRAM_TYPES as readonly string[]).includes(type)) {
+      return parseAddError(`Invalid --type "${type}". Valid: ${ENGRAM_TYPES.join(" | ")}`);
+    }
+    parsed.type = type as EngramType;
+  }
   const scope = flag("--scope");
-  if (scope === "project" || scope === "personal") parsed.scope = scope;
+  if (scope !== null) {
+    if (scope !== "project" && scope !== "personal") {
+      return parseAddError(`Invalid --scope "${scope}". Valid: project | personal`);
+    }
+    parsed.scope = scope;
+  }
   const tags = flag("--tags");
   if (tags)
     parsed.tags = tags
@@ -117,6 +129,10 @@ async function dispatch(args: string, ctx: ExtensionCommandContext): Promise<voi
 
   if (sub === "add") {
     const parsed = parseAdd(remainder);
+    if ("error" in parsed) {
+      notify(parsed.error, "error");
+      return;
+    }
     if (!parsed.title) {
       notify("Usage: /engram add <title> -- <body> [--type X] [--scope Y] [--tags a,b]", "error");
       return;
