@@ -1,6 +1,6 @@
 {
   "name": "engram-cli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A git-native memory tool for AI agents. Personal + team/project memory that any harness (Pi, Claude Code, cloud review bots) can use. Built with Effect.",
   "keywords": [
     "adr",

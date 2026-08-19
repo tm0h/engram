@@ -82,6 +82,19 @@ describe("engram-cli packaging (pi extension)", () => {
     // the bundle imports typebox externally instead of inlining it
     const bundle = readFileSync(join(pkgRoot, "dist", "pi-extension.js"), "utf8");
     expect(bundle).toMatch(/from\s+["']typebox["']/);
+
+    // the shipped CLI reports the manifest version (guards the five-place
+    // version sync; this catches a missed .version() bump)
+    const cliManifest = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8"));
+    const versionOut = execFileSync(
+      process.execPath,
+      [join(pkgRoot, "dist", "index.js"), "--version"],
+      {
+        cwd: pkgRoot,
+        encoding: "utf8",
+      },
+    ).trim();
+    expect(versionOut).toBe(cliManifest.version);
   });
 
   it("prepack copies the skill from @engram/harnesses", (ctx) => {

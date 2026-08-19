@@ -73,7 +73,7 @@ const program = new Command();
 program
   .name("engram")
   .description("Git-native agent memory — personal + team/project memory any harness can use.")
-  .version("0.2.0");
+  .version("0.3.0");
 
 program
   .command("init")

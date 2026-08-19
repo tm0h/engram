@@ -47,8 +47,11 @@ delete the stray copy after a failed publish if you want a clean tree).
 
 ## Release process
 
-1. Bump the version in **two places**: `packages/cli/package.json` and the
-   hardcoded `.version()` in `packages/cli/src/index.ts`.
+1. Bump the version in **five places** (tests guard the last three):
+   `packages/cli/package.json`, the hardcoded `.version()` in
+   `packages/cli/src/index.ts`, `packages/harnesses/package.json`,
+   `packages/harnesses/claude/.claude-plugin/plugin.json`, and the npx pin
+   in `packages/harnesses/claude/bin/engram`.
 2. Add a `CHANGELOG.md` entry (Keep a Changelog format; link the PR).
 3. Open a PR — `main` is protected; **everything** lands via PR.
 4. After merge: `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`.
@@ -95,6 +98,20 @@ already be in the published tarball.
   - `paths.ts` — pure path math (`~/.engram` vs `<repo>/.engram`), no I/O
   - `frontmatter.ts`, `search.ts`, `format.ts`, `scope.ts`, `templates.ts`
   - `layer.ts` — `MainLive` composition root
+- `packages/harnesses/` — `@engram/harnesses` (private): harness integrations
+  - `src/shared/` — harness-agnostic ops over `@engram/core`
+    (`contextDigest`/`searchOp`/`showOp`/`addOp`/`initOp`, pagination,
+    degraded modes); returns serializable `OpResult`s. Future MCP/JSON
+    surfaces should consume this, not the adapters.
+  - `src/pi/` — Pi extension: typebox tool schemas, `/engram` dispatcher,
+    factory; bundled into the CLI tarball as `dist/pi-extension.js` via the
+    re-export entry `packages/cli/src/pi-extension.ts`
+  - `claude/` — Claude Code plugin root (manifest + skill + `bin/engram`
+    shim); the repo root `.claude-plugin/marketplace.json` makes this repo a
+    Claude marketplace
+  - The two SKILL.md files (`src/pi/skills/engram/`, `claude/skills/engram/`)
+    are hand-maintained variants (tool-oriented vs CLI-oriented) — **keep
+    their guidance in sync** when editing either.
 - `packages/cli/src/`
   - `index.ts` — commander dispatch + error rendering
   - `commands/` — one file per subcommand (`init`, `add`, `list`, `show`,

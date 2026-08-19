@@ -151,9 +151,12 @@ committed to git, so the whole team and every cloud session share them.
 
 ### 2. Harness-specific wiring
 
-- **Pi** — add the snippet above to a prompt template / skill, or to the repo's
-  `AGENTS.md`.
-- **Claude Code** — drop it in `CLAUDE.md`.
+- **Pi** — `pi install npm:engram-cli`. The npm package _is_ a Pi package:
+  it ships an extension (tools + `/engram` command) and an `engram` skill.
+  See [Pi extension](#pi-extension) below.
+- **Claude Code** — `/plugin marketplace add tm0h/engram`, then
+  `/plugin install engram@engram` (brings the skill and an `engram`
+  launcher). Or simply drop the snippet above into `CLAUDE.md`.
 - **Cursor** — `.cursor/rules`.
 - **Any other harness or bot** — if it can't run a CLI, it can still **read
   files**: point it at `.engram/engrams/*.md` (or `.engram/README.md`),
@@ -166,6 +169,43 @@ engram context                 # load the digest at session start
 engram search "auth"           # pull specifics on demand
 engram add --title "..." --type decision "..."   # record a durable finding
 ```
+
+---
+
+## Pi extension
+
+The published `engram-cli` npm package doubles as a [Pi](https://github.com/earendil-works/pi-coding-agent)
+package: installing it gives the agent native engram tools with typed,
+validated parameters — no CLI-on-PATH shelling out, no prompt pasting.
+
+```bash
+pi install npm:engram-cli          # global (personal memory everywhere)
+```
+
+Or per-project (committed, teammates get it automatically after trust) — in
+`.pi/settings.json`:
+
+```json
+{ "packages": ["npm:engram-cli"] }
+```
+
+What you get:
+
+| Surface               | What it does                                                                                         |
+| --------------------- | ---------------------------------------------------------------------------------------------------- |
+| `engram_context` tool | Digest one-liners (id · type · title · tags), decisions & pinned first, `limit`/`offset` pagination. |
+| `engram_search` tool  | Relevance search (tags ≫ titles ≫ bodies), paginated.                                                |
+| `engram_show` tool    | Full entry by id (unique prefixes work); long bodies are char-sliced with a next-call footer.        |
+| `engram_add` tool     | Record an entry (type defaults from project config; `scope` defaults to `project`).                  |
+| `/engram` command     | Human dispatcher: `context` (default), `search`, `show`, `add <title> -- <body>`, `init`, `help`.    |
+| `engram` skill        | When to load, search, and record; personal-vs-project rules.                                         |
+
+Result footers always name the exact next call (e.g.
+`engram_context({"offset":25})`), and every result is capped (~8 kB) so a
+growing store can't flood the context window. Outside a project, reads fall
+back to personal scope with a note; writes to an uninitialized project scope
+return an actionable init hint. Git install also works:
+`pi install git:github.com/tm0h/engram`.
 
 ---
 

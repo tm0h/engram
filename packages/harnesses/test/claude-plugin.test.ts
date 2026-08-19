@@ -116,7 +116,10 @@ describe("claude plugin shim dispatch", () => {
       timeout: 10_000,
     });
     expect(res.status).toBe(0);
-    expect(res.stdout.trim()).toBe("npx-stub:-y engram-cli@0.2.0 --version");
+    const cliVersion = JSON.parse(
+      readFileSync(join(repoRoot, "packages", "cli", "package.json"), "utf8"),
+    ).version;
+    expect(res.stdout.trim()).toBe(`npx-stub:-y engram-cli@${cliVersion} --version`);
 
     rmSync(dir, { recursive: true, force: true });
   });
