@@ -3,3 +3,4 @@ dist/
 *.log
 .DS_Store
 packages/cli/README.md
+packages/cli/skills/

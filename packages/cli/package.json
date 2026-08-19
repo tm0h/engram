@@ -12,7 +12,8 @@
     "effect",
     "engram",
     "knowledge",
-    "llm"
+    "llm",
+    "pi-package"
   ],
   "homepage": "https://github.com/tm0h/engram#readme",
   "bugs": {
@@ -28,25 +29,49 @@
     "engram": "dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "skills"
   ],
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "build": "vp pack",
+    "prepack": "node -e \"require('fs').cpSync('../harnesses/src/pi/skills', 'skills', { recursive: true })\"",
     "prepublishOnly": "cp ../../README.md ./README.md",
     "dev": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "chalk": "^5.3.0",
     "commander": "^13.0.0",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "typebox": "^1.1.38"
   },
   "devDependencies": {
-    "@engram/core": "workspace:*"
+    "@engram/core": "workspace:*",
+    "@engram/harnesses": "workspace:*"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-ai": {
+      "optional": true
+    },
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
   },
   "engines": {
     "node": ">=20"
+  },
+  "pi": {
+    "extensions": [
+      "./dist/pi-extension.js"
+    ],
+    "skills": [
+      "./skills"
+    ]
   }
 }
