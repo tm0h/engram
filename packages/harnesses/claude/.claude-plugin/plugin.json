@@ -1,0 +1,12 @@
+{
+  "name": "engram",
+  "description": "Git-native memory for Claude Code: record and recall decisions, gotchas, and conventions with the engram CLI. Project memory is committed and shared with the team; personal memory stays on your machine.",
+  "version": "0.2.0",
+  "author": {
+    "name": "tm0h",
+    "url": "https://github.com/tm0h"
+  },
+  "homepage": "https://github.com/tm0h/engram#readme",
+  "repository": "https://github.com/tm0h/engram",
+  "license": "MIT"
+}

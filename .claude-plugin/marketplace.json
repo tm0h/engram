@@ -1,0 +1,14 @@
+{
+  "name": "engram",
+  "owner": {
+    "name": "tm0h",
+    "url": "https://github.com/tm0h"
+  },
+  "plugins": [
+    {
+      "name": "engram",
+      "source": "./packages/harnesses/claude",
+      "description": "Git-native memory for AI agents: record and recall decisions, gotchas, and conventions via the engram CLI. Project memory is committed and shared; personal memory stays local."
+    }
+  ]
+}
