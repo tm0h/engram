@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `engram context` surfaces a duplicate-id warning at the top of the digest
   so agents detect the problem at session start.
 
-## [0.3.0] - 2026-08-17
+## [0.3.0] - 2026-08-19
 
 ### Added
 
