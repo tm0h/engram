@@ -2,7 +2,7 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   pack: {
-    entry: ["src/index.ts", "src/pi-extension.ts"],
+    entry: ["src/index.ts", "src/pi-extension.ts", "src/opencode-plugin.ts"],
     dts: false,
     format: "esm",
     platform: "node",
