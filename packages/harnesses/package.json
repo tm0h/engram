@@ -6,7 +6,8 @@
   "type": "module",
   "exports": {
     "./shared": "./src/shared/index.ts",
-    "./pi": "./src/pi/index.ts"
+    "./pi": "./src/pi/index.ts",
+    "./opencode": "./src/opencode/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
@@ -15,12 +16,14 @@
     "@earendil-works/pi-ai": "^0.84.2",
     "@engram/core": "workspace:*",
     "effect": "catalog:",
-    "typebox": "^1.1.38"
+    "typebox": "^1.1.38",
+    "zod": "^4.1.8"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.84.2",
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
+    "@opencode-ai/plugin": "^1.18.21",
     "vite-plus": "catalog:"
   }
 }
