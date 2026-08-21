@@ -22,8 +22,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tm0h/engram.git",
-    "directory": "packages/cli"
+    "url": "git+https://github.com/tm0h/engram.git"
   },
   "bin": {
     "engram": "dist/index.js"
