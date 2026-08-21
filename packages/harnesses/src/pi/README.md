@@ -8,28 +8,33 @@ validated parameters. No CLI-on-PATH shelling out, no prompt pasting.
 ## Install
 
 ```sh
-pi install npm:engram-cli          # global (personal memory everywhere)
+pi install npm:engram-cli          # global: engram tools available in every Pi session
 ```
 
 Or per-project (committed, teammates get it automatically after trust), in
-`.pi/settings.json`:
+`.pi/settings.json`. Pin a tested version so everyone loads the same code:
 
 ```json
-{ "packages": ["npm:engram-cli"] }
+{ "packages": ["npm:engram-cli@0.3.0"] }
 ```
 
-A git install also works: `pi install git:github.com/tm0h/engram`.
+A git install also works; pin a tag or commit:
+`pi install git:github.com/tm0h/engram@v0.3.0`.
+
+Memory scope is independent of install scope: these tools read and write the
+same scopes as the CLI (`project` inside an initialized repo, `personal`
+otherwise).
 
 ## What you get
 
-| Surface               | What it does                                                                                         |
-| --------------------- | ---------------------------------------------------------------------------------------------------- |
-| `engram_context` tool | Digest one-liners (id · type · title · tags), decisions & pinned first, `limit`/`offset` pagination. |
-| `engram_search` tool  | Relevance search (tags ≫ titles ≫ bodies), paginated.                                                |
-| `engram_show` tool    | Full entry by id (unique prefixes work); long bodies are char-sliced with a next-call footer.        |
-| `engram_add` tool     | Record an entry (type defaults from project config; `scope` defaults to `project`).                  |
-| `/engram` command     | Human dispatcher: `context` (default), `search`, `show`, `add <title> -- <body>`, `init`, `help`.    |
-| `engram` skill        | When to load, search, and record; personal-vs-project rules.                                         |
+| Surface               | What it does                                                                                                      |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `engram_context` tool | Digest one-liners (id · type · title · tags), decisions & pinned first, `limit`/`offset` pagination.              |
+| `engram_search` tool  | Relevance search (tags > title > type > body), paginated.                                                         |
+| `engram_show` tool    | Full entry by id (unique prefixes work); long bodies are char-sliced with a next-call footer.                     |
+| `engram_add` tool     | Record an entry (type defaults from project config; `scope` defaults to `project` in a repo, `personal` outside). |
+| `/engram` command     | Human dispatcher: `context` (default), `search`, `show`, `add <title> -- <body>`, `init`, `help`.                 |
+| `engram` skill        | When to load, search, and record; personal-vs-project rules.                                                      |
 
 ## Behavior notes
 
