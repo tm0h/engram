@@ -71,7 +71,11 @@ const enterProject = (): ToolEnv => {
 
 const leaveProject = (env: ToolEnv): void => {
   process.chdir(env.origCwd);
-  process.env.HOME = env.origHome;
+  if (env.origHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = env.origHome;
+  }
   fs.rmSync(env.tmp, { recursive: true, force: true });
   fs.rmSync(env.home, { recursive: true, force: true });
 };
