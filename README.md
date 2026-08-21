@@ -135,6 +135,9 @@ project rule / `.cursorrules` / `AGENTS.md`). The snippet tells the agent to:
 
 - **Pi**: `pi install npm:engram-cli`. Ships native tools, an `/engram`
   command, and a skill. See [Pi extension](#pi-extension).
+- **OpenCode**: add `"plugin": ["engram-cli"]` to `opencode.json`. Ships four
+  native tools with typed, validated parameters. See
+  [OpenCode plugin](#opencode-plugin).
 - **Claude Code**: `/plugin marketplace add tm0h/engram`, then
   `/plugin install engram@engram` (brings the skill and an `engram`
   launcher). Or simply drop the snippet above into `CLAUDE.md`.
@@ -161,6 +164,27 @@ pi install npm:engram-cli          # global (personal memory everywhere)
 Per-project setup, the full tool reference, and behavior notes (pagination,
 result caps, scope fallbacks): see
 [packages/harnesses/src/pi/README.md](packages/harnesses/src/pi/README.md).
+
+---
+
+## OpenCode plugin
+
+The same `engram-cli` npm package is an
+[OpenCode](https://opencode.ai) plugin. Add it to `opencode.json` to give the
+agent the native `engram_context`, `engram_search`, `engram_show`, and
+`engram_add` tools:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["engram-cli"]
+}
+```
+
+OpenCode installs the package automatically and runs the tools in-process.
+Configuration details, version pinning, scope behavior, and the full tool
+reference: see
+[packages/harnesses/src/opencode/README.md](packages/harnesses/src/opencode/README.md).
 
 ---
 
