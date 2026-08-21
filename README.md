@@ -3,33 +3,12 @@
 [![npm](https://img.shields.io/npm/v/engram-cli?label=engram-cli)](https://www.npmjs.com/package/engram-cli)
 [![Node](https://img.shields.io/node/v/engram-cli)](https://www.npmjs.com/package/engram-cli)
 
-> An engram CLI for AI agents — durable, human-readable memory for any
-> AI-assisted workflow. Works with any harness: Pi, Claude Code, Cursor, cloud
-> code-review bots, CI, or plain scripts.
+> An engram CLI for AI agents: durable, human-readable memory for any
+> AI-assisted workflow. Works with any harness (Pi, Claude Code, Cursor,
+> cloud code-review bots, CI, plain scripts).
 >
 > An **engram** is the physical trace a memory leaves in the brain. This tool
 > gives agents one that survives the session.
-
-Agents re-derive context from scratch every session. `engram` gives them
-a place to record what should survive the session: decisions and their
-rationale, facts, gotchas, conventions, preferences — once — and load it back
-on demand.
-
-Engrams are **plain Markdown files with YAML frontmatter** — readable by
-humans, readable by any agent even without this CLI installed. The `engram`
-CLI just makes recording and retrieval ergonomic. A `project` scope lives in
-your working directory and can be committed to git so a whole team (and every
-cloud session) shares the same context; a `personal` scope lives in your home
-directory and is never committed.
-
-While the flagship use case is coding agents working in repositories, engram is
-useful in any recurring AI-assisted workflow — research, writing, ops, data
-analysis. If a session keeps re-learning the same things, that belongs in your engram.
-
-Built with [Effect](https://www.effect.website/) (TypeScript). Tested with
-Vitest (`@effect/vitest`).
-
----
 
 ## Why
 
@@ -37,6 +16,21 @@ Every fresh agent session starts from zero. That's wasteful and dangerous:
 a team that **replaced package X with Y for good reasons** will watch a fresh
 agent reintroduce X. Recording the _why_, once, means local sessions _and_
 cloud review bots stop making the same mistakes.
+
+`engram` gives agents a place to record what should survive the session:
+decisions and their rationale, facts, gotchas, conventions, preferences.
+Record once, load back on demand.
+
+Engrams are **plain Markdown files with YAML frontmatter**, readable by humans
+and by any agent even without this CLI installed. A `project` scope lives in
+your working directory and can be committed to git so a whole team (and every
+cloud session) shares the same context. A `personal` scope lives in your home
+directory and is never committed.
+
+The flagship use case is coding agents working in repositories, but engram is
+useful in any recurring AI-assisted workflow: research, writing, ops, data
+analysis. If a session keeps re-learning the same things, that belongs in your
+engram.
 
 ```sh
 engram init --tracked
@@ -46,7 +40,7 @@ tree-shakeable and actively maintained. Migrated all call sites in PR #142."
 git add .engram && git commit -m "engram: replaced moment with date-fns"
 ```
 
-Now every teammate's agent — and the cloud code-review bot that clones the repo —
+Now every teammate's agent, and the cloud code-review bot that clones the repo,
 runs `engram context` and immediately knows the decision and its rationale.
 
 ---
@@ -129,97 +123,59 @@ This works with **any** harness because the interface is the CLI plus plain file
 ### 1. Give your agent the instructions
 
 Run `engram inject` and paste the output into your agent's system prompt (or a
-project rule / `.cursorrules` / `AGENTS.md`):
+project rule / `.cursorrules` / `AGENTS.md`). The snippet tells the agent to:
 
-```text
-# Engram tool
-
-You have access to a shared memory tool via the `engram` CLI.
-
-- At the start of a session, run `engram context` to load the recorded
-  context (decisions, gotchas, conventions).
-- When you need specifics, run `engram search "<topic>"`.
-- When you learn a durable fact, decision, or gotcha worth remembering,
-  record it with `engram add` (use `--type decision` for important choices
-  and their rationale).
-- Personal notes that should NOT be shared with the team use `--scope personal`
-  (stored globally on your machine, never committed).
-
-Engrams live as plain Markdown in `.engram/` and (for this project) are
-committed to git, so the whole team and every cloud session share them.
-```
+- run `engram context` at session start to load recorded context,
+- run `engram search "<topic>"` when it needs specifics,
+- record durable findings with `engram add` (`--type decision` for important
+  choices and their rationale),
+- use `--scope personal` for notes that must not be shared with the team.
 
 ### 2. Harness-specific wiring
 
-- **Pi** — `pi install npm:engram-cli`. The npm package _is_ a Pi package:
-  it ships an extension (tools + `/engram` command) and an `engram` skill.
-  See [Pi extension](#pi-extension) below.
-- **Claude Code** — `/plugin marketplace add tm0h/engram`, then
+- **Pi**: `pi install npm:engram-cli`. Ships native tools, an `/engram`
+  command, and a skill. See [Pi extension](#pi-extension).
+- **Claude Code**: `/plugin marketplace add tm0h/engram`, then
   `/plugin install engram@engram` (brings the skill and an `engram`
   launcher). Or simply drop the snippet above into `CLAUDE.md`.
-- **Cursor** — `.cursor/rules`.
-- **Any other harness or bot** — if it can't run a CLI, it can still **read
-  files**: point it at `.engram/engrams/*.md` (or `.engram/README.md`),
+- **Cursor**: `.cursor/rules`.
+- **Any other harness or bot**: if it can't run a CLI, it can still **read
+  files**. Point it at `.engram/engrams/*.md` (or `.engram/README.md`),
   which is self-describing.
-
-### 3. Typical session loop (an agent's perspective)
-
-```sh
-engram context                 # load the digest at session start
-engram search "auth"           # pull specifics on demand
-engram add --title "..." --type decision "..."   # record a durable finding
-```
 
 ---
 
 ## Pi extension
 
-The published `engram-cli` npm package doubles as a [Pi](https://github.com/earendil-works/pi-coding-agent)
-package: installing it gives the agent native engram tools with typed,
-validated parameters — no CLI-on-PATH shelling out, no prompt pasting.
+The published `engram-cli` npm package doubles as a
+[Pi](https://github.com/earendil-works/pi) package. Installing it
+gives the agent native engram tools (`engram_context`, `engram_search`,
+`engram_show`, `engram_add`) with typed, validated parameters, plus an
+`/engram` command and an `engram` skill. No CLI-on-PATH shelling out, no
+prompt pasting.
 
-```bash
+```sh
 pi install npm:engram-cli          # global (personal memory everywhere)
 ```
 
-Or per-project (committed, teammates get it automatically after trust) — in
-`.pi/settings.json`:
-
-```json
-{ "packages": ["npm:engram-cli"] }
-```
-
-What you get:
-
-| Surface               | What it does                                                                                         |
-| --------------------- | ---------------------------------------------------------------------------------------------------- |
-| `engram_context` tool | Digest one-liners (id · type · title · tags), decisions & pinned first, `limit`/`offset` pagination. |
-| `engram_search` tool  | Relevance search (tags ≫ titles ≫ bodies), paginated.                                                |
-| `engram_show` tool    | Full entry by id (unique prefixes work); long bodies are char-sliced with a next-call footer.        |
-| `engram_add` tool     | Record an entry (type defaults from project config; `scope` defaults to `project`).                  |
-| `/engram` command     | Human dispatcher: `context` (default), `search`, `show`, `add <title> -- <body>`, `init`, `help`.    |
-| `engram` skill        | When to load, search, and record; personal-vs-project rules.                                         |
-
-Result footers always name the exact next call (e.g.
-`engram_context({"offset":25})`), and every result is capped (~8 kB) so a
-growing store can't flood the context window. Outside a project, reads fall
-back to personal scope with a note; writes to an uninitialized project scope
-return an actionable init hint. Git install also works:
-`pi install git:github.com/tm0h/engram`.
+Per-project setup, the full tool reference, and behavior notes (pagination,
+result caps, scope fallbacks): see
+[packages/harnesses/src/pi/README.md](packages/harnesses/src/pi/README.md).
 
 ---
 
 ## File format
 
 Each engram is `<scope-dir>/<id>-<slug>.md`. Ids are ULID-style (timestamp +
-randomness): collision-resistant across machines without coordination (80-bit
-random suffix), sortable by creation time to the millisecond, and new engrams
-merge cleanly in git. Legacy `NNNN`-style ids from older
-versions still work:
+randomness): collision-resistant across machines without coordination,
+sortable by creation time to the millisecond, so new engrams merge cleanly in
+git. Legacy `NNNN`-style ids from older versions still work; if you ever hit
+duplicates (hand-written or legacy `0001`-style), `engram dedupe` repairs
+them.
 
 ```markdown
 ---
-id: "01jb3x1q2v7k9m4t8z0c2d5e6h" # collision-resistant ULID; legacy stores use 0001-style
+id: "01jb3x1q2v7k9m4t8z0c2d5e6h"
 title: Replaced moment with date-fns
 type: decision
 tags: [deps, date, moment]
@@ -233,13 +189,8 @@ moment.js is frozen/in-maintenance and ships a large bundle…
 ```
 
 All frontmatter fields except `id`, `title`, `type`, and `created` are optional.
-
-You can edit these by hand — they're just files — but never invent an id:
-`engram add` mints a globally-unique one (timestamp + randomness), so several
-sessions, machines, or merged branches can record concurrently with only a
-negligible chance of colliding on id. Ids are also sort keys: lexicographic
-order follows creation order to the millisecond. If you ever do hit
-duplicates (hand-written or legacy `0001`-style), `engram dedupe` repairs them.
+You can edit these by hand (they're just files), but never invent an id:
+`engram add` mints a globally-unique one.
 
 ---
 
@@ -280,54 +231,8 @@ engram edit 01jb3                                         # opens $EDITOR (inter
 
 ## Development
 
-```sh
-vp install             # dependencies (delegates to pnpm workspaces)
-vp check               # format + lint + type-check (oxfmt / oxlint / tsgo)
-vp test run            # vitest, all packages (69 tests across 11 files)
-vp pack                # bundle CLI -> packages/cli/dist/index.js
-pnpm run dev -- <args> # run the CLI via tsx during development
-```
-
-### Repository layout
-
-pnpm workspace (Vite+ toolchain, versions synced via the pnpm catalog):
-
-```
-packages/core   @engram/core — the engine as a library:
-                domain, store, config, search, formatting, paths,
-                and the Effect layers (MainLive). Consumable by any
-                harness, not just the CLI.
-packages/cli    engram — the `engram` bin: commander dispatch,
-                interactive prompts/editors, stdin handling.
-```
-
-The CLI depends on `@engram/core` via `workspace:*` and bundles it into
-`dist/index.js` at build time (`deps.alwaysBundle`).
-
-### Architecture (Effect)
-
-The core is a small set of **services** (Effect `Context.Service` tags) with
-**layers**, all I/O going through `effect`'s `FileSystem` / `Path` / `Terminal`
-(run on Node via `@effect/platform-node`):
-
-- `EngramStore` (`packages/core/src/store.ts`) — CRUD over the Markdown files.
-- `ConfigRepo` (`packages/core/src/config.ts`) — load/save global + project JSON config.
-- Domain models are `effect/Schema` (`packages/core/src/domain.ts`); errors are tagged
-  (`packages/core/src/errors.ts`).
-- CLI dispatch is `commander`; each command is an `Effect` provided with the
-  main layer (`packages/core/src/layer.ts`) and run via `Effect.runPromiseExit` with uniform
-  error formatting (`packages/cli/src/index.ts`).
-
-Services are tested against real `NodeServices` on temp directories; pure logic
-(search, formatting, slug/tag helpers, path math, scope resolution) has direct
-unit tests.
-
-### Tech choices
-
-- **Effect 4.0 RC** (`effect@4.0.0-rc.108`) + `@effect/platform-node` RC.
-- **Vitest 4.1.10** (via Vite+) with `@effect/vitest` for `it.effect` / `it.live`.
-- `commander` for argv parsing (effect's own CLI framework is `effect/unstable/cli`
-  and still in flux in 4.0, so a stable parser is used here).
+See [AGENTS.md](AGENTS.md) for the repository layout, architecture notes, and
+the exact install/build/test/check commands.
 
 ---
 
