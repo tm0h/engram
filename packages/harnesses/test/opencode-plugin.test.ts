@@ -36,7 +36,10 @@ const mkProject = (): string => {
 interface AnyTool {
   description: string;
   args: Record<string, unknown>;
-  execute: (args: unknown) => Promise<{
+  execute: (
+    args: unknown,
+    context: { directory: string },
+  ) => Promise<{
     title?: string;
     output: string;
     metadata?: Record<string, unknown>;
@@ -49,6 +52,9 @@ const loadTools = async (): Promise<Record<string, AnyTool>> => {
   };
   return hooks.tool;
 };
+
+const execute = (tool: AnyTool, args: unknown, directory = process.cwd()) =>
+  tool.execute(args, { directory });
 
 interface ToolEnv {
   origCwd: string;
@@ -126,16 +132,31 @@ describe("engram opencode plugin / tool execution", () => {
     seedEntry(env.tmp, "0001", "Use pnpm catalogs", "decision");
     const tools = await loadTools();
 
-    const res = await tools.engram_context.execute({});
+    const res = await execute(tools.engram_context, {});
     expect(res.output).toContain("Use pnpm catalogs");
     expect(res.metadata).toMatchObject({ total: 1, isError: false });
+  });
+
+  it("resolves project scope from the tool context directory, not process.cwd()", async () => {
+    seedEntry(env.tmp, "0001", "Context workspace entry", "decision");
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), "engram-oc-other-"));
+    process.chdir(other);
+    try {
+      const tools = await loadTools();
+      const res = await execute(tools.engram_context, { scope: "project" }, env.tmp);
+      expect(res.output).toContain("Context workspace entry");
+      expect(res.metadata).toMatchObject({ total: 1, isError: false });
+    } finally {
+      process.chdir(env.tmp);
+      fs.rmSync(other, { recursive: true, force: true });
+    }
   });
 
   it("engram_search finds entries by keyword", async () => {
     seedEntry(env.tmp, "0001", "Auth uses JWT");
     const tools = await loadTools();
 
-    const res = await tools.engram_search.execute({ query: "auth" });
+    const res = await execute(tools.engram_search, { query: "auth" });
     expect(res.output).toContain("Auth uses JWT");
     expect(res.metadata).toMatchObject({ total: 1, isError: false });
   });
@@ -143,7 +164,7 @@ describe("engram opencode plugin / tool execution", () => {
   it("engram_add writes, then engram_context lists the new entry", async () => {
     const tools = await loadTools();
 
-    const res = await tools.engram_add.execute({
+    const res = await execute(tools.engram_add, {
       title: "Chose Vitest over Jest",
       body: "native ESM support",
       type: "decision",
@@ -152,17 +173,17 @@ describe("engram opencode plugin / tool execution", () => {
     expect(res.metadata?.isError).toBe(false);
     expect(fs.existsSync(res.metadata?.path as string)).toBe(true);
 
-    const digest = await tools.engram_context.execute({});
+    const digest = await execute(tools.engram_context, {});
     expect(digest.output).toContain("Chose Vitest over Jest");
   });
 
   it("engram_show slices long bodies and names the next call", async () => {
     const tools = await loadTools();
 
-    const added = await tools.engram_add.execute({ title: "Long", body: "x".repeat(5000) });
+    const added = await execute(tools.engram_add, { title: "Long", body: "x".repeat(5000) });
     const id = added.metadata?.id as string;
 
-    const page = await tools.engram_show.execute({ id, limit: 100 });
+    const page = await execute(tools.engram_show, { id, limit: 100 });
     expect(page.metadata?.isError).toBe(false);
     expect(page.output).toContain("engram_show(");
     expect(page.metadata?.nextOffset).toBeGreaterThan(0);
@@ -171,7 +192,7 @@ describe("engram opencode plugin / tool execution", () => {
   it("engram_show on an unknown id sets metadata.isError", async () => {
     const tools = await loadTools();
 
-    const res = await tools.engram_show.execute({ id: "9999" });
+    const res = await execute(tools.engram_show, { id: "9999" });
     expect(res.metadata?.isError).toBe(true);
     expect(res.output).toContain("9999");
   });
@@ -181,7 +202,7 @@ describe("engram opencode plugin / tool execution", () => {
     process.chdir(empty);
     try {
       const tools = await loadTools();
-      const res = await tools.engram_context.execute({});
+      const res = await execute(tools.engram_context, {});
       expect(res.output).toContain("personal scope only");
       expect(res.metadata?.personalOnly).toBe(true);
     } finally {

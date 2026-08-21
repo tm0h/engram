@@ -15,7 +15,7 @@ import {
   searchOp,
   showOp,
 } from "../shared/ops.js";
-import { runOp } from "../shared/run.js";
+import { runOpAtDirectory } from "../shared/run.js";
 import type { ScopeFilter } from "../shared/types.js";
 import { toOpencodeResult } from "./result.js";
 
@@ -23,6 +23,10 @@ const scopeFilter = (description: string) =>
   z.enum(["project", "personal", "both"]).optional().describe(description);
 
 const engramTypes = ENGRAM_TYPES as [EngramType, ...EngramType[]];
+
+interface OpenCodeToolContext {
+  readonly directory: string;
+}
 
 export const engramContextTool = {
   description:
@@ -43,8 +47,14 @@ export const engramContextTool = {
       .describe(`Max entries per page. Default ${DEFAULT_CONTEXT_LIMIT}.`),
     offset: z.number().int().min(0).optional().describe("0-based page offset for pagination."),
   },
-  async execute(args: { scope?: ScopeFilter; limit?: number; offset?: number }) {
-    return toOpencodeResult("Engram Context", await runOp(contextDigest(args)));
+  async execute(
+    args: { scope?: ScopeFilter; limit?: number; offset?: number },
+    context: OpenCodeToolContext,
+  ) {
+    return toOpencodeResult(
+      "Engram Context",
+      await runOpAtDirectory(context.directory, contextDigest(args)),
+    );
   },
 };
 
@@ -65,8 +75,14 @@ export const engramSearchTool = {
       .describe(`Max matches per page. Default ${DEFAULT_SEARCH_LIMIT}.`),
     offset: z.number().int().min(0).optional().describe("0-based page offset for pagination."),
   },
-  async execute(args: { query: string; scope?: ScopeFilter; limit?: number; offset?: number }) {
-    return toOpencodeResult("Engram Search", await runOp(searchOp(args)));
+  async execute(
+    args: { query: string; scope?: ScopeFilter; limit?: number; offset?: number },
+    context: OpenCodeToolContext,
+  ) {
+    return toOpencodeResult(
+      "Engram Search",
+      await runOpAtDirectory(context.directory, searchOp(args)),
+    );
   },
 };
 
@@ -84,13 +100,16 @@ export const engramShowTool = {
     offset: z.number().int().min(0).optional().describe("0-based char offset into the body."),
     limit: z.number().int().min(1).optional().describe("Max body chars to return."),
   },
-  async execute(args: {
-    id: string;
-    scope?: "project" | "personal";
-    offset?: number;
-    limit?: number;
-  }) {
-    return toOpencodeResult("Engram Show", await runOp(showOp(args)));
+  async execute(
+    args: {
+      id: string;
+      scope?: "project" | "personal";
+      offset?: number;
+      limit?: number;
+    },
+    context: OpenCodeToolContext,
+  ) {
+    return toOpencodeResult("Engram Show", await runOpAtDirectory(context.directory, showOp(args)));
   },
 };
 
@@ -115,14 +134,17 @@ export const engramAddTool = {
     tags: z.array(z.string()).optional().describe('Searchable tags, e.g. ["auth", "deps"].'),
     pinned: z.boolean().optional().describe("Pin to the top of the digest for high-value entries."),
   },
-  async execute(args: {
-    title: string;
-    body: string;
-    type?: EngramType;
-    scope?: "project" | "personal";
-    tags?: string[];
-    pinned?: boolean;
-  }) {
-    return toOpencodeResult("Engram Add", await runOp(addOp(args)));
+  async execute(
+    args: {
+      title: string;
+      body: string;
+      type?: EngramType;
+      scope?: "project" | "personal";
+      tags?: string[];
+      pinned?: boolean;
+    },
+    context: OpenCodeToolContext,
+  ) {
+    return toOpencodeResult("Engram Add", await runOpAtDirectory(context.directory, addOp(args)));
   },
 };

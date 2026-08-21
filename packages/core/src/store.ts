@@ -135,202 +135,219 @@ const isAlreadyExists = (e: unknown): boolean => {
 };
 
 /** Build the live EngramStore from the platform FileSystem + Path services. */
-export const EngramStoreLive: Layer.Layer<EngramStore, never, FileSystem | Path> = Layer.effect(
-  EngramStore,
-  Effect.gen(function* () {
-    const fs = yield* FileSystem;
-    const path = yield* Path;
+const makeEngramStoreLive = (
+  cwd: () => string,
+): Layer.Layer<EngramStore, never, FileSystem | Path> =>
+  Layer.effect(
+    EngramStore,
+    Effect.gen(function* () {
+      const fs = yield* FileSystem;
+      const path = yield* Path;
 
-    const parseFile = (file: string): Effect.Effect<Engram, FrontmatterParseError> =>
-      Effect.gen(function* () {
-        const raw = yield* fs
-          .readFileString(file)
-          .pipe(Effect.mapError(() => new FrontmatterParseError({ file, message: "read failed" })));
-        const parsed = yield* Result.match(parseFrontmatter(raw), {
-          onSuccess: (value) => Effect.succeed(value),
-          onFailure: (message) => Effect.fail(new FrontmatterParseError({ file, message })),
+      const parseFile = (file: string): Effect.Effect<Engram, FrontmatterParseError> =>
+        Effect.gen(function* () {
+          const raw = yield* fs
+            .readFileString(file)
+            .pipe(
+              Effect.mapError(() => new FrontmatterParseError({ file, message: "read failed" })),
+            );
+          const parsed = yield* Result.match(parseFrontmatter(raw), {
+            onSuccess: (value) => Effect.succeed(value),
+            onFailure: (message) => Effect.fail(new FrontmatterParseError({ file, message })),
+          });
+          return yield* Effect.try({
+            try: () =>
+              toEngram(
+                Schema.decodeSync(FrontmatterSchema)(parsed.data as never),
+                parsed.content.trim(),
+                file,
+              ),
+            catch: (e) => new FrontmatterParseError({ file, message: String(e) }),
+          });
         });
-        return yield* Effect.try({
-          try: () =>
-            toEngram(
-              Schema.decodeSync(FrontmatterSchema)(parsed.data as never),
-              parsed.content.trim(),
-              file,
-            ),
-          catch: (e) => new FrontmatterParseError({ file, message: String(e) }),
-        });
-      });
 
-    const projectRoot: EngramStoreShape["projectRoot"] = () =>
-      Effect.flatMap(findProjectRoot(fs, path, process.cwd()), (root) =>
-        Effect.succeed(root === null ? Option.none() : Option.some(root)),
-      );
+      const projectRoot: EngramStoreShape["projectRoot"] = () =>
+        Effect.flatMap(findProjectRoot(fs, path, cwd()), (root) =>
+          Effect.succeed(root === null ? Option.none() : Option.some(root)),
+        );
 
-    const dirForScope: EngramStoreShape["dirForScope"] = (scope) =>
-      Effect.gen(function* () {
-        if (scope === "personal") return globalEngramsDir();
-        const root = yield* findProjectRoot(fs, path, process.cwd());
-        if (root === null) {
-          return yield* Effect.fail(new ProjectNotInitializedError({ cwd: process.cwd() }));
-        }
-        return projectEngramsDir(root);
-      });
-
-    const list: EngramStoreShape["list"] = (scope) =>
-      Effect.gen(function* () {
-        const dir = yield* dirForScope(scope);
-        const exists = yield* fs.exists(dir);
-        if (!exists) return [];
-        const entries = yield* fs.readDirectory(dir);
-        const files = entries
-          .filter((f) => f.endsWith(".md"))
-          .sort()
-          .map((f) => path.join(dir, f));
-        const parsed = yield* Effect.forEach(files, (f) => parseFile(f).pipe(Effect.option));
-        return parsed
-          .flatMap((o) => Option.match(o, { onNone: () => [], onSome: (m) => [m] }))
-          .sort(chronological);
-      });
-
-    const get: EngramStoreShape["get"] = (scope, id) =>
-      Effect.gen(function* () {
-        const all = yield* list(scope);
-        const exact = all.filter((m) => m.id === id);
-        if (exact.length === 1) return exact[0];
-        if (exact.length > 1) {
-          // Two files claim the same id (e.g. hand-written with a guessed id) —
-          // refuse to pick one silently.
-          return yield* Effect.fail(new DuplicateIdError({ id, files: exact.map((m) => m.path) }));
-        }
-        const matches = all.filter((m) => m.id.startsWith(id));
-        if (matches.length === 1) return matches[0];
-        if (matches.length > 1) {
-          return yield* Effect.fail(
-            new AmbiguousIdError({
-              id,
-              matches: matches.map((m) => m.id),
-            }),
-          );
-        }
-        return yield* Effect.fail(new EngramNotFoundError({ id, scope }));
-      });
-
-    const add: EngramStoreShape["add"] = (scope, input) =>
-      Effect.gen(function* () {
-        const dir = yield* dirForScope(scope);
-        yield* fs.makeDirectory(dir, { recursive: true });
-        const now = nowISO();
-        const title = input.title.trim();
-        const slug = slugify(title);
-
-        /**
-         * Ids are globally unique by construction (see `newId`), so no scan
-         * or shared counter is needed — different machines, sessions, and CI
-         * runs can record concurrently and merged branches can never collide
-         * on id. The exclusive `wx` write is belt-and-braces: it never
-         * overwrites an existing file and retries with a fresh id on the
-         * (astronomically unlikely) exact-filename race.
-         */
-        const writeWith = (id: string): Effect.Effect<Engram, StoreError> => {
-          const file = path.join(dir, `${id}-${slug}.md`);
-          const engram: Engram = {
-            id,
-            title,
-            type: input.type,
-            tags: [...input.tags],
-            scope,
-            created: now,
-            updated: now,
-            author: input.author,
-            pinned: input.pinned,
-            body: input.body.trim(),
-            path: file,
-          };
-          return Effect.as(fs.writeFileString(file, serialize(engram), { flag: "wx" }), engram);
-        };
-
-        const attempt = (tries: number): Effect.Effect<Engram, StoreError> =>
-          Effect.flatMap(Effect.result(writeWith(newId())), (r) =>
-            Result.isSuccess(r)
-              ? Effect.succeed(r.success)
-              : tries <= 0 || !isAlreadyExists(r.failure)
-                ? Effect.fail(r.failure)
-                : attempt(tries - 1),
-          );
-
-        return yield* attempt(5);
-      });
-
-    const update: EngramStoreShape["update"] = (scope, id, patch) =>
-      Effect.gen(function* () {
-        const mem = yield* get(scope, id);
-        const next: Engram = {
-          ...mem,
-          title: patch.title !== undefined ? patch.title.trim() : mem.title,
-          type: patch.type ?? mem.type,
-          tags: patch.tags !== undefined ? [...patch.tags] : mem.tags,
-          body: patch.body !== undefined ? patch.body.trim() : mem.body,
-          pinned: patch.pinned ?? mem.pinned,
-          author: patch.author !== undefined ? patch.author : mem.author,
-          updated: nowISO(),
-        };
-        const dir = yield* dirForScope(scope);
-        const file = path.join(dir, `${next.id}-${slugify(next.title)}.md`);
-        yield* fs.writeFileString(file, serialize(next));
-        if (file !== mem.path) yield* fs.remove(mem.path);
-        return { ...next, path: file };
-      });
-
-    const remove: EngramStoreShape["remove"] = (scope, id) =>
-      Effect.gen(function* () {
-        const mem = yield* get(scope, id);
-        yield* fs.remove(mem.path);
-        return mem;
-      });
-
-    const dedupe: EngramStoreShape["dedupe"] = (scope) =>
-      Effect.gen(function* () {
-        const dir = yield* dirForScope(scope);
-        const all = yield* list(scope);
-        const byId = new Map<string, Engram[]>();
-        for (const m of all) byId.set(m.id, [...(byId.get(m.id) ?? []), m]);
-        const renumbered: Array<{ from: string; to: string; title: string }> = [];
-        for (const group of byId.values()) {
-          if (group.length < 2) continue;
-          // The oldest record keeps the disputed id; equal `created` values
-          // fall back to the alphabetically-first path. Both keys come from
-          // file content and file names, so the outcome is deterministic
-          // across machines. The displaced records get fresh globally-unique
-          // ids — note that a repair should be merged before another clone
-          // repairs the same duplicate: two independent repairs mint
-          // different ids and the merge would keep both copies.
-          const [, ...rest] = [...group].sort(
-            (a, b) => a.created.localeCompare(b.created) || a.path.localeCompare(b.path),
-          );
-          for (const m of rest) {
-            // Fresh globally-unique id (see the note above on convergent
-            // repairs for why the winner rule alone is not enough).
-            const id = newId();
-            const file = path.join(dir, `${id}-${slugify(m.title)}.md`);
-            yield* fs.writeFileString(file, serialize({ ...m, id, updated: nowISO() }), {
-              flag: "wx",
-            });
-            yield* fs.remove(m.path);
-            renumbered.push({ from: m.id, to: id, title: m.title });
+      const dirForScope: EngramStoreShape["dirForScope"] = (scope) =>
+        Effect.gen(function* () {
+          if (scope === "personal") return globalEngramsDir();
+          const start = cwd();
+          const root = yield* findProjectRoot(fs, path, start);
+          if (root === null) {
+            return yield* Effect.fail(new ProjectNotInitializedError({ cwd: start }));
           }
-        }
-        return { renumbered };
-      });
+          return projectEngramsDir(root);
+        });
 
-    return {
-      projectRoot,
-      dirForScope,
-      list,
-      get,
-      add,
-      update,
-      remove,
-      dedupe,
-    } satisfies EngramStoreShape;
-  }),
-);
+      const list: EngramStoreShape["list"] = (scope) =>
+        Effect.gen(function* () {
+          const dir = yield* dirForScope(scope);
+          const exists = yield* fs.exists(dir);
+          if (!exists) return [];
+          const entries = yield* fs.readDirectory(dir);
+          const files = entries
+            .filter((f) => f.endsWith(".md"))
+            .sort()
+            .map((f) => path.join(dir, f));
+          const parsed = yield* Effect.forEach(files, (f) => parseFile(f).pipe(Effect.option));
+          return parsed
+            .flatMap((o) => Option.match(o, { onNone: () => [], onSome: (m) => [m] }))
+            .sort(chronological);
+        });
+
+      const get: EngramStoreShape["get"] = (scope, id) =>
+        Effect.gen(function* () {
+          const all = yield* list(scope);
+          const exact = all.filter((m) => m.id === id);
+          if (exact.length === 1) return exact[0];
+          if (exact.length > 1) {
+            // Two files claim the same id (e.g. hand-written with a guessed id) —
+            // refuse to pick one silently.
+            return yield* Effect.fail(
+              new DuplicateIdError({ id, files: exact.map((m) => m.path) }),
+            );
+          }
+          const matches = all.filter((m) => m.id.startsWith(id));
+          if (matches.length === 1) return matches[0];
+          if (matches.length > 1) {
+            return yield* Effect.fail(
+              new AmbiguousIdError({
+                id,
+                matches: matches.map((m) => m.id),
+              }),
+            );
+          }
+          return yield* Effect.fail(new EngramNotFoundError({ id, scope }));
+        });
+
+      const add: EngramStoreShape["add"] = (scope, input) =>
+        Effect.gen(function* () {
+          const dir = yield* dirForScope(scope);
+          yield* fs.makeDirectory(dir, { recursive: true });
+          const now = nowISO();
+          const title = input.title.trim();
+          const slug = slugify(title);
+
+          /**
+           * Ids are globally unique by construction (see `newId`), so no scan
+           * or shared counter is needed — different machines, sessions, and CI
+           * runs can record concurrently and merged branches can never collide
+           * on id. The exclusive `wx` write is belt-and-braces: it never
+           * overwrites an existing file and retries with a fresh id on the
+           * (astronomically unlikely) exact-filename race.
+           */
+          const writeWith = (id: string): Effect.Effect<Engram, StoreError> => {
+            const file = path.join(dir, `${id}-${slug}.md`);
+            const engram: Engram = {
+              id,
+              title,
+              type: input.type,
+              tags: [...input.tags],
+              scope,
+              created: now,
+              updated: now,
+              author: input.author,
+              pinned: input.pinned,
+              body: input.body.trim(),
+              path: file,
+            };
+            return Effect.as(fs.writeFileString(file, serialize(engram), { flag: "wx" }), engram);
+          };
+
+          const attempt = (tries: number): Effect.Effect<Engram, StoreError> =>
+            Effect.flatMap(Effect.result(writeWith(newId())), (r) =>
+              Result.isSuccess(r)
+                ? Effect.succeed(r.success)
+                : tries <= 0 || !isAlreadyExists(r.failure)
+                  ? Effect.fail(r.failure)
+                  : attempt(tries - 1),
+            );
+
+          return yield* attempt(5);
+        });
+
+      const update: EngramStoreShape["update"] = (scope, id, patch) =>
+        Effect.gen(function* () {
+          const mem = yield* get(scope, id);
+          const next: Engram = {
+            ...mem,
+            title: patch.title !== undefined ? patch.title.trim() : mem.title,
+            type: patch.type ?? mem.type,
+            tags: patch.tags !== undefined ? [...patch.tags] : mem.tags,
+            body: patch.body !== undefined ? patch.body.trim() : mem.body,
+            pinned: patch.pinned ?? mem.pinned,
+            author: patch.author !== undefined ? patch.author : mem.author,
+            updated: nowISO(),
+          };
+          const dir = yield* dirForScope(scope);
+          const file = path.join(dir, `${next.id}-${slugify(next.title)}.md`);
+          yield* fs.writeFileString(file, serialize(next));
+          if (file !== mem.path) yield* fs.remove(mem.path);
+          return { ...next, path: file };
+        });
+
+      const remove: EngramStoreShape["remove"] = (scope, id) =>
+        Effect.gen(function* () {
+          const mem = yield* get(scope, id);
+          yield* fs.remove(mem.path);
+          return mem;
+        });
+
+      const dedupe: EngramStoreShape["dedupe"] = (scope) =>
+        Effect.gen(function* () {
+          const dir = yield* dirForScope(scope);
+          const all = yield* list(scope);
+          const byId = new Map<string, Engram[]>();
+          for (const m of all) byId.set(m.id, [...(byId.get(m.id) ?? []), m]);
+          const renumbered: Array<{ from: string; to: string; title: string }> = [];
+          for (const group of byId.values()) {
+            if (group.length < 2) continue;
+            // The oldest record keeps the disputed id; equal `created` values
+            // fall back to the alphabetically-first path. Both keys come from
+            // file content and file names, so the outcome is deterministic
+            // across machines. The displaced records get fresh globally-unique
+            // ids — note that a repair should be merged before another clone
+            // repairs the same duplicate: two independent repairs mint
+            // different ids and the merge would keep both copies.
+            const [, ...rest] = [...group].sort(
+              (a, b) => a.created.localeCompare(b.created) || a.path.localeCompare(b.path),
+            );
+            for (const m of rest) {
+              // Fresh globally-unique id (see the note above on convergent
+              // repairs for why the winner rule alone is not enough).
+              const id = newId();
+              const file = path.join(dir, `${id}-${slugify(m.title)}.md`);
+              yield* fs.writeFileString(file, serialize({ ...m, id, updated: nowISO() }), {
+                flag: "wx",
+              });
+              yield* fs.remove(m.path);
+              renumbered.push({ from: m.id, to: id, title: m.title });
+            }
+          }
+          return { renumbered };
+        });
+
+      return {
+        projectRoot,
+        dirForScope,
+        list,
+        get,
+        add,
+        update,
+        remove,
+        dedupe,
+      } satisfies EngramStoreShape;
+    }),
+  );
+
+/** Store layer pinned to a specific workspace directory. */
+export const EngramStoreLiveAt = (
+  directory: string,
+): Layer.Layer<EngramStore, never, FileSystem | Path> => makeEngramStoreLive(() => directory);
+
+/** Default store layer; resolves from the process cwd at operation time. */
+export const EngramStoreLive: Layer.Layer<EngramStore, never, FileSystem | Path> =
+  makeEngramStoreLive(() => process.cwd());
