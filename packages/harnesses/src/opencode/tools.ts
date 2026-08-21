@@ -108,7 +108,10 @@ export const engramAddTool = {
       .enum(engramTypes)
       .optional()
       .describe(`Entry kind. Default: the project config defaultType ("note" unless configured).`),
-    scope: z.enum(["project", "personal"]).optional().describe('Default "project" (team-shared, git-committed).'),
+    scope: z
+      .enum(["project", "personal"])
+      .optional()
+      .describe('Default "project" (team-shared, git-committed).'),
     tags: z.array(z.string()).optional().describe('Searchable tags, e.g. ["auth", "deps"].'),
     pinned: z.boolean().optional().describe("Pin to the top of the digest for high-value entries."),
   },

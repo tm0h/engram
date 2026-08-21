@@ -5,11 +5,7 @@ import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
 import type { OpResult } from "./types.js";
 
-export type OpEffect = Effect.Effect<
-  OpResult,
-  never,
-  EngramStore | ConfigRepo | FileSystem | Path
->;
+export type OpEffect = Effect.Effect<OpResult, never, EngramStore | ConfigRepo | FileSystem | Path>;
 
 export const runOp = (eff: OpEffect): Promise<OpResult> =>
   Effect.runPromise(Effect.provide(eff, MainLive));

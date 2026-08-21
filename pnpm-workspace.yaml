@@ -31,5 +31,5 @@ allowBuilds:
   protobufjs: false
 
 minimumReleaseAgeExclude:
-  - '@opencode-ai/plugin@1.18.21'
-  - '@opencode-ai/sdk@1.18.21'
+  - "@opencode-ai/plugin@1.18.21"
+  - "@opencode-ai/sdk@1.18.21"

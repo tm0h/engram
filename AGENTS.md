@@ -106,6 +106,10 @@ already be in the published tarball.
   - `src/pi/` — Pi extension: typebox tool schemas, `/engram` dispatcher,
     factory; bundled into the CLI tarball as `dist/pi-extension.js` via the
     re-export entry `packages/cli/src/pi-extension.ts`
+  - `src/opencode/` — opencode plugin: zod tool schemas over the shared ops;
+    bundled into the CLI tarball as `dist/opencode-plugin.js` (loaded via the
+    package's `exports["./server"]` entry) through the re-export
+    `packages/cli/src/opencode-plugin.ts`
   - `claude/` — Claude Code plugin root (manifest + skill + `bin/engram`
     shim); the repo root `.claude-plugin/marketplace.json` makes this repo a
     Claude marketplace
