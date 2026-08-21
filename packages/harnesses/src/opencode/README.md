@@ -17,15 +17,9 @@ Add `engram-cli` to the `plugin` array in your OpenCode configuration:
 }
 ```
 
-OpenCode installs npm plugins automatically. To keep a project on a tested
-release, pin the package version:
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugin": ["engram-cli@0.4.0"]
-}
-```
+OpenCode installs npm plugins automatically. After installing a release that
+contains the OpenCode plugin, you can keep a project on that tested release by
+adding its published version to the package spec.
 
 Memory scope is independent of where the plugin is configured: the tools read
 and write the same scopes as the CLI (`project` inside an initialized repo,
