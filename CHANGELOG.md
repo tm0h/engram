@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-08-19
+
+### Added
+
+- **Pi coding-agent extension, bundled in the `engram-cli` tarball.**
+  `pi install npm:engram-cli` now gives agents first-class engram tools —
+  `engram_context` (paginated digest, decisions & pinned first),
+  `engram_search`, `engram_show` (char-sliced bodies), and `engram_add` —
+  plus a `/engram` slash command (context / search / show / add / init /
+  help) and an `engram` skill. Tools run in-process over `@engram/core`
+  (no CLI on PATH needed); results are plain text with next-call footers
+  and an ~8 kB backstop. New private `@engram/harnesses` workspace package
+  holds a shared operations layer (substrate for future MCP/JSON surfaces)
+  plus the Pi adapters. ([#10])
+- **Claude Code plugin.** The repo itself is now a plugin marketplace:
+  `/plugin marketplace add tm0h/engram`, then `/plugin install engram@engram`
+  brings the `engram` skill and a `bin/engram` launcher (uses an installed
+  `engram` CLI or falls back to `npx`). ([#10])
+
 ## [0.2.0] - 2026-08-17
 
 ### Changed
@@ -38,25 +57,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   listing the offending files instead of silently picking one.
 - `engram context` surfaces a duplicate-id warning at the top of the digest
   so agents detect the problem at session start.
-
-## [0.3.0] - 2026-08-19
-
-### Added
-
-- **Pi coding-agent extension, bundled in the `engram-cli` tarball.**
-  `pi install npm:engram-cli` now gives agents first-class engram tools —
-  `engram_context` (paginated digest, decisions & pinned first),
-  `engram_search`, `engram_show` (char-sliced bodies), and `engram_add` —
-  plus a `/engram` slash command (context / search / show / add / init /
-  help) and an `engram` skill. Tools run in-process over `@engram/core`
-  (no CLI on PATH needed); results are plain text with next-call footers
-  and an ~8 kB backstop. New private `@engram/harnesses` workspace package
-  holds a shared operations layer (substrate for future MCP/JSON surfaces)
-  plus the Pi adapters. ([#10])
-- **Claude Code plugin.** The repo itself is now a plugin marketplace:
-  `/plugin marketplace add tm0h/engram`, then `/plugin install engram@engram`
-  brings the `engram` skill and a `bin/engram` launcher (uses an installed
-  `engram` CLI or falls back to `npx`). ([#10])
 
 ## [0.1.1] - 2026-08-16
 
