@@ -148,7 +148,7 @@ project rule / `.cursorrules` / `AGENTS.md`). The snippet tells the agent to:
 ## Pi extension
 
 The published `engram-cli` npm package doubles as a
-[Pi](https://github.com/earendil-works/pi-coding-agent) package. Installing it
+[Pi](https://github.com/earendil-works/pi) package. Installing it
 gives the agent native engram tools (`engram_context`, `engram_search`,
 `engram_show`, `engram_add`) with typed, validated parameters, plus an
 `/engram` command and an `engram` skill. No CLI-on-PATH shelling out, no

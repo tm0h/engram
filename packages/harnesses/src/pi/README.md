@@ -1,7 +1,7 @@
 # engram Pi extension
 
 The published [`engram-cli`](https://www.npmjs.com/package/engram-cli) npm
-package doubles as a [Pi](https://github.com/earendil-works/pi-coding-agent)
+package doubles as a [Pi](https://github.com/earendil-works/pi)
 package: installing it gives the agent native engram tools with typed,
 validated parameters. No CLI-on-PATH shelling out, no prompt pasting.
 
