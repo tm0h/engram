@@ -181,9 +181,9 @@ agent the native `engram_context`, `engram_search`, `engram_show`, and
 }
 ```
 
-OpenCode installs the package automatically and runs the tools in-process.
-Configuration details, version pinning, scope behavior, and the full tool
-reference: see
+OpenCode installs the npm package and its dependencies automatically with Bun
+at startup, then runs the tools in-process. Configuration locations, version
+pinning, scope behavior, and the full tool reference: see
 [packages/harnesses/src/opencode/README.md](packages/harnesses/src/opencode/README.md).
 
 ---

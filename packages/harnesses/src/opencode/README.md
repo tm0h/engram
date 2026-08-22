@@ -8,7 +8,11 @@ shelling out and no prompt pasting.
 
 ## Install
 
-Add `engram-cli` to the `plugin` array in your OpenCode configuration:
+Add `engram-cli` to the `plugin` array in one of OpenCode's supported config
+files:
+
+- `opencode.json` in the project root for project-specific installation.
+- `~/.config/opencode/opencode.json` to make the plugin available globally.
 
 ```json
 {
@@ -17,9 +21,11 @@ Add `engram-cli` to the `plugin` array in your OpenCode configuration:
 }
 ```
 
-OpenCode installs npm plugins automatically. After installing a release that
-contains the OpenCode plugin, you can keep a project on that tested release by
-adding its published version to the package spec.
+OpenCode installs npm plugins and their dependencies automatically with Bun at
+startup and caches them under `~/.cache/opencode/node_modules/`; no separate
+`npm install` command is required. After installing a release that contains the
+OpenCode plugin, you can keep a project on that tested release by adding its
+published version to the package spec.
 
 Memory scope is independent of where the plugin is configured: the tools read
 and write the same scopes as the CLI (`project` inside an initialized repo,
@@ -28,12 +34,12 @@ OpenCode session directory, so separate workspaces do not share project scope.
 
 ## What you get
 
-| Tool             | What it does                                                                                                      |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `engram_context` | Digest one-liners (id · type · title · tags), decisions and pinned entries first, with `limit`/`offset` paging.   |
-| `engram_search`  | Relevance search (tags > title > type > body), paginated.                                                         |
-| `engram_show`    | Full entry by id (unique prefixes work); long bodies are character-sliced with a next-call footer.                |
-| `engram_add`     | Record an entry (type defaults from project config; `scope` defaults to `project` in a repo, `personal` outside). |
+| Tool             | What it does                                                                                                    |
+| ---------------- | --------------------------------------------------------------------------------------------------------------- |
+| `engram_context` | Digest one-liners (id · type · title · tags), decisions and pinned entries first, with `limit`/`offset` paging. |
+| `engram_search`  | Relevance search (tags > title > type > body), paginated.                                                       |
+| `engram_show`    | Full entry by id (unique prefixes work); long bodies are character-sliced with a next-call footer.              |
+| `engram_add`     | Record an entry (type defaults from project config; `scope` defaults to `project`, including outside a repo).   |
 
 ## Behavior notes
 
