@@ -83,6 +83,17 @@ describe("engram-cli packaging (pi extension)", () => {
     const bundle = readFileSync(join(pkgRoot, "dist", "pi-extension.js"), "utf8");
     expect(bundle).toMatch(/from\s+["']typebox["']/);
 
+    // opencode plugin ships and is declared as the npm-plugin server entry
+    // (opencode's loader reads exports["./server"] before main)
+    expect(existsSync(join(pkgRoot, "dist", "opencode-plugin.js"))).toBe(true);
+    expect(manifest.exports).toEqual({
+      ".": "./dist/index.js",
+      "./server": "./dist/opencode-plugin.js",
+    });
+    expect(manifest.dependencies?.zod).toMatch(/^\^4\./);
+    const ocBundle = readFileSync(join(pkgRoot, "dist", "opencode-plugin.js"), "utf8");
+    expect(ocBundle).toMatch(/from\s+["']zod["']/);
+
     // the shipped CLI reports the manifest version (guards the five-place
     // version sync; this catches a missed .version() bump)
     const cliManifest = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8"));
