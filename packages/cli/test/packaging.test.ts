@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, afterAll } from "vite-plus/test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -147,6 +147,65 @@ describe("engram-cli packaging (pi extension)", () => {
       const out = { system: ["base"] };
       await hooks["experimental.chat.system.transform"]({ sessionID: "s1" }, out);
       if (out.system[0] !== "base") throw new Error("empty store must not inject: " + JSON.stringify(out));
+      console.log("OK");
+    `;
+    const res = execFileSync(process.execPath, ["--input-type=module", "-e", script], {
+      cwd: installed,
+      encoding: "utf8",
+    }).trim();
+    expect(res).toBe("OK");
+  });
+
+  it("shipped pi extension imports and registers tools, command, and lifecycle hooks", (ctx) => {
+    if (!spawnOk) ctx.skip();
+
+    run(["--filter", "engram-cli", "build"], repoRoot);
+    const parsed = JSON.parse(run(["pack", "--json", "--pack-destination", tmp], pkgDir));
+    const filename = (Array.isArray(parsed) ? parsed[0].filename : parsed.filename) as string;
+    const tarball = join(tmp, basename(filename));
+
+    const installed = join(tmp, "pi-import-check");
+    mkdirSync(installed, { recursive: true });
+    run(["install", "--ignore-scripts", tarball], installed);
+
+    // The pi host provides @earendil-works/pi-ai to extensions at runtime; the
+    // tarball deliberately does not depend on it. Stub it the way the host
+    // would so the raw import below can resolve.
+    const hostStub = join(installed, "node_modules", "@earendil-works", "pi-ai");
+    mkdirSync(hostStub, { recursive: true });
+    writeFileSync(
+      join(hostStub, "package.json"),
+      JSON.stringify({ name: "@earendil-works/pi-ai", version: "0.0.0-stub", type: "module" }),
+    );
+    writeFileSync(
+      join(hostStub, "index.js"),
+      "export const StringEnum = (values) => ({ enum: values });\n",
+    );
+
+    // Import the packed pi-extension bundle exactly like pi loads it and drive
+    // the factory: tools, the /engram command, and the auto-context lifecycle
+    // handlers must all register against the extension API surface.
+    const extUrl = pathToFileURL(
+      join(installed, "node_modules", "engram-cli", "dist", "pi-extension.js"),
+    ).href;
+    const script = `
+      const mod = await import(${JSON.stringify(extUrl)});
+      if (typeof mod.default !== "function") throw new Error("default export is not a function");
+      const tools = [];
+      const commands = [];
+      const handlers = new Map();
+      mod.default({
+        registerTool: (t) => tools.push(t.name),
+        registerCommand: (name) => commands.push(name),
+        on: (name) => handlers.set(name, true),
+      });
+      const expectedTools = ["engram_context", "engram_search", "engram_show", "engram_add"];
+      if (JSON.stringify(tools) !== JSON.stringify(expectedTools))
+        throw new Error("unexpected tools: " + tools.join(","));
+      if (JSON.stringify(commands) !== JSON.stringify(["engram"]))
+        throw new Error("unexpected commands: " + commands.join(","));
+      for (const h of ["session_start", "before_agent_start"])
+        if (!handlers.has(h)) throw new Error("missing lifecycle handler: " + h);
       console.log("OK");
     `;
     const res = execFileSync(process.execPath, ["--input-type=module", "-e", script], {
