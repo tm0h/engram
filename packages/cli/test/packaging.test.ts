@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:f
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const pkgDir = resolve(new URL("..", import.meta.url).pathname);
 const repoRoot = resolve(pkgDir, "../..");
@@ -113,5 +114,45 @@ describe("engram-cli packaging (pi extension)", () => {
 
     run(["pack", "--dry-run", "--json"], pkgDir); // triggers prepack
     expect(existsSync(join(pkgDir, "skills", "engram", "SKILL.md"))).toBe(true);
+  });
+
+  it("shipped opencode plugin imports and registers tools + system transform", (ctx) => {
+    if (!spawnOk) ctx.skip();
+
+    run(["--filter", "engram-cli", "build"], repoRoot);
+    const parsed = JSON.parse(run(["pack", "--json", "--pack-destination", tmp], pkgDir));
+    const filename = (Array.isArray(parsed) ? parsed[0].filename : parsed.filename) as string;
+    const tarball = join(tmp, basename(filename));
+
+    const installed = join(tmp, "opencode-import-check");
+    mkdirSync(installed, { recursive: true });
+    run(["install", "--ignore-scripts", tarball], installed);
+
+    // Import the packed ./server entry exactly like opencode would and drive
+    // the plugin factory: tools + the experimental system transform must be
+    // present, and a transform over an empty store must be a no-op.
+    const pluginUrl = pathToFileURL(
+      join(installed, "node_modules", "engram-cli", "dist", "opencode-plugin.js"),
+    ).href;
+    const script = `
+      const mod = await import(${JSON.stringify(pluginUrl)});
+      if (typeof mod.default !== "function") throw new Error("default export is not a function");
+      const hooks = await mod.default({ directory: process.cwd() });
+      const tools = Object.keys(hooks.tool ?? {}).sort();
+      if (JSON.stringify(tools) !== JSON.stringify(["engram_add", "engram_context", "engram_search", "engram_show"]))
+        throw new Error("unexpected tool map: " + tools.join(","));
+      if (typeof hooks["experimental.chat.system.transform"] !== "function")
+        throw new Error("system transform missing");
+      if (typeof hooks.event !== "function") throw new Error("event hook missing");
+      const out = { system: ["base"] };
+      await hooks["experimental.chat.system.transform"]({ sessionID: "s1" }, out);
+      if (out.system[0] !== "base") throw new Error("empty store must not inject: " + JSON.stringify(out));
+      console.log("OK");
+    `;
+    const res = execFileSync(process.execPath, ["--input-type=module", "-e", script], {
+      cwd: installed,
+      encoding: "utf8",
+    }).trim();
+    expect(res).toBe("OK");
   });
 });
