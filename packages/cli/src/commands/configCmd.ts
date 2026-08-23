@@ -5,8 +5,9 @@ import { ConfigRepo } from "@engram/core";
 import { EngramStore } from "@engram/core";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
-import { ENGRAM_TYPES } from "@engram/core";
-import type { EngramType } from "@engram/core";
+import { ENGRAM_TYPES, AUTO_CONTEXT_SCOPES } from "@engram/core";
+import { DEFAULT_AUTO_CONTEXT_LIMIT, DEFAULT_AUTO_CONTEXT_SCOPE } from "@engram/core";
+import type { AutoContextScope, EngramType } from "@engram/core";
 import { ValidationError } from "@engram/core";
 import { findGitRoot } from "@engram/core";
 import { ensureGitignoreLine, removeGitignoreLine } from "@engram/core";
@@ -14,9 +15,6 @@ import { globalConfigPath, projectConfigPath } from "@engram/core";
 import { out } from "../io.js";
 
 const isProjectKey = (k: string): boolean => k === "tracked" || k === "defaultType";
-
-const AUTO_CONTEXT_SCOPES = ["project", "personal", "both"] as const;
-type AutoContextScopeValue = (typeof AUTO_CONTEXT_SCOPES)[number];
 
 const isAutoContextKey = (k: string): boolean =>
   k === "autoContext" || k === "autoContextScope" || k === "autoContextLimit";
@@ -36,8 +34,10 @@ export const configCommand = (action?: string, key?: string, value?: string) =>
       yield* out(
         `  autoContext:      ${g.autoContext === "off" ? chalk.yellow("off") : chalk.green("on")}`,
       );
-      yield* out(`  autoContextScope: ${chalk.cyan(g.autoContextScope ?? "project")}`);
-      yield* out(`  autoContextLimit: ${g.autoContextLimit ?? 25}`);
+      yield* out(
+        `  autoContextScope: ${chalk.cyan(g.autoContextScope ?? DEFAULT_AUTO_CONTEXT_SCOPE)}`,
+      );
+      yield* out(`  autoContextLimit: ${g.autoContextLimit ?? DEFAULT_AUTO_CONTEXT_LIMIT}`);
       if (Option.isSome(projectRootOpt)) {
         const p = yield* cfg.loadProject(projectRootOpt.value);
         yield* out("");
@@ -74,8 +74,10 @@ export const configCommand = (action?: string, key?: string, value?: string) =>
       if (key === "author") yield* out(g.author ?? "");
       else if (key === "editor") yield* out(g.editor ?? "");
       else if (key === "autoContext") yield* out(g.autoContext === "off" ? "off" : "on");
-      else if (key === "autoContextScope") yield* out(g.autoContextScope ?? "project");
-      else if (key === "autoContextLimit") yield* out(String(g.autoContextLimit ?? 25));
+      else if (key === "autoContextScope")
+        yield* out(g.autoContextScope ?? DEFAULT_AUTO_CONTEXT_SCOPE);
+      else if (key === "autoContextLimit")
+        yield* out(String(g.autoContextLimit ?? DEFAULT_AUTO_CONTEXT_LIMIT));
       else return yield* Effect.fail(new ValidationError({ message: `Unknown key "${key}".` }));
       return;
     }
@@ -154,7 +156,7 @@ export const configCommand = (action?: string, key?: string, value?: string) =>
         }
         updated = { ...g, autoContext: on ? "on" : "off" };
       } else if (key === "autoContextScope") {
-        const scope = value.toLowerCase() as AutoContextScopeValue;
+        const scope = value.toLowerCase() as AutoContextScope;
         if (!AUTO_CONTEXT_SCOPES.includes(scope)) {
           return yield* Effect.fail(
             new ValidationError({

@@ -102,6 +102,9 @@ export type AutoContextToggle = Schema.Schema.Type<typeof AutoContextToggleSchem
 export const AutoContextScopeSchema = Schema.Literals(["project", "personal", "both"]);
 export type AutoContextScope = Schema.Schema.Type<typeof AutoContextScopeSchema>;
 
+/** Valid `autoContextScope` values (mirrors the ENGRAM_TYPES pattern). */
+export const AUTO_CONTEXT_SCOPES: ReadonlyArray<AutoContextScope> = ["project", "personal", "both"];
+
 /** How many entries the automatic startup digest includes (global user setting). */
 export const AutoContextLimitSchema = Schema.Number.pipe(
   Schema.check(Schema.isInt()),
