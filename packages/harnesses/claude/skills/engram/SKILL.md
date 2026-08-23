@@ -13,8 +13,10 @@ enabled.
 
 ## Session flow
 
-1. **At the start of a session or feature**, load the digest — decisions and
-   pinned entries surface first:
+1. **At the start of a session or feature**, load the digest manually —
+   decisions and pinned entries surface first (this harness does not inject
+   it automatically yet; on harnesses with the engram extension, a compact
+   digest is loaded automatically):
 
    ```bash
    engram context

@@ -131,13 +131,18 @@ project rule / `.cursorrules` / `AGENTS.md`). The snippet tells the agent to:
   choices and their rationale),
 - use `--scope personal` for notes that must not be shared with the team.
 
+This manual flow is for generic harnesses and bots. The native Pi and
+OpenCode integrations below load the digest automatically at session start,
+so agents there should not duplicate the startup call.
+
 ### 2. Harness-specific wiring
 
 - **Pi**: `pi install npm:engram-cli`. Ships native tools, an `/engram`
-  command, and a skill. See [Pi extension](#pi-extension).
+  command, a skill, and automatic session-start context loading. See
+  [Pi extension](#pi-extension).
 - **OpenCode**: add `"plugin": ["engram-cli"]` to `opencode.json`. Ships four
-  native tools with typed, validated parameters. See
-  [OpenCode plugin](#opencode-plugin).
+  native tools with typed, validated parameters plus experimental automatic
+  session-start context loading. See [OpenCode plugin](#opencode-plugin).
 - **Claude Code**: `/plugin marketplace add tm0h/engram`, then
   `/plugin install engram@engram` (brings the skill and an `engram`
   launcher). Or simply drop the snippet above into `CLAUDE.md`.
@@ -154,7 +159,10 @@ The published `engram-cli` npm package doubles as a
 [Pi](https://github.com/earendil-works/pi) package. Installing it
 gives the agent native engram tools (`engram_context`, `engram_search`,
 `engram_show`, `engram_add`) with typed, validated parameters, plus an
-`/engram` command and an `engram` skill. No CLI-on-PATH shelling out, no
+`/engram` command, an `engram` skill, and automatic session-start context
+loading: every session begins with a compact digest of recorded memory in
+the system prompt (bounded, fail-open, configurable via
+`engram config set autoContext off`). No CLI-on-PATH shelling out, no
 prompt pasting.
 
 ```sh
@@ -172,7 +180,8 @@ result caps, scope fallbacks): see
 The same `engram-cli` npm package is an
 [OpenCode](https://opencode.ai) plugin. Add it to `opencode.json` to give the
 agent the native `engram_context`, `engram_search`, `engram_show`, and
-`engram_add` tools:
+`engram_add` tools, plus experimental automatic session-start context loading
+(best-effort through OpenCode's `experimental.chat.system.transform` hook):
 
 ```json
 {
