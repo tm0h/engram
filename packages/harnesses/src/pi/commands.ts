@@ -80,7 +80,11 @@ function parseAdd(rest: string): ParsedAdd | { ok: false; error: string } {
   return parsed;
 }
 
-async function dispatch(args: string, ctx: ExtensionCommandContext): Promise<void> {
+async function dispatch(
+  args: string,
+  ctx: ExtensionCommandContext,
+  onAddSuccess?: () => void,
+): Promise<void> {
   const rest = args.trim();
   const sub = rest.split(/\s+/)[0] ?? "";
   const remainder = sub ? rest.slice(sub.length).trim() : rest;
@@ -139,6 +143,7 @@ async function dispatch(args: string, ctx: ExtensionCommandContext): Promise<voi
     }
     const r = await runOp(addOp(parsed));
     notify(r.text, r.isError ? "error" : "info");
+    if (!r.isError) onAddSuccess?.();
     return;
   }
 
@@ -151,11 +156,16 @@ async function dispatch(args: string, ctx: ExtensionCommandContext): Promise<voi
   notify(r.text, r.isError ? "error" : "info");
 }
 
-export function registerEngramCommand(pi: ExtensionAPI): void {
+export interface RegisterCommandOptions {
+  /** Called after a successful /engram add (e.g. to refresh the auto context). */
+  readonly onAddSuccess?: () => void;
+}
+
+export function registerEngramCommand(pi: ExtensionAPI, opts: RegisterCommandOptions = {}): void {
   pi.registerCommand("engram", {
     description: "engram memory: context | search | show | add | init | help",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
-      await dispatch(args, ctx);
+      await dispatch(args, ctx, opts.onAddSuccess);
     },
   });
 }

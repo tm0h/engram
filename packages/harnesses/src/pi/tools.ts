@@ -6,7 +6,7 @@
  */
 import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { ENGRAM_TYPES } from "@engram/core";
 import {
   DEFAULT_CONTEXT_LIMIT,
@@ -184,9 +184,30 @@ export const engramAddTool = {
 
 export const engramTools = [engramContextTool, engramSearchTool, engramShowTool, engramAddTool];
 
-export function registerEngramTools(pi: ExtensionAPI): void {
-  pi.registerTool(engramContextTool);
-  pi.registerTool(engramSearchTool);
-  pi.registerTool(engramShowTool);
-  pi.registerTool(engramAddTool);
+export interface RegisterToolsOptions {
+  /** Called after a successful engram_add (e.g. to refresh the auto context). */
+  readonly onAddSuccess?: () => void;
+}
+
+export function registerEngramTools(pi: ExtensionAPI, opts: RegisterToolsOptions = {}): void {
+  const { onAddSuccess } = opts;
+  const addTool = onAddSuccess
+    ? {
+        ...engramAddTool,
+        async execute(id: string, params: any) {
+          const result = await engramAddTool.execute(id, params);
+          if (!(result as { isError?: boolean }).isError) onAddSuccess();
+          return result;
+        },
+      }
+    : engramAddTool;
+  const tools = [
+    engramContextTool,
+    engramSearchTool,
+    engramShowTool,
+    addTool,
+  ] as unknown as readonly ToolDefinition[];
+  for (const tool of tools) {
+    pi.registerTool(tool);
+  }
 }
