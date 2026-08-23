@@ -15,11 +15,13 @@ import { out } from "../io.js";
 
 const isProjectKey = (k: string): boolean => k === "tracked" || k === "defaultType";
 
-export const configCommand = (
-  action: string | undefined,
-  key: string | undefined,
-  value: string | undefined,
-) =>
+const AUTO_CONTEXT_SCOPES = ["project", "personal", "both"] as const;
+type AutoContextScopeValue = (typeof AUTO_CONTEXT_SCOPES)[number];
+
+const isAutoContextKey = (k: string): boolean =>
+  k === "autoContext" || k === "autoContextScope" || k === "autoContextLimit";
+
+export const configCommand = (action?: string, key?: string, value?: string) =>
   Effect.gen(function* () {
     const cfg = yield* ConfigRepo;
     const store = yield* EngramStore;
@@ -31,6 +33,11 @@ export const configCommand = (
       yield* out(chalk.bold("Global") + chalk.gray(` (${globalConfigPath()})`));
       yield* out(`  author:  ${g.author ?? "(not set)"}`);
       yield* out(`  editor:  ${g.editor ?? "$EDITOR"}`);
+      yield* out(
+        `  autoContext:      ${g.autoContext === "off" ? chalk.yellow("off") : chalk.green("on")}`,
+      );
+      yield* out(`  autoContextScope: ${chalk.cyan(g.autoContextScope ?? "project")}`);
+      yield* out(`  autoContextLimit: ${g.autoContextLimit ?? 25}`);
       if (Option.isSome(projectRootOpt)) {
         const p = yield* cfg.loadProject(projectRootOpt.value);
         yield* out("");
@@ -66,6 +73,9 @@ export const configCommand = (
       const g = yield* cfg.loadGlobal();
       if (key === "author") yield* out(g.author ?? "");
       else if (key === "editor") yield* out(g.editor ?? "");
+      else if (key === "autoContext") yield* out(g.autoContext === "off" ? "off" : "on");
+      else if (key === "autoContextScope") yield* out(g.autoContextScope ?? "project");
+      else if (key === "autoContextLimit") yield* out(String(g.autoContextLimit ?? 25));
       else return yield* Effect.fail(new ValidationError({ message: `Unknown key "${key}".` }));
       return;
     }
@@ -123,15 +133,48 @@ export const configCommand = (
         return;
       }
 
-      // global keys (author, editor)
+      // global keys (author, editor, autoContext*)
       const g = yield* cfg.loadGlobal();
-      if (key !== "author" && key !== "editor") {
+      if (key !== "author" && key !== "editor" && !isAutoContextKey(key)) {
         return yield* Effect.fail(new ValidationError({ message: `Unknown key "${key}".` }));
       }
-      const updated =
-        key === "author"
-          ? { ...g, author: value }
-          : { ...g, editor: value === "" ? undefined : value };
+
+      let updated: typeof g;
+      if (key === "author") {
+        updated = { ...g, author: value };
+      } else if (key === "editor") {
+        updated = { ...g, editor: value === "" ? undefined : value };
+      } else if (key === "autoContext") {
+        const on = /^(1|true|on|yes)$/i.test(value);
+        const off = /^(0|false|off|no)$/i.test(value);
+        if (!on && !off) {
+          return yield* Effect.fail(
+            new ValidationError({ message: "autoContext must be on or off" }),
+          );
+        }
+        updated = { ...g, autoContext: on ? "on" : "off" };
+      } else if (key === "autoContextScope") {
+        const scope = value.toLowerCase() as AutoContextScopeValue;
+        if (!AUTO_CONTEXT_SCOPES.includes(scope)) {
+          return yield* Effect.fail(
+            new ValidationError({
+              message: `autoContextScope must be one of: ${AUTO_CONTEXT_SCOPES.join(", ")}`,
+            }),
+          );
+        }
+        updated = { ...g, autoContextScope: scope };
+      } else {
+        // autoContextLimit: integer 1..100
+        const limit = Number(value);
+        if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+          return yield* Effect.fail(
+            new ValidationError({
+              message: "autoContextLimit must be an integer between 1 and 100",
+            }),
+          );
+        }
+        updated = { ...g, autoContextLimit: limit };
+      }
       yield* cfg.saveGlobal(updated);
       yield* out(chalk.green("✓ set ") + `global.${key} = ${value}`);
       return;
