@@ -108,8 +108,8 @@ const ordered = (list: ReadonlyArray<Engram>): Engram[] => {
 /**
  * Digest body lines shared by `contextDigest` (tool-facing) and `autoContextOp`
  * (startup injection): header, optional per-scope sections, digest lines.
- * `renderLine` lets the auto context sanitize untrusted entry text without
- * changing the tool-facing rendering.
+ * `autoContextOp` sanitizes every emitted line (including the root-bearing
+ * headers) before injection; the tool-facing rendering stays untouched.
  */
 const digestLines = (
   sections: ReadonlyArray<{ scope: Scope; items: Engram[] }>,
@@ -117,7 +117,6 @@ const digestLines = (
   page: { items: ReadonlyArray<Engram> },
   root: Option.Option<string>,
   personalOnly: boolean,
-  renderLine: (m: Engram) => string = lineOf,
 ): string[] => {
   const lines: string[] = [];
   if (personalOnly) lines.push(`(${PERSONAL_ONLY_NOTE})`);
@@ -148,12 +147,12 @@ const digestLines = (
     if (head.length) {
       if (multiScope) lines.push("### Decisions & pinned");
       else lines.push("## Decisions & pinned");
-      lines.push(...head.map(renderLine));
+      lines.push(...head.map((m) => lineOf(m)));
     }
     if (tail.length) {
       if (multiScope) lines.push("### Other");
       else lines.push("## Other");
-      lines.push(...tail.map(renderLine));
+      lines.push(...tail.map((m) => lineOf(m)));
     }
   }
 
@@ -492,9 +491,10 @@ const neutralizeWrapper = (s: string): string =>
   s.replace(/<\/?\s*engram-memory/gi, (m) => m.replace("<", "<\\"));
 
 /**
- * Sanitize one digest line for system-prompt injection: entry text is
- * untrusted repository/user content, so collapse newlines/tabs to spaces,
- * strip control characters, defuse the wrapper delimiter, and cap the line.
+ * Sanitize one rendered digest line for system-prompt injection. Engram text
+ * AND repository paths (headers interpolate the project root) are untrusted:
+ * collapse newlines/tabs to spaces, strip control characters, defuse the
+ * wrapper delimiter, and cap the line.
  */
 const sanitizeAutoLine = (line: string): string =>
   neutralizeWrapper(
@@ -512,12 +512,15 @@ const assembleAutoPayload = (
   root: Option.Option<string>,
   personalOnly: boolean,
 ): { text: string; truncated: boolean } => {
-  const body = digestLines(sections, flat, page, root, personalOnly, (m) =>
-    sanitizeAutoLine(lineOf(m)),
-  );
+  // Every dynamic line — root-bearing headers, digest entries, footer — goes
+  // through the same sanitization; only the trusted wrapper constants bypass it.
+  const body = digestLines(sections, flat, page, root, personalOnly).map(sanitizeAutoLine);
   const lines = [AUTO_OPEN, AUTO_INTRO, "", ...body];
   if (page.nextOffset !== null && page.items.length > 0) {
-    lines.push("", autoFooter(page.offset + 1, page.offset + page.items.length, page.total));
+    lines.push(
+      "",
+      sanitizeAutoLine(autoFooter(page.offset + 1, page.offset + page.items.length, page.total)),
+    );
   }
 
   // Reserve room for the truncation marker and the closing tag so the hard
