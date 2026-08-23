@@ -35,6 +35,13 @@ const LOAD_FAILED_WARNING =
   "Engram automatic context could not be loaded for this session; " +
   "call engram_context to load memory manually if needed.";
 
+/** Structured failure the cached promise resolves to when loading breaks. */
+const LOAD_FAILED: OpResult = {
+  text: "",
+  isError: false,
+  details: { loaded: false, error: "load failed" },
+};
+
 export function registerAutoContext(
   pi: ExtensionAPI,
   opts: { load?: AutoContextLoader } = {},
@@ -42,6 +49,26 @@ export function registerAutoContext(
   const load = opts.load ?? defaultLoader;
   let pending: Promise<OpResult> | null = null;
   let warned = false;
+
+  /**
+   * Start a load whose failure modes are handled at creation time:
+   * synchronous throws and asynchronous rejections convert to the structured
+   * failure, so the cached promise can never reject. Without this, a fast
+   * rejection in the gap between session_start and the first
+   * before_agent_start await would be an unhandled rejection (potentially
+   * fatal under strict Node handling). The user-facing warning still fires
+   * only later, from before_agent_start.
+   */
+  const startLoad = (directory: string): Promise<OpResult> => {
+    try {
+      return load(directory).then(
+        (result) => result,
+        () => LOAD_FAILED,
+      );
+    } catch {
+      return Promise.resolve(LOAD_FAILED);
+    }
+  };
 
   const warnOnce = (ctx: NotifyContext) => {
     if (warned || !ctx.hasUI) return;
@@ -53,13 +80,13 @@ export function registerAutoContext(
   // (new/resume/fork rebind extension instances, so the closure is fresh,
   // but reload happens in-place and must reset the cache explicitly.)
   pi.on("session_start", (_event, ctx) => {
-    pending = load(ctx.cwd);
+    pending = startLoad(ctx.cwd);
     warned = false; // fresh session: one new warning budget
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
     // Safety net: start late if session_start was missed or after invalidate.
-    const promise = pending ?? (pending = load(ctx.cwd));
+    const promise = pending ?? (pending = startLoad(ctx.cwd));
 
     let result: OpResult;
     try {

@@ -246,6 +246,51 @@ describe("pi auto-context hook / failure behavior", () => {
     }
   });
 
+  it("a fast rejection between session_start and the first prompt stays handled", async () => {
+    const loader: AutoContextLoader = () => Promise.reject(new Error("fast boom"));
+    const { pi, handlers } = fakePi();
+    registerAutoContext(pi, { load: loader });
+
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const { ctx, notes } = evtCtx();
+      handlers.get("session_start")!(sessionStart("startup"), ctx);
+
+      // a full event-loop turn passes before any prompt arrives
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(unhandled).toHaveLength(0);
+
+      const res = (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as
+        | BeforeAgentStartEventResult
+        | undefined;
+      expect(res?.systemPrompt).toBeUndefined();
+      expect(notes).toHaveLength(1);
+
+      await handlers.get("before_agent_start")!(agentStart(BASE), ctx);
+      expect(notes).toHaveLength(1); // still once-only
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
+  it("a synchronous loader throw is handled at session_start, not thrown", async () => {
+    const loader: AutoContextLoader = (() => {
+      throw new Error("sync boom");
+    }) as unknown as AutoContextLoader;
+    const { pi, handlers } = fakePi();
+    registerAutoContext(pi, { load: loader });
+
+    const { ctx, notes } = evtCtx();
+    expect(() => handlers.get("session_start")!(sessionStart("startup"), ctx)).not.toThrow();
+    const res = (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as
+      | BeforeAgentStartEventResult
+      | undefined;
+    expect(res?.systemPrompt).toBeUndefined();
+    expect(notes).toHaveLength(1);
+  });
+
   it("print/JSON mode (hasUI false) stays silent", async () => {
     const loader: AutoContextLoader = () => Promise.reject(new Error("defect"));
     const { pi, handlers } = fakePi();
