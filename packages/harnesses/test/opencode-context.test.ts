@@ -35,8 +35,9 @@ const MARKER = "<engram-memory>";
 const inputFor = (sessionID?: string) => ({ sessionID, model: {} });
 const output = (system: string[]) => ({ system });
 
+/** Total occurrences of `needle` across every element (not per-element presence). */
 const countOf = (parts: string[], needle: string): number =>
-  parts.filter((p) => p.includes(needle)).length;
+  parts.reduce((sum, part) => sum + part.split(needle).length - 1, 0);
 
 const seedEntry = (root: string, id: string, title: string): void => {
   const fm = [
@@ -146,6 +147,14 @@ describe("opencode auto-context transform / unit", () => {
     await transform(inputFor("s1"), out);
     expect(countOf(out.system, MARKER)).toBe(1);
     expect(out.system[0].startsWith("prior plugin")).toBe(true); // untouched
+
+    // countOf sums occurrences, so a duplicated append inside one string
+    // would be caught (guards against weakening this regression):
+    expect(countOf([`x ${PAYLOAD} more ${PAYLOAD}`], MARKER)).toBe(2);
+    // and our append path (empty array -> single string) yields exactly one.
+    const fresh = output([]);
+    await transform(inputFor("s2"), fresh);
+    expect(countOf(fresh.system, MARKER)).toBe(1);
   });
 
   it("disabled, empty, and failed loads preserve the system prompt", async () => {
