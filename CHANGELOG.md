@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   user-level config keys: `autoContext` (on/off, default on),
   `autoContextScope` (project/personal/both, default project), and
   `autoContextLimit` (1..100, default 25), managed via `engram config`.
+  ([#17])
 
 ### Changed
 
@@ -31,7 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   automatic load). The tool is now positioned for refresh, pagination,
   recovery, and pre-work context; skills and READMEs updated to match, with
   the manual startup flow kept for Claude Code and other harnesses until
-  they gain native loading.
+  they gain native loading. ([#17])
+
+[#17]: https://github.com/tm0h/engram/pull/17
 
 ## [0.3.0] - 2026-08-19
 
