@@ -128,14 +128,13 @@ describe("engram-cli packaging (pi extension)", () => {
     mkdirSync(installed, { recursive: true });
     run(["install", "--ignore-scripts", tarball], installed);
 
-    // Import the packed ./server entry exactly like opencode would and drive
-    // the plugin factory: tools + the experimental system transform must be
-    // present, and a transform over an empty store must be a no-op.
-    const pluginUrl = pathToFileURL(
-      join(installed, "node_modules", "engram-cli", "dist", "opencode-plugin.js"),
-    ).href;
+    // Import the package's exported ./server subpath exactly like opencode
+    // resolves it (via exports["./server"], not the dist file path) so an
+    // invalid export mapping fails this test, and drive the plugin factory:
+    // tools + the experimental system transform must be present, and a
+    // transform over an empty store must be a no-op.
     const script = `
-      const mod = await import(${JSON.stringify(pluginUrl)});
+      const mod = await import("engram-cli/server");
       if (typeof mod.default !== "function") throw new Error("default export is not a function");
       const hooks = await mod.default({ directory: process.cwd() });
       const tools = Object.keys(hooks.tool ?? {}).sort();

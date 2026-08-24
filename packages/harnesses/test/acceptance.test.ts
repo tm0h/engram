@@ -120,7 +120,8 @@ describe("PR1 acceptance / shared auto-context", () => {
   });
   afterEach(() => {
     process.chdir(orig);
-    process.env.HOME = origHome;
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
     fs.rmSync(tmp, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });
   });
@@ -209,7 +210,8 @@ describe("PR1 acceptance / first-request delivery", () => {
   });
   afterEach(() => {
     process.chdir(orig);
-    process.env.HOME = origHome;
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
     fs.rmSync(tmp, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });
   });

@@ -106,9 +106,13 @@ export type AutoContextScope = Schema.Schema.Type<typeof AutoContextScopeSchema>
 export const AUTO_CONTEXT_SCOPES: ReadonlyArray<AutoContextScope> = ["project", "personal", "both"];
 
 /** How many entries the automatic startup digest includes (global user setting). */
+export const AUTO_CONTEXT_LIMIT_MIN = 1;
+export const AUTO_CONTEXT_LIMIT_MAX = 100;
 export const AutoContextLimitSchema = Schema.Number.pipe(
   Schema.check(Schema.isInt()),
-  Schema.check(Schema.isBetween({ minimum: 1, maximum: 100 })),
+  Schema.check(
+    Schema.isBetween({ minimum: AUTO_CONTEXT_LIMIT_MIN, maximum: AUTO_CONTEXT_LIMIT_MAX }),
+  ),
 );
 export type AutoContextLimit = Schema.Schema.Type<typeof AutoContextLimitSchema>;
 

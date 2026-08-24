@@ -80,7 +80,13 @@ describe("guidance / skills stay aligned", () => {
   });
 
   it("Claude skill keeps the manual startup flow until PR2 (harness truth)", () => {
-    expect(claudeSkill).toMatch(/engram context/);
+    // Extract the Session flow section and require BOTH the session-start
+    // condition and the manual digest-load instruction inside it — a bare
+    // `engram context` mention in a later step must not satisfy this.
+    const sessionFlow = claudeSkill.split("## Session flow")[1]?.split("## ")[0] ?? "";
+    expect(sessionFlow.length).toBeGreaterThan(0);
+    expect(sessionFlow).toMatch(/start of a session|session start/i);
+    expect(sessionFlow).toMatch(/engram context/);
   });
 
   it("both skills keep shared search/show/add and recording guidance", () => {

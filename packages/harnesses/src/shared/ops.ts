@@ -623,6 +623,10 @@ export const autoContextOp = (): Effect.Effect<OpResult, never, EngramStore | Co
   Effect.gen(function* () {
     const exit = yield* Effect.exit(autoContextImpl());
     if (Exit.isSuccess(exit)) return exit.value;
+    // Fiber interruption is not a load failure: re-interrupt so callers see
+    // the cancellation (timeouts/aborts) instead of a successful empty
+    // payload. Ordinary read/config/domain failures stay fail-open below.
+    if (Exit.hasInterrupts(exit)) return yield* Effect.interrupt;
     const failure = Exit.findErrorOption(exit);
     const message = Option.isSome(failure)
       ? describeError(failure.value)

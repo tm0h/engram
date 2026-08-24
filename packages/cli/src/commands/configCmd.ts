@@ -5,7 +5,12 @@ import { ConfigRepo } from "@engram/core";
 import { EngramStore } from "@engram/core";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
-import { ENGRAM_TYPES, AUTO_CONTEXT_SCOPES } from "@engram/core";
+import {
+  AUTO_CONTEXT_LIMIT_MAX,
+  AUTO_CONTEXT_LIMIT_MIN,
+  ENGRAM_TYPES,
+  AUTO_CONTEXT_SCOPES,
+} from "@engram/core";
 import { DEFAULT_AUTO_CONTEXT_LIMIT, DEFAULT_AUTO_CONTEXT_SCOPE } from "@engram/core";
 import type { AutoContextScope, EngramType } from "@engram/core";
 import { ValidationError } from "@engram/core";
@@ -166,12 +171,16 @@ export const configCommand = (action?: string, key?: string, value?: string) =>
         }
         updated = { ...g, autoContextScope: scope };
       } else {
-        // autoContextLimit: integer 1..100
+        // autoContextLimit: integer within the canonical bounds
         const limit = Number(value);
-        if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        if (
+          !Number.isInteger(limit) ||
+          limit < AUTO_CONTEXT_LIMIT_MIN ||
+          limit > AUTO_CONTEXT_LIMIT_MAX
+        ) {
           return yield* Effect.fail(
             new ValidationError({
-              message: "autoContextLimit must be an integer between 1 and 100",
+              message: `autoContextLimit must be an integer between ${AUTO_CONTEXT_LIMIT_MIN} and ${AUTO_CONTEXT_LIMIT_MAX}`,
             }),
           );
         }

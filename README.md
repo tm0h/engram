@@ -229,19 +229,19 @@ You can edit these by hand (they're just files), but never invent an id:
 
 ## Commands
 
-| Command                                   | Description                                                                                          |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `engram init [--tracked\|--untracked]`    | Initialize `.engram/` and choose git tracking.                                                       |
-| `engram add [content]`                    | Record an engram. Body from arg, `--stdin`, or `$EDITOR`.                                            |
-| `engram list [--scope] [--type] [--tag]`  | List engrams.                                                                                        |
-| `engram search <query> [--scope] [-n]`    | Relevance search (tags > title > type > body).                                                       |
-| `engram show <id>`                        | Show one engram in full (id or unique prefix).                                                       |
-| `engram edit <id> [content]`              | Edit an engram: flags replace fields, no flags opens `$EDITOR`, `--stdin`/content replaces the body. |
-| `engram remove <id> [-y]`                 | Delete an engram.                                                                                    |
-| `engram context [-q query] [--full] [-n]` | Emit an agent-ready digest.                                                                          |
-| `engram config [get\|set] [key] [value]`  | Keys: `tracked`, `defaultType`, `author`, `editor`.                                                  |
-| `engram inject`                           | Print the agent-injection snippet.                                                                   |
-| `engram where`                            | Show resolved paths and the current default scope.                                                   |
+| Command                                   | Description                                                                                                                                                                                                                                                       |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `engram init [--tracked\|--untracked]`    | Initialize `.engram/` and choose git tracking.                                                                                                                                                                                                                    |
+| `engram add [content]`                    | Record an engram. Body from arg, `--stdin`, or `$EDITOR`.                                                                                                                                                                                                         |
+| `engram list [--scope] [--type] [--tag]`  | List engrams.                                                                                                                                                                                                                                                     |
+| `engram search <query> [--scope] [-n]`    | Relevance search (tags > title > type > body).                                                                                                                                                                                                                    |
+| `engram show <id>`                        | Show one engram in full (id or unique prefix).                                                                                                                                                                                                                    |
+| `engram edit <id> [content]`              | Edit an engram: flags replace fields, no flags opens `$EDITOR`, `--stdin`/content replaces the body.                                                                                                                                                              |
+| `engram remove <id> [-y]`                 | Delete an engram.                                                                                                                                                                                                                                                 |
+| `engram context [-q query] [--full] [-n]` | Emit an agent-ready digest.                                                                                                                                                                                                                                       |
+| `engram config [get\|set] [key] [value]`  | Keys: `tracked`, `defaultType`, `author`, `editor`, plus the automatic-context user settings: `autoContext` (`on`/`off`, default `on`), `autoContextScope` (`project`/`personal`/`both`, default `project`), `autoContextLimit` (integer `1..100`, default `25`). |
+| `engram inject`                           | Print the agent-injection snippet.                                                                                                                                                                                                                                |
+| `engram where`                            | Show resolved paths and the current default scope.                                                                                                                                                                                                                |
 
 `add` highlights:
 

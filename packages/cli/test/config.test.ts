@@ -62,7 +62,8 @@ describe("engram config / auto-context keys", () => {
   afterEach(() => {
     spy.mockRestore();
     process.chdir(origCwd);
-    process.env.HOME = origHome;
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
     fs.rmSync(tmp, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });
   });

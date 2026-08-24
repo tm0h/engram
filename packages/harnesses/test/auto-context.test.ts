@@ -5,7 +5,8 @@
  * (autoContext, autoContextScope, autoContextLimit).
  */
 import { describe, it, expect, beforeEach, afterEach } from "@effect/vitest";
-import { Effect } from "effect";
+import { Effect, Exit, Fiber } from "effect";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -99,7 +100,8 @@ describe("shared ops / autoContextOp", () => {
   });
   afterEach(() => {
     process.chdir(origCwd);
-    process.env.HOME = origHome;
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
     fs.rmSync(tmp, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });
   });
@@ -358,5 +360,41 @@ describe("shared ops / autoContextOp", () => {
     const res = await run(autoContextOp());
     expect(res.text).toContain("Title only");
     expect(res.text).not.toContain("SUPER-SECRET-BODY-CONTENT");
+  });
+
+  it("re-interrupts instead of swallowing fiber interruption", async () => {
+    // A FIFO global config makes loadGlobal block forever: the fiber parks
+    // INSIDE the load, so a later interruption deterministically lands
+    // mid-load rather than before the op starts.
+    const fifoHome = fs.mkdtempSync(path.join(os.tmpdir(), "engram-fifo-"));
+    fs.mkdirSync(path.join(fifoHome, ".engram"), { recursive: true });
+    const fifoPath = path.join(fifoHome, ".engram", "config.json");
+    execFileSync("mkfifo", [fifoPath]);
+    process.env.HOME = fifoHome;
+
+    try {
+      const fiber = Effect.runFork(
+        Effect.provide(autoContextOp() as never, MainLive) as never,
+      ) as ReturnType<typeof Effect.runFork>;
+
+      // Wait until the fiber is parked reading the FIFO (it can never finish),
+      // then interrupt: the interruption is guaranteed to land inside the load.
+      await Effect.runPromise(Effect.sleep(50) as never);
+      await Effect.runPromise(Fiber.interrupt(fiber) as never);
+      const exit = await Effect.runPromise(Fiber.await(fiber) as never);
+
+      // The awaited exit must carry the interruption (Failure with an
+      // Interrupt reason), NOT a successful empty payload — the observable
+      // contract callers rely on. (On the pinned effect@4.0.0-rc.108,
+      // interruption propagates natively through Effect.exit; the
+      // Exit.hasInterrupts guard in autoContextOp preserves this contract if
+      // a future Effect version starts capturing interrupts inside
+      // Effect.exit.)
+      const exitAny = exit as { _tag?: string };
+      expect(exitAny._tag).toBe("Failure");
+      expect(Exit.hasInterrupts(exit as never)).toBe(true);
+    } finally {
+      fs.rmSync(fifoHome, { recursive: true, force: true });
+    }
   });
 });

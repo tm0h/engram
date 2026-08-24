@@ -5,6 +5,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ConfigRepo, ConfigRepoLive } from "../src/config.js";
+import {
+  AUTO_CONTEXT_LIMIT_MAX,
+  AUTO_CONTEXT_LIMIT_MIN,
+  AutoContextLimitSchema,
+} from "../src/domain.js";
+import { Schema } from "effect";
 import { projectConfigPath } from "../src/paths.js";
 
 const ConfigLayer = ConfigRepoLive.pipe(Layer.provide(NodeServices.layer));
@@ -53,7 +59,8 @@ describe("ConfigRepo / global", () => {
     process.env.HOME = tmp;
   });
   afterEach(() => {
-    process.env.HOME = origHome;
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -79,7 +86,8 @@ describe("ConfigRepo / global auto-context keys", () => {
     process.env.HOME = tmp;
   });
   afterEach(() => {
-    process.env.HOME = origHome;
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -147,4 +155,14 @@ describe("ConfigRepo / global auto-context keys", () => {
       }
     }).pipe(Effect.provide(ConfigLayer)),
   );
+
+  it("exports canonical limit bounds and the schema enforces them", () => {
+    expect(AUTO_CONTEXT_LIMIT_MIN).toBe(1);
+    expect(AUTO_CONTEXT_LIMIT_MAX).toBe(100);
+    for (const bad of [0, 101, 2.5]) {
+      expect(() => Schema.decodeSync(AutoContextLimitSchema)(bad as never)).toThrow();
+    }
+    expect(Schema.decodeSync(AutoContextLimitSchema)(1)).toBe(1);
+    expect(Schema.decodeSync(AutoContextLimitSchema)(100)).toBe(100);
+  });
 });

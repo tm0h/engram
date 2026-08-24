@@ -415,7 +415,8 @@ describe("pi extension / auto-context integration", () => {
   });
   afterEach(() => {
     process.chdir(orig);
-    process.env.HOME = origHome;
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
     fs.rmSync(tmp, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });
   });
