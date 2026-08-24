@@ -51,7 +51,10 @@ const seed = (root: string, id: string, over: Partial<EngramInput>): void => {
     `author: ${JSON.stringify(i.author ?? "Tester")}`,
     ...(i.pinned ? ["pinned: true"] : []),
   ].join("\n");
-  fs.writeFileSync(path.join(projectEngramsDir(root), `${id}-entry.md`), `---\n${fm}\n---\n`);
+  fs.writeFileSync(
+    path.join(projectEngramsDir(root), `${id}-entry.md`),
+    `---\n${fm}\n---\n${i.body}\n`,
+  );
 };
 
 /** The acceptance store: >25 entries with every awkward shape. */

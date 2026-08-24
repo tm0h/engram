@@ -52,9 +52,10 @@ How it works and what to expect:
   in. Tool calls still resolve memory from their own per-call session
   directory, so subagent or worktree contexts read their own project scope.
 - **Per-session cache**: the digest loads once per session and is reapplied to
-  every model request in it. A successful `engram_add` invalidates that
-  session's cache, so the next request reflects the new entry. Other sessions
-  refresh on their next load.
+  every model request in it. A successful `engram_add` invalidates only the
+  calling session's cache, so its next request reflects the new entry. Other
+  sessions keep their cached digest until it is dropped (session deletion or
+  cache eviction); call `engram_context` to read the latest digest manually.
 - **Bounded**: at most 25 entries and 8,192 characters; ids, types, titles,
   and tags only — never full bodies.
 
