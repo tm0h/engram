@@ -5,8 +5,7 @@
  * (autoContext, autoContextScope, autoContextLimit).
  */
 import { describe, it, expect, beforeEach, afterEach } from "@effect/vitest";
-import { Effect, Exit, Fiber } from "effect";
-import { execFileSync } from "node:child_process";
+import { Deferred, Effect, Exit, Fiber, Layer, Option } from "effect";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -363,38 +362,44 @@ describe("shared ops / autoContextOp", () => {
   });
 
   it("re-interrupts instead of swallowing fiber interruption", async () => {
-    // A FIFO global config makes loadGlobal block forever: the fiber parks
-    // INSIDE the load, so a later interruption deterministically lands
-    // mid-load rather than before the op starts.
-    const fifoHome = fs.mkdtempSync(path.join(os.tmpdir(), "engram-fifo-"));
-    fs.mkdirSync(path.join(fifoHome, ".engram"), { recursive: true });
-    const fifoPath = path.join(fifoHome, ".engram", "config.json");
-    execFileSync("mkfifo", [fifoPath]);
-    process.env.HOME = fifoHome;
+    // In-process, deterministic: an injected ConfigRepo whose loadGlobal
+    // signals a Deferred latch and then blocks on Effect.never. Awaiting the
+    // latch PROVES the fiber is inside the config read before we interrupt —
+    // no timing sleeps, no external commands.
+    const latch = await Effect.runPromise(Deferred.make<void>());
+    const testLayer = Layer.merge(
+      Layer.succeed(
+        EngramStore,
+        // Never reached: the load blocks in loadGlobal first.
+        { projectRoot: () => Effect.succeed(Option.none()) } as never,
+      ),
+      Layer.succeed(ConfigRepo, {
+        loadGlobal: () =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(latch, undefined);
+            return yield* Effect.never;
+          }),
+      } as never),
+    );
 
-    try {
-      const fiber = Effect.runFork(
-        Effect.provide(autoContextOp() as never, MainLive) as never,
-      ) as ReturnType<typeof Effect.runFork>;
+    const fiber = Effect.runFork(
+      Effect.provide(autoContextOp() as never, testLayer) as never,
+    ) as ReturnType<typeof Effect.runFork>;
 
-      // Wait until the fiber is parked reading the FIFO (it can never finish),
-      // then interrupt: the interruption is guaranteed to land inside the load.
-      await Effect.runPromise(Effect.sleep(50) as never);
-      await Effect.runPromise(Fiber.interrupt(fiber) as never);
-      const exit = await Effect.runPromise(Fiber.await(fiber) as never);
+    // The fiber is now parked inside loadGlobal; interrupt it mid-load.
+    await Effect.runPromise(Deferred.await(latch) as never);
+    await Effect.runPromise(Fiber.interrupt(fiber) as never);
+    const exit = await Effect.runPromise(Fiber.await(fiber) as never);
 
-      // The awaited exit must carry the interruption (Failure with an
-      // Interrupt reason), NOT a successful empty payload — the observable
-      // contract callers rely on. (On the pinned effect@4.0.0-rc.108,
-      // interruption propagates natively through Effect.exit; the
-      // Exit.hasInterrupts guard in autoContextOp preserves this contract if
-      // a future Effect version starts capturing interrupts inside
-      // Effect.exit.)
-      const exitAny = exit as { _tag?: string };
-      expect(exitAny._tag).toBe("Failure");
-      expect(Exit.hasInterrupts(exit as never)).toBe(true);
-    } finally {
-      fs.rmSync(fifoHome, { recursive: true, force: true });
-    }
+    // The awaited exit must carry the interruption (Failure with an
+    // Interrupt reason), NOT a successful empty payload — the observable
+    // cancellation contract callers rely on. Documented limitation: on the
+    // pinned effect@4.0.0-rc.108 this passes even without autoContextOp's
+    // Exit.hasInterrupts guard, because Effect.exit propagates interruption
+    // natively there; this regression pins the cancellation behavior, not
+    // branch coverage of that future-proofing guard.
+    const exitAny = exit as { _tag?: string };
+    expect(exitAny._tag).toBe("Failure");
+    expect(Exit.hasInterrupts(exit as never)).toBe(true);
   });
 });
