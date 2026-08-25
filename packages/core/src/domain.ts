@@ -94,10 +94,35 @@ export const ProjectConfigSchema = Schema.Struct({
 });
 export type ProjectConfig = Schema.Schema.Type<typeof ProjectConfigSchema>;
 
+/** Automatic context injection on/off toggle (global user setting). */
+export const AutoContextToggleSchema = Schema.Literals(["on", "off"]);
+export type AutoContextToggle = Schema.Schema.Type<typeof AutoContextToggleSchema>;
+
+/** Which scopes the automatic startup digest covers (global user setting). */
+export const AutoContextScopeSchema = Schema.Literals(["project", "personal", "both"]);
+export type AutoContextScope = Schema.Schema.Type<typeof AutoContextScopeSchema>;
+
+/** Valid `autoContextScope` values (mirrors the ENGRAM_TYPES pattern). */
+export const AUTO_CONTEXT_SCOPES: ReadonlyArray<AutoContextScope> = ["project", "personal", "both"];
+
+/** How many entries the automatic startup digest includes (global user setting). */
+export const AUTO_CONTEXT_LIMIT_MIN = 1;
+export const AUTO_CONTEXT_LIMIT_MAX = 100;
+export const AutoContextLimitSchema = Schema.Number.pipe(
+  Schema.check(Schema.isInt()),
+  Schema.check(
+    Schema.isBetween({ minimum: AUTO_CONTEXT_LIMIT_MIN, maximum: AUTO_CONTEXT_LIMIT_MAX }),
+  ),
+);
+export type AutoContextLimit = Schema.Schema.Type<typeof AutoContextLimitSchema>;
+
 export const GlobalConfigSchema = Schema.Struct({
   version: Schema.Number,
   author: Schema.optional(Schema.String),
   editor: Schema.optional(Schema.String),
+  autoContext: Schema.optional(AutoContextToggleSchema),
+  autoContextScope: Schema.optional(AutoContextScopeSchema),
+  autoContextLimit: Schema.optional(AutoContextLimitSchema),
 });
 export type GlobalConfig = Schema.Schema.Type<typeof GlobalConfigSchema>;
 
@@ -107,7 +132,14 @@ export const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
   defaultType: "note",
 };
 
+export const DEFAULT_AUTO_CONTEXT: AutoContextToggle = "on";
+export const DEFAULT_AUTO_CONTEXT_SCOPE: AutoContextScope = "project";
+export const DEFAULT_AUTO_CONTEXT_LIMIT: AutoContextLimit = 25;
+
 export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
   version: 1,
   editor: undefined,
+  autoContext: DEFAULT_AUTO_CONTEXT,
+  autoContextScope: DEFAULT_AUTO_CONTEXT_SCOPE,
+  autoContextLimit: DEFAULT_AUTO_CONTEXT_LIMIT,
 };

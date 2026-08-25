@@ -11,9 +11,13 @@ entries (decisions, facts, gotchas, conventions) recorded per project
 
 ## Session flow
 
-1. **At the start of a session or feature**, call `engram_context` to load the
-   digest — decisions and pinned entries surface first. Skim it before
-   proposing anything consequential.
+1. **Session context loads automatically.** A compact digest of this
+   workspace's memory (decisions and pinned entries first) is injected into
+   your context automatically when the session starts — no tool call needed.
+   Skim it before proposing anything consequential. Call `engram_context`
+   only to refresh (for example after entries were recorded), to page deeper
+   than the first page, or to recover when automatic loading reported a
+   failure or the extension is unavailable.
 2. **When you need specifics** (how auth works, why a library was replaced),
    call `engram_search` with keywords, then `engram_show` on the matching id.
 3. **When you learn something durable**, record it with `engram_add`.

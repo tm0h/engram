@@ -25,6 +25,33 @@ Memory scope is independent of install scope: these tools read and write the
 same scopes as the CLI (`project` inside an initialized repo, `personal`
 otherwise).
 
+## Automatic session context
+
+Every session starts with a compact digest of this workspace's recorded
+memory (`<engram-memory>` block, decisions and pinned entries first) appended
+to the system prompt automatically — startup, `/new`, `/resume`, `/fork`, and
+`/reload` all reload it, and it survives compaction because it lives in the
+system prompt, not the transcript. No model turn is spent loading it.
+
+Details:
+
+- **Bounded**: at most 25 entries and 8,192 characters; the digest lists ids,
+  types, titles, and tags only — never full bodies.
+- **Fail-open**: disabled, empty, or unreadable memory never blocks a
+  session; on failure you get one concise warning and can call
+  `engram_context` manually.
+- **Fresh after writes**: a successful `engram_add` (tool or `/engram add`)
+  invalidates the cached digest, so the next prompt reflects it.
+
+Configure it with the global config keys (user-level, not committed project
+policy):
+
+```sh
+engram config set autoContext off            # disable injection (tools stay)
+engram config set autoContextScope both      # project (default) | personal | both
+engram config set autoContextLimit 10        # entries per digest, 1..100 (default 25)
+```
+
 ## What you get
 
 | Surface               | What it does                                                                                                      |

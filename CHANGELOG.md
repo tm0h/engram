@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Automatic session context for Pi and OpenCode.** Sessions now start with
+  a compact digest of the workspace's recorded memory injected into the
+  system prompt before the first model request — no model turn spent on
+  loading, and no reliance on the agent remembering to call a tool. Pi
+  delivers it through its `session_start`/`before_agent_start` lifecycle
+  (reloaded on startup, new, resume, fork, and reload; cached digest
+  invalidated after a successful `engram_add`); OpenCode delivers it through
+  the experimental `experimental.chat.system.transform` hook (best-effort,
+  per-session lazy cache, same add-invalidation). The digest is bounded
+  (≤ 25 entries, ≤ 8 kB, metadata only — never bodies), fail-open (disabled,
+  empty, or unreadable stores never block a session), and driven by new
+  user-level config keys: `autoContext` (on/off, default on),
+  `autoContextScope` (project/personal/both, default project), and
+  `autoContextLimit` (1..100, default 25), managed via `engram config`.
+  ([#17])
+
+### Changed
+
+- **Pi/OpenCode tool guidance no longer instructs agents to call
+  `engram_context` at every session start** (which would have duplicated the
+  automatic load). The tool is now positioned for refresh, pagination,
+  recovery, and pre-work context; skills and READMEs updated to match, with
+  the manual startup flow kept for Claude Code and other harnesses until
+  they gain native loading. ([#17])
+
+[#17]: https://github.com/tm0h/engram/pull/17
+
 ## [0.3.0] - 2026-08-19
 
 ### Added

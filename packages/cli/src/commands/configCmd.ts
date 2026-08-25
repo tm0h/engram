@@ -5,8 +5,14 @@ import { ConfigRepo } from "@engram/core";
 import { EngramStore } from "@engram/core";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
-import { ENGRAM_TYPES } from "@engram/core";
-import type { EngramType } from "@engram/core";
+import {
+  AUTO_CONTEXT_LIMIT_MAX,
+  AUTO_CONTEXT_LIMIT_MIN,
+  ENGRAM_TYPES,
+  AUTO_CONTEXT_SCOPES,
+} from "@engram/core";
+import { DEFAULT_AUTO_CONTEXT_LIMIT, DEFAULT_AUTO_CONTEXT_SCOPE } from "@engram/core";
+import type { AutoContextScope, EngramType } from "@engram/core";
 import { ValidationError } from "@engram/core";
 import { findGitRoot } from "@engram/core";
 import { ensureGitignoreLine, removeGitignoreLine } from "@engram/core";
@@ -15,11 +21,10 @@ import { out } from "../io.js";
 
 const isProjectKey = (k: string): boolean => k === "tracked" || k === "defaultType";
 
-export const configCommand = (
-  action: string | undefined,
-  key: string | undefined,
-  value: string | undefined,
-) =>
+const isAutoContextKey = (k: string): boolean =>
+  k === "autoContext" || k === "autoContextScope" || k === "autoContextLimit";
+
+export const configCommand = (action?: string, key?: string, value?: string) =>
   Effect.gen(function* () {
     const cfg = yield* ConfigRepo;
     const store = yield* EngramStore;
@@ -31,6 +36,13 @@ export const configCommand = (
       yield* out(chalk.bold("Global") + chalk.gray(` (${globalConfigPath()})`));
       yield* out(`  author:  ${g.author ?? "(not set)"}`);
       yield* out(`  editor:  ${g.editor ?? "$EDITOR"}`);
+      yield* out(
+        `  autoContext:      ${g.autoContext === "off" ? chalk.yellow("off") : chalk.green("on")}`,
+      );
+      yield* out(
+        `  autoContextScope: ${chalk.cyan(g.autoContextScope ?? DEFAULT_AUTO_CONTEXT_SCOPE)}`,
+      );
+      yield* out(`  autoContextLimit: ${g.autoContextLimit ?? DEFAULT_AUTO_CONTEXT_LIMIT}`);
       if (Option.isSome(projectRootOpt)) {
         const p = yield* cfg.loadProject(projectRootOpt.value);
         yield* out("");
@@ -66,6 +78,11 @@ export const configCommand = (
       const g = yield* cfg.loadGlobal();
       if (key === "author") yield* out(g.author ?? "");
       else if (key === "editor") yield* out(g.editor ?? "");
+      else if (key === "autoContext") yield* out(g.autoContext === "off" ? "off" : "on");
+      else if (key === "autoContextScope")
+        yield* out(g.autoContextScope ?? DEFAULT_AUTO_CONTEXT_SCOPE);
+      else if (key === "autoContextLimit")
+        yield* out(String(g.autoContextLimit ?? DEFAULT_AUTO_CONTEXT_LIMIT));
       else return yield* Effect.fail(new ValidationError({ message: `Unknown key "${key}".` }));
       return;
     }
@@ -123,15 +140,52 @@ export const configCommand = (
         return;
       }
 
-      // global keys (author, editor)
+      // global keys (author, editor, autoContext*)
       const g = yield* cfg.loadGlobal();
-      if (key !== "author" && key !== "editor") {
+      if (key !== "author" && key !== "editor" && !isAutoContextKey(key)) {
         return yield* Effect.fail(new ValidationError({ message: `Unknown key "${key}".` }));
       }
-      const updated =
-        key === "author"
-          ? { ...g, author: value }
-          : { ...g, editor: value === "" ? undefined : value };
+
+      let updated: typeof g;
+      if (key === "author") {
+        updated = { ...g, author: value };
+      } else if (key === "editor") {
+        updated = { ...g, editor: value === "" ? undefined : value };
+      } else if (key === "autoContext") {
+        const on = /^(1|true|on|yes)$/i.test(value);
+        const off = /^(0|false|off|no)$/i.test(value);
+        if (!on && !off) {
+          return yield* Effect.fail(
+            new ValidationError({ message: "autoContext must be on or off" }),
+          );
+        }
+        updated = { ...g, autoContext: on ? "on" : "off" };
+      } else if (key === "autoContextScope") {
+        const scope = value.toLowerCase() as AutoContextScope;
+        if (!AUTO_CONTEXT_SCOPES.includes(scope)) {
+          return yield* Effect.fail(
+            new ValidationError({
+              message: `autoContextScope must be one of: ${AUTO_CONTEXT_SCOPES.join(", ")}`,
+            }),
+          );
+        }
+        updated = { ...g, autoContextScope: scope };
+      } else {
+        // autoContextLimit: integer within the canonical bounds
+        const limit = Number(value);
+        if (
+          !Number.isInteger(limit) ||
+          limit < AUTO_CONTEXT_LIMIT_MIN ||
+          limit > AUTO_CONTEXT_LIMIT_MAX
+        ) {
+          return yield* Effect.fail(
+            new ValidationError({
+              message: `autoContextLimit must be an integer between ${AUTO_CONTEXT_LIMIT_MIN} and ${AUTO_CONTEXT_LIMIT_MAX}`,
+            }),
+          );
+        }
+        updated = { ...g, autoContextLimit: limit };
+      }
       yield* cfg.saveGlobal(updated);
       yield* out(chalk.green("✓ set ") + `global.${key} = ${value}`);
       return;
