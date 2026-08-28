@@ -53,6 +53,7 @@ On npmjs.com, configure the trusted publisher for `engram-cli` as:
 - Repository: `tm0h/engram`
 - Workflow filename: `release.yml` (frozen)
 - Environment: `npm` (frozen)
+- Allowed action: `npm publish`
 
 Renaming the workflow file or the environment silently breaks the OIDC chain.
 If publishing fails with authentication errors, check this entry first. A

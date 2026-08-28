@@ -301,8 +301,19 @@ function main(): number {
     paths.map(([key, rel]) => [key, readFileSync(resolve(root, rel), "utf8")]),
   ) as unknown as ReleaseInputs;
   const { files, changes } = prepareRelease(input, positional[0], date);
-  for (const [key, rel] of paths) {
-    writeFileSync(resolve(root, rel), files[key]);
+  try {
+    for (const [key, rel] of paths) {
+      writeFileSync(resolve(root, rel), files[key]);
+    }
+  } catch (error) {
+    for (const [key, rel] of paths) {
+      try {
+        writeFileSync(resolve(root, rel), input[key]);
+      } catch {
+        // Preserve the original write error. A later run can repair this file.
+      }
+    }
+    throw error;
   }
   for (const change of changes) {
     console.log(change);
