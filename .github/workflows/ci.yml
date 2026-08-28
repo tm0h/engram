@@ -1,0 +1,61 @@
+# CI for pull requests and main pushes.
+#
+# Public-safe by design: no secrets are referenced, the token is read-only,
+# and fork pull requests run with the standard unprivileged GitHub token.
+# The secrets-granting pull-request-target style trigger is deliberately
+# absent from this repository.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# Least privilege: every job gets read-only repository access only.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      # Test isolation: /tmp can carry stray .git/.engram fixtures that
+      # contaminate the engram suites. Keep tests and their spawned children
+      # (the packaging test runs real pnpm) on /var/tmp instead.
+      TMPDIR: /var/tmp
+    steps:
+      - name: Check out repository
+        # actions/checkout v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          # No git writes are ever needed in CI; drop the credentials.
+          persist-credentials: false
+
+      - name: Install pnpm (version from the packageManager pin)
+        # pnpm/action-setup v6.0.10
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+
+      - name: Set up Node 24
+        # actions/setup-node v7.0.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Check (format, lint, typecheck)
+        run: pnpm check
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build CLI
+        # The canonical CLI build command (AGENTS.md).
+        run: pnpm --filter engram-cli build

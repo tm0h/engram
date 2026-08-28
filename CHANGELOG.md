@@ -7,8 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-28
+
 ### Added
 
+- **OpenCode plugin, bundled in the `engram-cli` tarball.** Adding
+  `engram-cli` to OpenCode's plugin configuration gives agents native
+  `engram_context`, `engram_search`, `engram_show`, and `engram_add` tools.
+  The plugin is shipped through the package's `./server` export and resolves
+  each tool call from the active session directory. ([#16])
 - **Automatic session context for Pi and OpenCode.** Sessions now start with
   a compact digest of the workspace's recorded memory injected into the
   system prompt before the first model request — no model turn spent on
@@ -35,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   they gain native loading. ([#17])
 
 [#17]: https://github.com/tm0h/engram/pull/17
+[#16]: https://github.com/tm0h/engram/pull/16
+[0.4.0]: https://github.com/tm0h/engram/releases/tag/v0.4.0
 
 ## [0.3.0] - 2026-08-19
 
