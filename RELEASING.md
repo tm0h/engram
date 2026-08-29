@@ -17,15 +17,29 @@ a defect.
    commit, ancestry on `origin/main`, all version locations, CHANGELOG
    heading, `pnpm check`, tests on `/var/tmp`, CLI build) and fails closed.
 5. The `npm` environment gate: approve the deployment (if required reviewers
-   are configured, see below). The workflow then publishes with npm trusted
-   publishing. No npm token exists anywhere.
+   are configured, see below). The publish job performs a clean, uncached
+   install, repeats the checks and tests, builds, then publishes with npm
+   trusted publishing. No npm token exists anywhere.
 6. Only after a successful publish, the workflow creates the GitHub Release
    with notes taken from the CHANGELOG section.
 
 If validation or publishing fails, fix forward and tag the next version.
 Never re-point or re-push a version tag that has been published.
 
+If npm publishes successfully but GitHub Release creation fails, use GitHub's
+**Re-run failed jobs** action. That reruns only `github-release` and does not
+attempt to publish the immutable npm version again. Do not re-run all jobs.
+
 ## Required manual configuration (one-time)
+
+### GitHub Actions workflow permissions
+
+- In **Settings > Actions > General > Workflow permissions**, keep the default
+  `GITHUB_TOKEN` permissions read-only.
+- Enable **Allow GitHub Actions to create and approve pull requests**. The
+  `release-prep` workflow needs this repository switch for `gh pr create` even
+  though its job declares `pull-requests: write`. The workflow never approves
+  its own PR, and branch protection still requires review.
 
 ### Branch protection for `main`
 
@@ -82,5 +96,7 @@ comment in the workflows, and add a row here with the verification date.
   only, checks out `main`, never tags, releases, or publishes, and the `v*`
   tag ruleset plus main protection bound the blast radius.
 - `release` publishes only from a validated `v*` tag of `main` ancestry,
-  after the `npm` environment gate, using OIDC. There are no secrets in this
-  repository, and no GitHub Release is created before a successful publish.
+  after the `npm` environment gate, using OIDC. The publish job uses no package
+  manager cache and repeats the checks and tests against the checkout it
+  builds. There are no secrets in this repository, and no GitHub Release is
+  created before a successful publish.

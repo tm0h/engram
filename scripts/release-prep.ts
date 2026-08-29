@@ -34,6 +34,17 @@ export function parseVersion(input: string): string {
   return v;
 }
 
+/** Compare two already-validated stable semantic versions. */
+function compareVersions(left: string, right: string): number {
+  const leftParts = left.split(".").map(BigInt);
+  const rightParts = right.split(".").map(BigInt);
+  for (let i = 0; i < leftParts.length; i++) {
+    if (leftParts[i] > rightParts[i]) return 1;
+    if (leftParts[i] < rightParts[i]) return -1;
+  }
+  return 0;
+}
+
 export interface ReleaseInputs {
   /** packages/cli/package.json */
   cliPkg: string;
@@ -220,6 +231,9 @@ export function prepareRelease(
     throw new Error(
       `version locations have drifted (expected ${reference} everywhere): ${drifted.join("; ")}`,
     );
+  }
+  if (compareVersions(v, reference) <= 0) {
+    throw new Error(`target version ${v} must be greater than ${reference}`);
   }
   const repoUrl = repoUrlFromCliPkg(input.cliPkg);
   const files: ReleaseInputs = {

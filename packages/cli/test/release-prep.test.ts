@@ -5,9 +5,12 @@
  * fail-closed refusals) without touching the working tree.
  */
 import { describe, expect, it } from "vite-plus/test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { parseVersion, prepareRelease, updateChangelog } from "../../../scripts/release-prep.ts";
 
 const V040 = "0.4.0";
+const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
 
 const cliPkg = (version: string): string =>
   `${JSON.stringify(
@@ -102,7 +105,12 @@ describe("prepareRelease", () => {
   });
 
   it("refuses when a CHANGELOG section for the version already exists", () => {
-    expect(() => prepareRelease(baseInput(V040), V040, "2026-09-01")).toThrow(/already exists/);
+    const input = baseInput(V040);
+    input.changelog = input.changelog.replace(
+      "## [0.4.0]",
+      "## [0.5.0] - 2026-09-01\n\n## [0.4.0]",
+    );
+    expect(() => prepareRelease(input, "0.5.0", "2026-09-01")).toThrow(/already exists/);
   });
 
   it("refuses when the five locations have drifted apart", () => {
@@ -129,6 +137,47 @@ describe("prepareRelease", () => {
     expect(() => prepareRelease(baseInput(V040), "0.5.0-rc.1", "2026-09-01")).toThrow(
       /strict X\.Y\.Z/,
     );
+  });
+
+  it("refuses a target version that does not advance the current version", () => {
+    expect(() => prepareRelease(baseInput(V040), "0.3.5", "2026-09-01")).toThrow(
+      /greater than 0\.4\.0/,
+    );
+    expect(() => prepareRelease(baseInput(V040), V040, "2026-09-01")).toThrow(
+      /greater than 0\.4\.0/,
+    );
+  });
+});
+
+describe("release workflow", () => {
+  it("validates and builds in the uncached job that publishes", () => {
+    const workflow = readFileSync(resolve(repoRoot, ".github/workflows/release.yml"), "utf8");
+    const publishJob = workflow.slice(
+      workflow.indexOf("\n  publish:"),
+      workflow.indexOf("\n  github-release:"),
+    );
+
+    expect(publishJob).toContain("package-manager-cache: false");
+    expect(publishJob).not.toContain("cache: pnpm");
+
+    const commands = [
+      "pnpm check",
+      "pnpm test",
+      "pnpm --filter engram-cli build",
+      "pnpm --filter engram-cli publish",
+    ];
+    for (let i = 1; i < commands.length; i++) {
+      expect(publishJob.indexOf(commands[i - 1])).toBeLessThan(publishJob.indexOf(commands[i]));
+    }
+  });
+
+  it("assembles every generated package asset during prepack", () => {
+    const cliManifest = JSON.parse(
+      readFileSync(resolve(repoRoot, "packages/cli/package.json"), "utf8"),
+    ) as { scripts: { prepack: string; prepublishOnly?: string } };
+    expect(cliManifest.scripts.prepack).toContain("../../README.md");
+    expect(cliManifest.scripts.prepack).toContain("../harnesses/src/pi/skills");
+    expect(cliManifest.scripts.prepublishOnly).toBeUndefined();
   });
 });
 
