@@ -166,9 +166,20 @@ describe("release workflow", () => {
       "pnpm --filter engram-cli build",
       "pnpm --filter engram-cli publish",
     ];
+    for (const command of commands) {
+      expect(publishJob).toContain(command);
+    }
     for (let i = 1; i < commands.length; i++) {
       expect(publishJob.indexOf(commands[i - 1])).toBeLessThan(publishJob.indexOf(commands[i]));
     }
+  });
+
+  it("rejects mixed text pins and invalid changelog dates", () => {
+    const workflow = readFileSync(resolve(repoRoot, ".github/workflows/release.yml"), "utf8");
+    expect(workflow).toContain("check_all_pins packages/cli/src/index.ts");
+    expect(workflow).toContain("check_all_pins packages/harnesses/claude/bin/engram");
+    expect(workflow).toContain("check_all_pins packages/harnesses/src/pi/README.md");
+    expect(workflow).toContain('date -u -d "$release_date" +%F');
   });
 
   it("assembles every generated package asset during prepack", () => {
@@ -202,5 +213,13 @@ describe("updateChangelog", () => {
         "https://github.com/tm0h/engram",
       ),
     ).toThrow(/Unreleased/);
+  });
+
+  it("rejects impossible calendar dates", () => {
+    for (const date of ["2026-02-29", "2026-02-31", "2026-13-01", "2026-00-10"]) {
+      expect(() =>
+        updateChangelog(baseInput(V040).changelog, "0.5.0", date, "https://github.com/tm0h/engram"),
+      ).toThrow(/real YYYY-MM-DD date/);
+    }
   });
 });

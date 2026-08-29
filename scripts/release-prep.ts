@@ -169,6 +169,10 @@ export function updateChangelog(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     throw new Error(`invalid date "${date}": expected YYYY-MM-DD`);
   }
+  const parsedDate = new Date(`${date}T00:00:00.000Z`);
+  if (Number.isNaN(parsedDate.valueOf()) || parsedDate.toISOString().slice(0, 10) !== date) {
+    throw new Error(`invalid date "${date}": expected a real YYYY-MM-DD date`);
+  }
   const lines = content.split("\n");
   const unreleased = lines.findIndex((l) => l.trim() === "## [Unreleased]");
   if (unreleased === -1) {
