@@ -180,6 +180,9 @@ describe("release workflow", () => {
     expect(workflow).toContain("check_all_pins packages/harnesses/claude/bin/engram");
     expect(workflow).toContain("check_all_pins packages/harnesses/src/pi/README.md");
     expect(workflow).toContain('date -u -d "$release_date" +%F');
+    expect(workflow).toContain(
+      'grep -Fxq "[$VERSION]: https://github.com/tm0h/engram/releases/tag/v$VERSION"',
+    );
   });
 
   it("assembles every generated package asset during prepack", () => {

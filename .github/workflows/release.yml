@@ -98,8 +98,8 @@ jobs:
             || fail "CHANGELOG.md: $release_date is not a real calendar date"
           [[ "$normalized_date" == "$release_date" ]] \
             || fail "CHANGELOG.md: $release_date is not a real calendar date"
-          grep -Eq "^\[$VERSION\]: " CHANGELOG.md \
-            || fail "CHANGELOG.md: no [$VERSION] tag link reference"
+          grep -Fxq "[$VERSION]: https://github.com/tm0h/engram/releases/tag/v$VERSION" CHANGELOG.md \
+            || fail "CHANGELOG.md: [$VERSION] tag link reference is missing or incorrect"
 
           echo "all version locations and the changelog agree on $VERSION"
 
