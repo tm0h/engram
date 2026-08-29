@@ -1,0 +1,223 @@
+# Tag-triggered npm release. The ONLY path to publication in this repository
+# is pushing a protected vX.Y.Z tag whose commit is on main. Validation runs
+# first and fails closed; publishing requires the `npm` environment (manual
+# approval can be configured there); the GitHub Release is created only after
+# a successful publish. Required manual setup: see RELEASING.md.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Read-only by default. The publish job adds only the OIDC identity it needs;
+# the release job adds only what GitHub Release creation needs.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      # Test isolation: keep tests and spawned children off /tmp (see ci.yml).
+      TMPDIR: /var/tmp
+    steps:
+      - name: Check out repository (full history for ancestry checks)
+        # actions/checkout v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate tag shape, target commit, and main ancestry
+        env:
+          REF: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+
+          # Strict vX.Y.Z only: no prerelease, no build metadata, no leading
+          # zeros. Anything else never reaches publishing.
+          [[ "$REF" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] \
+            || fail "tag $REF is not strict vX.Y.Z"
+          VERSION="${REF#v}"
+
+          # The tag must point at the commit this run was triggered for.
+          tagged="$(git rev-parse "refs/tags/$REF^{commit}")"
+          [[ "$tagged" == "$SHA" ]] \
+            || fail "tag $REF points at $tagged, not the pushed commit $SHA"
+
+          # The tagged commit must be reachable from origin/main.
+          git merge-base --is-ancestor "$REF" origin/main \
+            || fail "tag $REF is not an ancestor of origin/main; releases must come from main"
+
+          echo "tag $REF (commit $tagged) is valid and reachable from origin/main"
+
+      - name: Verify version locations and changelog heading
+        env:
+          REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          VERSION="${REF#v}"
+          check_eq() { [[ "$1" == "$VERSION" ]] || fail "$2 has $1, expected $VERSION"; }
+          check_all_pins() {
+            local file="$1" pattern="$2" label="$3" pins
+            pins="$(grep -Po "$pattern" "$file" || true)"
+            [[ -n "$pins" ]] || fail "$label has no version pin"
+            while IFS= read -r pin; do
+              check_eq "$pin" "$label"
+            done <<< "$pins"
+          }
+
+          check_eq "$(jq -r .version packages/cli/package.json)" "packages/cli/package.json"
+          check_eq "$(jq -r .version packages/harnesses/package.json)" "packages/harnesses/package.json"
+          check_eq "$(jq -r .version packages/harnesses/claude/.claude-plugin/plugin.json)" ".claude-plugin/plugin.json"
+          check_all_pins packages/cli/src/index.ts \
+            '(?<=\.version\(")[0-9]+\.[0-9]+\.[0-9]+(?="\))' "packages/cli/src/index.ts"
+          check_all_pins packages/harnesses/claude/bin/engram \
+            '(?<=engram-cli@)[0-9]+\.[0-9]+\.[0-9]+' "packages/harnesses/claude/bin/engram"
+          check_all_pins packages/harnesses/src/pi/README.md \
+            '(?<=engram-cli@)[0-9]+\.[0-9]+\.[0-9]+' "Pi README npm pins"
+          check_all_pins packages/harnesses/src/pi/README.md \
+            '(?<=engram@v)[0-9]+\.[0-9]+\.[0-9]+' "Pi README git pins"
+
+          release_dates="$(awk -v prefix="## [$VERSION] - " \
+            'index($0, prefix) == 1 { print substr($0, length(prefix) + 1) }' CHANGELOG.md)"
+          [[ -n "$release_dates" && "$release_dates" != *$'\n'* ]] \
+            || fail "CHANGELOG.md: expected exactly one heading for [$VERSION]"
+          release_date="$release_dates"
+          [[ "$release_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] \
+            || fail "CHANGELOG.md: release date is not YYYY-MM-DD"
+          normalized_date="$(date -u -d "$release_date" +%F 2>/dev/null)" \
+            || fail "CHANGELOG.md: $release_date is not a real calendar date"
+          [[ "$normalized_date" == "$release_date" ]] \
+            || fail "CHANGELOG.md: $release_date is not a real calendar date"
+          grep -Fxq "[$VERSION]: https://github.com/tm0h/engram/releases/tag/v$VERSION" CHANGELOG.md \
+            || fail "CHANGELOG.md: [$VERSION] tag link reference is missing or incorrect"
+
+          echo "all version locations and the changelog agree on $VERSION"
+
+      - name: Install pnpm (version from the packageManager pin)
+        # pnpm/action-setup v6.0.10
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+
+      - name: Set up Node 24
+        # actions/setup-node v7.0.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          # Release jobs must not restore dependency caches written by CI.
+          package-manager-cache: false
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Check (format, lint, typecheck)
+        run: pnpm check
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build CLI
+        # The canonical CLI build command (AGENTS.md).
+        run: pnpm --filter engram-cli build
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    env:
+      # This job rebuilds and revalidates the exact checkout it publishes.
+      # Keep its tests and spawned children off potentially contaminated /tmp.
+      TMPDIR: /var/tmp
+    # The `npm` environment is both the manual approval gate and part of the
+    # npm trusted-publisher OIDC binding. The environment name and this
+    # workflow's filename (release.yml) are frozen: the npm trusted-publisher
+    # entry references them exactly, and renaming either silently breaks
+    # authentication.
+    environment: npm
+    permissions:
+      contents: read
+      # OIDC identity for npm trusted publishing. There is deliberately no
+      # NPM_TOKEN or any other secret in this repository.
+      id-token: write
+    steps:
+      - name: Check out repository
+        # actions/checkout v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm (version from the packageManager pin)
+        # pnpm/action-setup v6.0.10
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+
+      - name: Set up Node 24
+        # actions/setup-node v7.0.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          # Publishing must not consume caches created by less-privileged CI.
+          package-manager-cache: false
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Check (format, lint, typecheck)
+        run: pnpm check
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build CLI
+        # The canonical CLI build command (AGENTS.md).
+        run: pnpm --filter engram-cli build
+
+      - name: Publish to npm (trusted publishing, no token)
+        run: pnpm --filter engram-cli publish --no-git-checks --access public
+
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    # Runs only after a successful publish (needs: publish above).
+    permissions:
+      contents: write # GitHub Release creation only
+    steps:
+      - name: Check out repository
+        # actions/checkout v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Extract release notes from the changelog
+        env:
+          REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${REF#v}"
+          NOTES="$(awk -v section="## [$VERSION]" '
+            index($0, section) == 1 { insec = 1; next }
+            insec && /^## / { exit }
+            insec && /^\[[^]]+\]: / { next }
+            insec { print }
+          ' CHANGELOG.md)"
+          if [[ -z "$(printf "%s" "$NOTES" | tr -d '[:space:]')" ]]; then
+            echo "::error::CHANGELOG.md has no content under '## [$VERSION]'"
+            exit 1
+          fi
+          {
+            echo "NOTES<<CHANGELOG_NOTES"
+            printf "%s\n" "$NOTES"
+            echo "CHANGELOG_NOTES"
+          } >> "$GITHUB_ENV"
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref_name }}
+        run: gh release create "$REF" --verify-tag --title "$REF" --notes "$NOTES"

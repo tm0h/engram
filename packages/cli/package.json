@@ -1,6 +1,6 @@
 {
   "name": "engram-cli",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A git-native memory tool for AI agents. Personal + team/project memory that any harness (Pi, Claude Code, cloud review bots) can use. Built with Effect.",
   "keywords": [
     "adr",
@@ -39,8 +39,7 @@
   },
   "scripts": {
     "build": "vp pack",
-    "prepack": "node -e \"require('fs').cpSync('../harnesses/src/pi/skills', 'skills', { recursive: true })\"",
-    "prepublishOnly": "cp ../../README.md ./README.md",
+    "prepack": "node -e \"const fs=require('fs');fs.cpSync('../harnesses/src/pi/skills','skills',{recursive:true});fs.cpSync('../../README.md','README.md')\"",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
   },
