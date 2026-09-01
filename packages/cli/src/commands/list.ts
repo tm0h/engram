@@ -2,9 +2,8 @@
 import { Effect } from "effect";
 import chalk from "chalk";
 import { EngramStore } from "@engram/core";
-import { scopesToQuery } from "@engram/core";
-import { renderList } from "@engram/core";
-import { out } from "../io.js";
+import { incompleteMemoryWarning, renderList, scopesToQuery } from "@engram/core";
+import { out, err } from "../io.js";
 
 export interface ListOptions {
   readonly scope?: string;
@@ -21,9 +20,15 @@ export const listCommand = (opts: ListOptions) =>
     const tagFilter = opts.tag?.toLowerCase();
 
     let total = 0;
+    let omitted = 0;
+    let candidates = 0;
     let first = true;
     for (const scope of scopes) {
-      let engrams = (yield* store.list(scope)).filter((m) => {
+      // Consume the full scan so malformed candidates cannot vanish silently.
+      const scanned = yield* store.scan(scope);
+      omitted += scanned.omittedFiles;
+      candidates += scanned.filesChecked;
+      const engrams = scanned.entries.filter((m) => {
         if (typeFilter && m.type !== typeFilter) return false;
         if (tagFilter && !m.tags.includes(tagFilter)) return false;
         return true;
@@ -39,5 +44,13 @@ export const listCommand = (opts: ListOptions) =>
       yield* out(renderList(engrams));
       total += engrams.length;
     }
-    if (total === 0) yield* out(chalk.gray("No engrams yet. Add one with `engram add`."));
+    if (total === 0) {
+      yield* out(
+        chalk.gray(
+          candidates > 0 ? "(no readable engrams)" : "No engrams yet. Add one with `engram add`.",
+        ),
+      );
+    }
+    // Fail-open but loud: exactly one bounded aggregate warning on stderr.
+    if (omitted > 0) yield* err(incompleteMemoryWarning(omitted));
   });

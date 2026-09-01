@@ -81,3 +81,12 @@ export interface StoreScan {
  * human output, JSON output, and tests all agree. */
 export const compareDiagnostics = (a: StoreDiagnostic, b: StoreDiagnostic): number =>
   a.scope.localeCompare(b.scope) || a.file.localeCompare(b.file) || a.code.localeCompare(b.code);
+
+/** The single bounded warning emitted when a read had to skip candidate
+ * files: fail-open but loud. Its length is constant apart from the count;
+ * no file list, no entry content. `engram list` prints it to stderr, and
+ * context paths prepend it to their captured output. */
+export const incompleteMemoryWarning = (omittedFiles: number): string =>
+  `WARNING: Engram memory is incomplete. Skipped ${omittedFiles} unreadable or invalid ${
+    omittedFiles === 1 ? "file" : "files"
+  }. Run \`engram check --scope all\` for exact paths and repair guidance.`;
