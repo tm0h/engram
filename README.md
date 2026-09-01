@@ -221,7 +221,18 @@ pinned: true
 moment.js is frozen/in-maintenance and ships a large bundle…
 ```
 
-All frontmatter fields except `id`, `title`, `type`, and `created` are optional.
+The frontmatter fields `id`, `title`, `type`, `tags`, `scope`, `created`, and
+`updated` are required; `author` and `pinned` are optional. Unknown fields are
+preserved and tolerated, so future engram versions can add metadata without
+breaking older readers.
+
+Hand-edited files are validated on read: malformed entries never disappear
+silently. `engram list` stays fail-open but prints one bounded warning to
+stderr for skipped files, and `engram context` (plus the automatic digest)
+prepends the same warning to its output. Run `engram check` for the exact
+paths, machine-readable codes, and repair hints; it exits nonzero when any
+problem exists.
+
 You can edit these by hand (they're just files), but never invent an id:
 `engram add` mints a globally-unique one.
 
@@ -229,19 +240,20 @@ You can edit these by hand (they're just files), but never invent an id:
 
 ## Commands
 
-| Command                                   | Description                                                                                                                                                                                                                                                       |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `engram init [--tracked\|--untracked]`    | Initialize `.engram/` and choose git tracking.                                                                                                                                                                                                                    |
-| `engram add [content]`                    | Record an engram. Body from arg, `--stdin`, or `$EDITOR`.                                                                                                                                                                                                         |
-| `engram list [--scope] [--type] [--tag]`  | List engrams.                                                                                                                                                                                                                                                     |
-| `engram search <query> [--scope] [-n]`    | Relevance search (tags > title > type > body).                                                                                                                                                                                                                    |
-| `engram show <id>`                        | Show one engram in full (id or unique prefix).                                                                                                                                                                                                                    |
-| `engram edit <id> [content]`              | Edit an engram: flags replace fields, no flags opens `$EDITOR`, `--stdin`/content replaces the body.                                                                                                                                                              |
-| `engram remove <id> [-y]`                 | Delete an engram.                                                                                                                                                                                                                                                 |
-| `engram context [-q query] [--full] [-n]` | Emit an agent-ready digest.                                                                                                                                                                                                                                       |
-| `engram config [get\|set] [key] [value]`  | Keys: `tracked`, `defaultType`, `author`, `editor`, plus the automatic-context user settings: `autoContext` (`on`/`off`, default `on`), `autoContextScope` (`project`/`personal`/`both`, default `project`), `autoContextLimit` (integer `1..100`, default `25`). |
-| `engram inject`                           | Print the agent-injection snippet.                                                                                                                                                                                                                                |
-| `engram where`                            | Show resolved paths and the current default scope.                                                                                                                                                                                                                |
+| Command                                                  | Description                                                                                                                                                                                                                                                       |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `engram init [--tracked\|--untracked]`                   | Initialize `.engram/` and choose git tracking.                                                                                                                                                                                                                    |
+| `engram add [content]`                                   | Record an engram. Body from arg, `--stdin`, or `$EDITOR`.                                                                                                                                                                                                         |
+| `engram list [--scope] [--type] [--tag]`                 | List engrams.                                                                                                                                                                                                                                                     |
+| `engram search <query> [--scope] [-n]`                   | Relevance search (tags > title > type > body).                                                                                                                                                                                                                    |
+| `engram show <id>`                                       | Show one engram in full (id or unique prefix).                                                                                                                                                                                                                    |
+| `engram edit <id> [content]`                             | Edit an engram: flags replace fields, no flags opens `$EDITOR`, `--stdin`/content replaces the body.                                                                                                                                                              |
+| `engram remove <id> [-y]`                                | Delete an engram.                                                                                                                                                                                                                                                 |
+| `engram context [-q query] [--full] [-n]`                | Emit an agent-ready digest.                                                                                                                                                                                                                                       |
+| `engram check [--scope personal\|project\|all] [--json]` | Validate store integrity (frontmatter, required fields, id uniqueness, filename consistency, configs). Read-only; exits nonzero when any problem exists. `--json` emits one report document with per-file codes, messages, hints, and uncheckable scopes.         |
+| `engram config [get\|set] [key] [value]`                 | Keys: `tracked`, `defaultType`, `author`, `editor`, plus the automatic-context user settings: `autoContext` (`on`/`off`, default `on`), `autoContextScope` (`project`/`personal`/`both`, default `project`), `autoContextLimit` (integer `1..100`, default `25`). |
+| `engram inject`                                          | Print the agent-injection snippet.                                                                                                                                                                                                                                |
+| `engram where`                                           | Show resolved paths and the current default scope.                                                                                                                                                                                                                |
 
 `add` highlights:
 

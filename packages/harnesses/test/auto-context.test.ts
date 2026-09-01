@@ -403,3 +403,74 @@ describe("shared ops / autoContextOp", () => {
     expect(Exit.hasInterrupts(exit as never)).toBe(true);
   });
 });
+
+/* --------------------- integrity warnings --------------------- */
+
+describe("shared ops / autoContextOp integrity warnings", () => {
+  let origCwd = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    origCwd = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = mkHome();
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(origCwd);
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const seedBroken = (name: string): void => {
+    fs.writeFileSync(path.join(projectEngramsDir(tmp), name), "---\ntitle: [unclosed\n---\nBody\n");
+  };
+
+  it("automatic context prepends the bounded warning for malformed entries", () => {
+    seed(tmp, "0001", { title: "Healthy note" });
+    seedBroken("0002-broken.md");
+
+    return run(autoContextOp()).then((res: any) => {
+      expect(res.isError).toBe(false);
+      // headless consumers read text: the warning is inside the frame,
+      // after the intro and before the digest body
+      expect(res.text.startsWith("<engram-memory>\n")).toBe(true);
+      const iIntro = res.text.indexOf("Compact recorded memory for this workspace");
+      const iWarning = res.text.indexOf("WARNING: Engram memory is incomplete");
+      const iBody = res.text.indexOf("# Engram context");
+      expect(iWarning).toBeGreaterThan(iIntro);
+      expect(iWarning).toBeLessThan(iBody);
+      expect(res.text).toContain("Healthy note");
+      expect(res.text.split("WARNING: Engram memory is incomplete")).toHaveLength(2);
+      expect(res.text).not.toContain("0002-broken.md");
+      expect(res.details).toMatchObject({
+        loaded: true,
+        memoryIncomplete: true,
+        omittedFiles: 1,
+      });
+      expect(res.details.diagnosticCount).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it("automatic context still warns when every entry is malformed", () => {
+    seedBroken("0001-broken.md");
+
+    return run(autoContextOp()).then((res: any) => {
+      expect(res.isError).toBe(false);
+      expect(res.text.length).toBeGreaterThan(0);
+      expect(res.text.startsWith("<engram-memory>\n")).toBe(true);
+      expect(res.text).toContain("WARNING: Engram memory is incomplete");
+      expect(res.details).toMatchObject({
+        loaded: true,
+        memoryIncomplete: true,
+        omittedFiles: 1,
+        total: 0,
+      });
+    });
+  });
+});
