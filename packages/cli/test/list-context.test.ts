@@ -143,6 +143,14 @@ describe("list and context integrity warnings", () => {
     expect(output()).not.toContain("No engrams yet");
   });
 
+  it("a filtered empty result does not claim the store is unreadable", async () => {
+    await addProject("A plain note");
+    await run(listCommand({ type: "decision" })); // store is readable; nothing matches
+    expect(output()).not.toContain("(no readable engrams)");
+    expect(output()).toContain("No matching engrams.");
+    expect(warningLines()).toHaveLength(0);
+  });
+
   it("a clean empty list still says No engrams yet with no warning", async () => {
     await run(listCommand({}));
     expect(output()).toContain("No engrams yet");

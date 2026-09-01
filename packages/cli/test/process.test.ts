@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vite-plus/test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -124,6 +124,75 @@ describe("engram check (process level)", () => {
     mkdirSync(bare, { recursive: true });
     const r = runCli(["check", "--scope", "project"], bare, home);
     expect(r.status).toBe(1);
-    expect(r.stderr).toContain("engram init");
+    // human report on stdout carries the exact reason and init guidance...
+    expect(r.stdout).toContain("project: could not be checked");
+    expect(r.stdout).toContain("engram init");
+    // ...and the concise summary goes to stderr
+    expect(r.stderr).toContain("project scope could not be checked");
+  });
+
+  it("an explicit uncheckable project scope exits 1 with parseable json stdout", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const bare = join(tmp, "bare-json");
+    mkdirSync(bare, { recursive: true });
+    const r = runCli(["check", "--scope", "project", "--json"], bare, home);
+    expect(r.status).toBe(1);
+    const doc = JSON.parse(r.stdout) as {
+      ok: boolean;
+      scopes: string[];
+      uncheckableScopes: Array<{ scope: string; message: string; hint: string }>;
+    };
+    expect(doc.ok).toBe(false);
+    expect(doc.scopes).toEqual([]);
+    expect(doc.uncheckableScopes).toHaveLength(1);
+    expect(doc.uncheckableScopes[0].scope).toBe("project");
+    expect(doc.uncheckableScopes[0].hint).toContain("engram init");
+  });
+
+  it("all outside a project exits 1 with the unchecked scope structured in json", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const bare = join(tmp, "bare-all-json");
+    mkdirSync(bare, { recursive: true });
+    const r = runCli(["check", "--scope", "all", "--json"], bare, home);
+    expect(r.status).toBe(1);
+    const doc = JSON.parse(r.stdout) as {
+      ok: boolean;
+      scopes: string[];
+      uncheckableScopes: Array<{ scope: string }>;
+    };
+    expect(doc.ok).toBe(false);
+    expect(doc.scopes).toEqual(["personal"]);
+    expect(doc.uncheckableScopes.map((u) => u.scope)).toEqual(["project"]);
+  });
+
+  it("an unlistable store directory exits 1 with parseable json stdout", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    const dir = join(proj, ".engram", "engrams");
+    chmodSync(dir, 0o000);
+    try {
+      // chmod is unreliable under elevated permissions: probe and skip if it
+      // had no effect instead of failing the suite
+      try {
+        readdirSync(dir);
+        chmodSync(dir, 0o755);
+        ctx.skip();
+        return;
+      } catch {
+        // blocked as intended
+      }
+      const r = runCli(["check", "--scope", "project", "--json"], proj, home);
+      expect(r.status).toBe(1);
+      const doc = JSON.parse(r.stdout) as {
+        ok: boolean;
+        uncheckableScopes: Array<{ scope: string; message: string }>;
+      };
+      expect(doc.ok).toBe(false);
+      expect(doc.uncheckableScopes).toHaveLength(1);
+      expect(doc.uncheckableScopes[0].scope).toBe("project");
+      expect(doc.uncheckableScopes[0].message).toContain(dir);
+    } finally {
+      chmodSync(dir, 0o755);
+    }
   });
 });

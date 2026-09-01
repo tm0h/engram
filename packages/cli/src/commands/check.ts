@@ -1,16 +1,13 @@
 /** `engram check`: report store integrity. Read-only: no repair happens
  * here, the report is the product. */
-import { Effect, Option } from "effect";
+import { Effect, Option, Result } from "effect";
 import chalk from "chalk";
 import {
   ConfigRepo,
   EngramStore,
   IntegrityCheckFailedError,
-  ProjectNotInitializedError,
   ValidationError,
   compareDiagnostics,
-  formatDomainError,
-  type DomainError,
   type Scope,
   type StoreDiagnostic,
   type StoreScan,
@@ -30,12 +27,23 @@ interface ScopeCheck {
   readonly config: ReadonlyArray<StoreDiagnostic>;
 }
 
+/** A requested scope that could not be checked at all (store not
+ * initialized, directory unlistable, config unreadable). Structured so the
+ * JSON report is self-contained: a consumer can see WHY `ok` is false
+ * without reading stderr. */
+interface UncheckableScope {
+  readonly scope: Scope;
+  readonly message: string;
+  readonly hint: string;
+}
+
 export const checkCommand = (opts: CheckOptions) =>
   Effect.gen(function* () {
     const store = yield* EngramStore;
     const config = yield* ConfigRepo;
 
-    // Option validation happens before any scanning.
+    // Option validation happens before any scanning. Usage errors are not
+    // scope states; they stay plain validation errors.
     if (opts.scope !== undefined && !CHECK_SCOPES.includes(opts.scope)) {
       return yield* Effect.fail(
         new ValidationError({
@@ -49,23 +57,30 @@ export const checkCommand = (opts: CheckOptions) =>
 
     // Scope resolution: the default follows the rest of the CLI (project
     // when initialized, otherwise personal). `all` never silently drops a
-    // scope: an uninitialized project is reported as unchecked and fails.
+    // scope, and no scope state is reported only on stderr: every
+    // uncheckable scope is structured report data.
     const toCheck: Array<Scope> = [];
-    const uncheckable: Array<{ scope: Scope; error: ProjectNotInitializedError }> = [];
+    const uncheckable: Array<UncheckableScope> = [];
     if (opts.scope === "project") {
       if (rootValue === undefined) {
-        // Operational failure with the existing init guidance.
-        return yield* Effect.fail(new ProjectNotInitializedError({ cwd: process.cwd() }));
+        uncheckable.push({
+          scope: "project",
+          message: `no .engram/ project found in "${process.cwd()}"`,
+          hint: "Run `engram init` here, or use `--scope personal` for global memory.",
+        });
+      } else {
+        toCheck.push("project");
       }
-      toCheck.push("project");
     } else if (opts.scope === "personal") {
       toCheck.push("personal");
     } else if (opts.scope === "all") {
-      if (rootValue !== undefined) toCheck.push("project");
-      else {
+      if (rootValue !== undefined) {
+        toCheck.push("project");
+      } else {
         uncheckable.push({
           scope: "project",
-          error: new ProjectNotInitializedError({ cwd: process.cwd() }),
+          message: `no .engram/ project found in "${process.cwd()}"`,
+          hint: "Run `engram init` here, or use `--scope personal` for global memory.",
         });
       }
       toCheck.push("personal");
@@ -76,12 +91,36 @@ export const checkCommand = (opts: CheckOptions) =>
 
     const checks: Array<ScopeCheck> = [];
     for (const scope of toCheck) {
-      const scan = yield* store.scan(scope);
-      const configDiags =
+      // Operational failures (unlistable store directory, config file that
+      // cannot be stat'ed) mean the scope cannot be checked completely.
+      // They are report data, not silent skippable defects.
+      const scanResult = yield* Effect.result(store.scan(scope));
+      if (Result.isFailure(scanResult)) {
+        uncheckable.push({
+          scope,
+          message: `could not scan the ${scope} store: ${(scanResult.failure as Error).message}`,
+          hint: "Check the store directory's permissions, then re-run.",
+        });
+        continue;
+      }
+      const configResult = yield* Effect.result(
         scope === "personal"
-          ? yield* config.validateGlobal()
-          : yield* config.validateProject(rootValue as string);
-      checks.push({ scope, scan, config: configDiags });
+          ? config.validateGlobal()
+          : config.validateProject(rootValue as string),
+      );
+      if (Result.isFailure(configResult)) {
+        uncheckable.push({
+          scope,
+          message: `could not validate the ${scope} config: ${(configResult.failure as Error).message}`,
+          hint: "Check the file's permissions, then re-run.",
+        });
+        continue;
+      }
+      checks.push({
+        scope,
+        scan: scanResult.success,
+        config: configResult.success,
+      });
     }
 
     const diagnostics = checks
@@ -93,7 +132,8 @@ export const checkCommand = (opts: CheckOptions) =>
     const ok = diagnostics.length === 0 && uncheckable.length === 0;
 
     if (opts.json) {
-      // Exactly one JSON document on stdout; any summary goes to stderr.
+      // Exactly one self-contained JSON document on stdout; any summary goes
+      // to stderr.
       yield* out(
         JSON.stringify(
           {
@@ -103,6 +143,7 @@ export const checkCommand = (opts: CheckOptions) =>
             validEntries,
             omittedFiles,
             diagnostics,
+            uncheckableScopes: uncheckable,
           },
           null,
           2,
@@ -130,7 +171,8 @@ export const checkCommand = (opts: CheckOptions) =>
       }
       for (const u of uncheckable) {
         yield* out(`${chalk.red("✗")} ${u.scope}: could not be checked`);
-        yield* out(chalk.gray(formatDomainError(u.error as DomainError)));
+        yield* out(`  ${u.message}`);
+        yield* out(chalk.gray(`  ${u.hint}`));
       }
     }
 

@@ -22,12 +22,14 @@ export const listCommand = (opts: ListOptions) =>
     let total = 0;
     let omitted = 0;
     let candidates = 0;
+    let readable = 0;
     let first = true;
     for (const scope of scopes) {
       // Consume the full scan so malformed candidates cannot vanish silently.
       const scanned = yield* store.scan(scope);
       omitted += scanned.omittedFiles;
       candidates += scanned.filesChecked;
+      readable += scanned.entries.length;
       const engrams = scanned.entries.filter((m) => {
         if (typeFilter && m.type !== typeFilter) return false;
         if (tagFilter && !m.tags.includes(tagFilter)) return false;
@@ -45,11 +47,15 @@ export const listCommand = (opts: ListOptions) =>
       total += engrams.length;
     }
     if (total === 0) {
-      yield* out(
-        chalk.gray(
-          candidates > 0 ? "(no readable engrams)" : "No engrams yet. Add one with `engram add`.",
-        ),
-      );
+      if (readable > 0) {
+        // Entries exist but the filters matched none of them: the store is
+        // fine, so do not claim it is unreadable.
+        yield* out(chalk.gray("No matching engrams."));
+      } else if (candidates > 0) {
+        yield* out(chalk.gray("(no readable engrams)"));
+      } else {
+        yield* out(chalk.gray("No engrams yet. Add one with `engram add`."));
+      }
     }
     // Fail-open but loud: exactly one bounded aggregate warning on stderr.
     if (omitted > 0) yield* err(incompleteMemoryWarning(omitted));

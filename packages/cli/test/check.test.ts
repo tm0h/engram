@@ -19,7 +19,6 @@ import {
   EngramStore,
   EngramStoreLive,
   MainLive,
-  formatDomainError,
   projectConfigPath,
   projectEngramsDir,
   slugify,
@@ -98,6 +97,37 @@ const blockedReadLive = (blocked: (p: string) => boolean) => {
                 }),
               )
             : real.readFileString(p),
+      } satisfies FileSystem;
+    }),
+  ).pipe(Layer.provide(NodeServices.layer));
+  return Layer.mergeAll(
+    EngramStoreLive.pipe(Layer.provide(FailingFs), Layer.provide(NodeServices.layer)),
+    ConfigRepoLive.pipe(Layer.provide(FailingFs), Layer.provide(NodeServices.layer)),
+    NodeServices.layer,
+  );
+};
+
+/** Like `blockedReadLive` but blocks `readDirectory` — the store directory
+ * itself cannot be listed, so that scope cannot be checked at all. */
+const blockedDirLive = (blocked: (p: string) => boolean) => {
+  const FailingFs = Layer.effect(
+    FileSystem,
+    Effect.gen(function* () {
+      const real = yield* FileSystem;
+      return {
+        ...real,
+        readDirectory: (p: string) =>
+          blocked(p)
+            ? Effect.fail(
+                systemError({
+                  _tag: "PermissionDenied",
+                  module: "FileSystem",
+                  method: "readDirectory",
+                  pathOrDescriptor: p,
+                  syscall: "open",
+                }),
+              )
+            : real.readDirectory(p),
       } satisfies FileSystem;
     }),
   ).pipe(Layer.provide(NodeServices.layer));
@@ -236,11 +266,15 @@ describe("engram check", () => {
     expect(output()).toBe("");
   });
 
-  it("explicit project outside an initialized project fails with the init hint", async () => {
+  it("explicit project outside an initialized project reports the scope uncheckable", async () => {
     process.chdir(mkPlain());
     const info = await runFail(checkCommand({ scope: "project" }));
-    expect(info._tag).toBe("ProjectNotInitializedError");
-    expect(formatDomainError(info as unknown as never)).toContain("engram init");
+    // the report renders, then the command fails with the summary error
+    expect(info._tag).toBe("IntegrityCheckFailedError");
+    expect(info.message).toContain("project scope could not be checked");
+    expect(output()).toContain("project: could not be checked");
+    expect(output()).toContain('no .engram/ project found in "');
+    expect(output()).toContain("engram init");
   });
 
   it("all outside a project does not silently report success", async () => {
@@ -445,8 +479,69 @@ describe("engram check", () => {
     process.chdir(mkPlain());
     const info = await runFail(checkCommand({ scope: "all", json: true }));
     expect(info._tag).toBe("IntegrityCheckFailedError");
-    const doc = JSON.parse(output()) as { ok: boolean; scopes: string[] };
+    const doc = JSON.parse(output()) as {
+      ok: boolean;
+      scopes: string[];
+      uncheckableScopes: Array<{ scope: string; message: string; hint: string }>;
+    };
     expect(doc.ok).toBe(false);
     expect(doc.scopes).toEqual(["personal"]);
+    // the unchecked scope and its actionable reason live in the document
+    expect(doc.uncheckableScopes).toHaveLength(1);
+    expect(doc.uncheckableScopes[0].scope).toBe("project");
+    expect(doc.uncheckableScopes[0].message).toContain("no .engram/ project found");
+    expect(doc.uncheckableScopes[0].hint).toContain("engram init");
+  });
+
+  it("json explicit uncheckable project scope still emits a parseable report", async () => {
+    process.chdir(mkPlain());
+    const info = await runFail(checkCommand({ scope: "project", json: true }));
+    expect(info._tag).toBe("IntegrityCheckFailedError");
+    const doc = JSON.parse(output()) as {
+      ok: boolean;
+      scopes: string[];
+      filesChecked: number;
+      diagnostics: ReadonlyArray<unknown>;
+      uncheckableScopes: Array<{ scope: string; message: string; hint: string }>;
+    };
+    expect(doc.ok).toBe(false);
+    expect(doc.scopes).toEqual([]);
+    expect(doc.filesChecked).toBe(0);
+    expect(doc.diagnostics).toEqual([]);
+    expect(doc.uncheckableScopes).toHaveLength(1);
+    expect(doc.uncheckableScopes[0].scope).toBe("project");
+    expect(doc.uncheckableScopes[0].hint).toContain("engram init");
+  });
+
+  it("a scope whose directory cannot be listed is reported uncheckable", async () => {
+    const dir = projectEngramsDir(tmp);
+    const info = await runFail(
+      checkCommand({ scope: "all" }),
+      blockedDirLive((p) => p === dir) as never,
+    );
+    expect(info._tag).toBe("IntegrityCheckFailedError");
+    expect(info.message).toContain("project scope could not be checked");
+    expect(output()).toContain("personal:");
+    expect(output()).toContain("project: could not be checked");
+    expect(output()).toContain(dir);
+  });
+
+  it("json unlistable directory keeps stdout parseable", async () => {
+    const dir = projectEngramsDir(tmp);
+    const info = await runFail(
+      checkCommand({ scope: "all", json: true }),
+      blockedDirLive((p) => p === dir) as never,
+    );
+    expect(info._tag).toBe("IntegrityCheckFailedError");
+    const doc = JSON.parse(output()) as {
+      ok: boolean;
+      scopes: string[];
+      uncheckableScopes: Array<{ scope: string; message: string }>;
+    };
+    expect(doc.ok).toBe(false);
+    expect(doc.scopes).toEqual(["personal"]);
+    expect(doc.uncheckableScopes).toHaveLength(1);
+    expect(doc.uncheckableScopes[0].scope).toBe("project");
+    expect(doc.uncheckableScopes[0].message).toContain(dir);
   });
 });
