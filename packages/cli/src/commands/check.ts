@@ -52,41 +52,47 @@ export const checkCommand = (opts: CheckOptions) =>
       );
     }
 
-    const root = yield* store.projectRoot();
-    const rootValue = Option.isSome(root) ? root.value : undefined;
-
     // Scope resolution: the default follows the rest of the CLI (project
-    // when initialized, otherwise personal). `all` never silently drops a
-    // scope, and no scope state is reported only on stderr: every
-    // uncheckable scope is structured report data.
+    // when initialized, otherwise personal). Explicit personal never needs
+    // project discovery. For every other mode a discovery failure becomes
+    // structured report data (project status unknown), and personal stays
+    // checkable: `all` never silently drops a scope, and no scope state is
+    // reported only on stderr.
     const toCheck: Array<Scope> = [];
     const uncheckable: Array<UncheckableScope> = [];
-    if (opts.scope === "project") {
-      if (rootValue === undefined) {
-        uncheckable.push({
-          scope: "project",
-          message: `no .engram/ project found in "${process.cwd()}"`,
-          hint: "Run `engram init` here, or use `--scope personal` for global memory.",
-        });
-      } else {
-        toCheck.push("project");
-      }
-    } else if (opts.scope === "personal") {
-      toCheck.push("personal");
-    } else if (opts.scope === "all") {
-      if (rootValue !== undefined) {
-        toCheck.push("project");
-      } else {
-        uncheckable.push({
-          scope: "project",
-          message: `no .engram/ project found in "${process.cwd()}"`,
-          hint: "Run `engram init` here, or use `--scope personal` for global memory.",
-        });
-      }
+    let discoveredRoot: string | undefined;
+    const projectUncheckable = (): UncheckableScope => ({
+      scope: "project",
+      message: `no .engram/ project found in "${process.cwd()}"`,
+      hint: "Run `engram init` here, or use `--scope personal` for global memory.",
+    });
+    if (opts.scope === "personal") {
       toCheck.push("personal");
     } else {
-      // No explicit scope: project when initialized, else personal.
-      toCheck.push(rootValue !== undefined ? "project" : "personal");
+      const rootResult = yield* Effect.result(store.projectRoot());
+      if (Result.isFailure(rootResult)) {
+        uncheckable.push({
+          scope: "project",
+          message: `could not locate the project root: ${(rootResult.failure as Error).message}`,
+          hint: "Check the permissions of this directory and its parents, then re-run.",
+        });
+        // `all` and the default resolution keep checking personal; explicit
+        // project has nothing else to check.
+        if (opts.scope !== "project") toCheck.push("personal");
+      } else {
+        discoveredRoot = Option.getOrUndefined(rootResult.success);
+        if (opts.scope === "project") {
+          if (discoveredRoot !== undefined) toCheck.push("project");
+          else uncheckable.push(projectUncheckable());
+        } else if (opts.scope === "all") {
+          if (discoveredRoot !== undefined) toCheck.push("project");
+          else uncheckable.push(projectUncheckable());
+          toCheck.push("personal");
+        } else {
+          // No explicit scope: project when initialized, else personal.
+          toCheck.push(discoveredRoot !== undefined ? "project" : "personal");
+        }
+      }
     }
 
     const checks: Array<ScopeCheck> = [];
@@ -106,7 +112,7 @@ export const checkCommand = (opts: CheckOptions) =>
       const configResult = yield* Effect.result(
         scope === "personal"
           ? config.validateGlobal()
-          : config.validateProject(rootValue as string),
+          : config.validateProject(discoveredRoot as string),
       );
       if (Result.isFailure(configResult)) {
         uncheckable.push({

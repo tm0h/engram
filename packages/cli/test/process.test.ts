@@ -195,4 +195,35 @@ describe("engram check (process level)", () => {
       chmodSync(dir, 0o755);
     }
   });
+
+  it("a project discovery failure exits 1 with parseable json stdout", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    const engramDir = join(proj, ".engram");
+    chmodSync(engramDir, 0o000);
+    try {
+      // stat through the blocked directory is the discovery probe: skip when
+      // elevated permissions made the chmod ineffective
+      try {
+        readdirSync(engramDir);
+        chmodSync(engramDir, 0o755);
+        ctx.skip();
+        return;
+      } catch {
+        // blocked as intended: discovery's exists() will fail with EACCES
+      }
+      const r = runCli(["check", "--scope", "project", "--json"], proj, home);
+      expect(r.status).toBe(1);
+      const doc = JSON.parse(r.stdout) as {
+        ok: boolean;
+        uncheckableScopes: Array<{ scope: string; message: string }>;
+      };
+      expect(doc.ok).toBe(false);
+      expect(doc.uncheckableScopes).toHaveLength(1);
+      expect(doc.uncheckableScopes[0].scope).toBe("project");
+      expect(doc.uncheckableScopes[0].message).toContain("could not locate the project root");
+    } finally {
+      chmodSync(engramDir, 0o755);
+    }
+  });
 });

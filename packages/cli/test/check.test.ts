@@ -138,6 +138,38 @@ const blockedDirLive = (blocked: (p: string) => boolean) => {
   );
 };
 
+/** A layer like MainLive but with `exists` failing for selected paths —
+ * makes project-root discovery fail with a PlatformError (existence checks
+ * are how discovery walks the directory tree). */
+const blockedExistsLive = (blocked: (p: string) => boolean) => {
+  const FailingFs = Layer.effect(
+    FileSystem,
+    Effect.gen(function* () {
+      const real = yield* FileSystem;
+      return {
+        ...real,
+        exists: (p: string) =>
+          blocked(p)
+            ? Effect.fail(
+                systemError({
+                  _tag: "PermissionDenied",
+                  module: "FileSystem",
+                  method: "stat",
+                  pathOrDescriptor: p,
+                  syscall: "stat",
+                }),
+              )
+            : real.exists(p),
+      } satisfies FileSystem;
+    }),
+  ).pipe(Layer.provide(NodeServices.layer));
+  return Layer.mergeAll(
+    EngramStoreLive.pipe(Layer.provide(FailingFs), Layer.provide(NodeServices.layer)),
+    ConfigRepoLive.pipe(Layer.provide(FailingFs), Layer.provide(NodeServices.layer)),
+    NodeServices.layer,
+  );
+};
+
 interface FailInfo {
   readonly _tag: string;
   readonly message?: string;
@@ -184,8 +216,11 @@ describe("engram check", () => {
   const output = (): string => outLines.join("\n");
   const errors = (): string => errLines.join("\n");
 
-  const run = (eff: Effect.Effect<unknown, unknown, EngramStore | ConfigRepo>): Promise<void> =>
-    Effect.runPromise(Effect.provide(eff as never, MainLive)) as Promise<void>;
+  const run = (
+    eff: Effect.Effect<unknown, unknown, EngramStore | ConfigRepo>,
+    layer?: Layer.Layer<EngramStore | ConfigRepo, never, never>,
+  ): Promise<void> =>
+    Effect.runPromise(Effect.provide(eff as never, layer ?? MainLive)) as Promise<void>;
 
   const runFail = (
     eff: Effect.Effect<unknown, unknown, EngramStore | ConfigRepo>,
@@ -543,5 +578,66 @@ describe("engram check", () => {
     expect(doc.uncheckableScopes).toHaveLength(1);
     expect(doc.uncheckableScopes[0].scope).toBe("project");
     expect(doc.uncheckableScopes[0].message).toContain(dir);
+  });
+
+  it("explicit personal succeeds without touching project discovery", async () => {
+    await addPersonal("Personal note");
+    // exists fails for every discovery probe (.engram/config.json, .git):
+    // discovery could not run, yet personal must still be checked
+    const layer = blockedExistsLive((p) => p.startsWith(tmp));
+    await run(checkCommand({ scope: "personal" }), layer as never);
+    expect(output()).toContain("personal:");
+    expect(output()).toContain("no problems found");
+    expect(output()).not.toContain("could not be checked");
+  });
+
+  it("project discovery failure in json mode keeps stdout parseable", async () => {
+    const layer = blockedExistsLive((p) => p.startsWith(tmp));
+    const info = await runFail(checkCommand({ scope: "project", json: true }), layer as never);
+    expect(info._tag).toBe("IntegrityCheckFailedError");
+    const doc = JSON.parse(output()) as {
+      ok: boolean;
+      scopes: string[];
+      uncheckableScopes: Array<{ scope: string; message: string; hint: string }>;
+    };
+    expect(doc.ok).toBe(false);
+    expect(doc.scopes).toEqual([]);
+    expect(doc.uncheckableScopes).toHaveLength(1);
+    expect(doc.uncheckableScopes[0].scope).toBe("project");
+    expect(doc.uncheckableScopes[0].message).toContain("could not locate the project root");
+    expect(doc.uncheckableScopes[0].hint).toContain("re-run");
+  });
+
+  it("all keeps checking personal when project discovery fails", async () => {
+    await addPersonal("Personal note");
+    const layer = blockedExistsLive((p) => p.startsWith(tmp));
+    const info = await runFail(checkCommand({ scope: "all", json: true }), layer as never);
+    expect(info._tag).toBe("IntegrityCheckFailedError");
+    const doc = JSON.parse(output()) as {
+      ok: boolean;
+      scopes: string[];
+      uncheckableScopes: Array<{ scope: string; message: string }>;
+    };
+    expect(doc.ok).toBe(false);
+    expect(doc.scopes).toEqual(["personal"]);
+    expect(doc.uncheckableScopes.map((u) => u.scope)).toEqual(["project"]);
+    expect(doc.uncheckableScopes[0].message).toContain("could not locate the project root");
+  });
+
+  it("default resolution reports uncheckable project and still checks personal", async () => {
+    await addPersonal("Personal note");
+    const layer = blockedExistsLive((p) => p.startsWith(tmp));
+    const info = await runFail(checkCommand({ json: true }), layer as never);
+    expect(info._tag).toBe("IntegrityCheckFailedError");
+    const doc = JSON.parse(output()) as {
+      ok: boolean;
+      scopes: string[];
+      validEntries: number;
+      uncheckableScopes: Array<{ scope: string }>;
+    };
+    expect(doc.ok).toBe(false);
+    expect(doc.scopes).toEqual(["personal"]);
+    expect(doc.uncheckableScopes.map((u) => u.scope)).toEqual(["project"]);
+    expect(doc.validEntries).toBe(1);
   });
 });
