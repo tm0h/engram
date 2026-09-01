@@ -40,6 +40,13 @@ export class ConfigError extends Data.TaggedError("ConfigError")<{
   readonly message: string;
 }> {}
 
+/** A store or config integrity check failed: unreadable or invalid files
+ * were found where a complete view was required (e.g. `dedupe` refusing to
+ * rewrite a partially readable store, or `engram check` reporting defects). */
+export class IntegrityCheckFailedError extends Data.TaggedError("IntegrityCheckFailedError")<{
+  readonly message: string;
+}> {}
+
 /** Union of all expected domain errors. */
 export type DomainError =
   | ProjectNotInitializedError
@@ -49,7 +56,8 @@ export type DomainError =
   | InvalidTypeError
   | ValidationError
   | FrontmatterParseError
-  | ConfigError;
+  | ConfigError
+  | IntegrityCheckFailedError;
 
 /** Render a domain error to a human-friendly string. */
 export function formatDomainError(err: DomainError): string {
@@ -86,6 +94,8 @@ export function formatDomainError(err: DomainError): string {
     case "FrontmatterParseError":
       return `Failed to parse "${err.file}": ${err.message}`;
     case "ConfigError":
+      return err.message;
+    case "IntegrityCheckFailedError":
       return err.message;
   }
 }

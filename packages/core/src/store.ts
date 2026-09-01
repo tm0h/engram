@@ -21,26 +21,33 @@
  *   ---
  *   <markdown body>
  */
-import { Context, Effect, Layer, Option, Result, Schema } from "effect";
+import { Context, Effect, Layer, Option, Result } from "effect";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
 import { PlatformError } from "effect/PlatformError";
 import type { Engram, EngramInput, EngramPatch, Scope, Frontmatter } from "./domain.js";
-import { FrontmatterSchema } from "./domain.js";
 import {
   AmbiguousIdError,
   DuplicateIdError,
   FrontmatterParseError,
   EngramNotFoundError,
+  IntegrityCheckFailedError,
   ProjectNotInitializedError,
 } from "./errors.js";
+import { compareDiagnostics } from "./integrity.js";
+import type { StoreDiagnostic, StoreScan } from "./integrity.js";
 import { globalEngramsDir, projectEngramsDir } from "./paths.js";
 import { findProjectRoot } from "./location.js";
-import { nowISO, slugify, newId } from "./util.js";
-import { parseFrontmatter, stringifyFrontmatter } from "./frontmatter.js";
+import { nowISO, slugify, newId, parseEntryFilename } from "./util.js";
+import { validateEntry, stringifyFrontmatter } from "./frontmatter.js";
+import type { PartialFrontmatter } from "./frontmatter.js";
 
 /** Errors the store can surface. */
-export type StoreError = ProjectNotInitializedError | FrontmatterParseError | PlatformError;
+export type StoreError =
+  | ProjectNotInitializedError
+  | FrontmatterParseError
+  | PlatformError
+  | IntegrityCheckFailedError;
 
 /** The shape of the EngramStore service. (Methods require nothing — the
  * implementation captures FileSystem/Path at build time.) */
@@ -48,6 +55,10 @@ export interface EngramStoreShape {
   readonly projectRoot: () => Effect.Effect<Option.Option<string>, PlatformError>;
   readonly dirForScope: (scope: Scope) => Effect.Effect<string, StoreError>;
   readonly list: (scope: Scope) => Effect.Effect<ReadonlyArray<Engram>, StoreError>;
+  /** Full integrity scan: every valid entry plus a diagnostic for every
+   * invalid or unreadable candidate file. New read paths should consume
+   * this, not `list`, so defects cannot silently vanish. */
+  readonly scan: (scope: Scope) => Effect.Effect<StoreScan, StoreError>;
   readonly get: (
     scope: Scope,
     id: string,
@@ -144,28 +155,6 @@ const makeEngramStoreLive = (
       const fs = yield* FileSystem;
       const path = yield* Path;
 
-      const parseFile = (file: string): Effect.Effect<Engram, FrontmatterParseError> =>
-        Effect.gen(function* () {
-          const raw = yield* fs
-            .readFileString(file)
-            .pipe(
-              Effect.mapError(() => new FrontmatterParseError({ file, message: "read failed" })),
-            );
-          const parsed = yield* Result.match(parseFrontmatter(raw), {
-            onSuccess: (value) => Effect.succeed(value),
-            onFailure: (message) => Effect.fail(new FrontmatterParseError({ file, message })),
-          });
-          return yield* Effect.try({
-            try: () =>
-              toEngram(
-                Schema.decodeSync(FrontmatterSchema)(parsed.data as never),
-                parsed.content.trim(),
-                file,
-              ),
-            catch: (e) => new FrontmatterParseError({ file, message: String(e) }),
-          });
-        });
-
       const projectRoot: EngramStoreShape["projectRoot"] = () =>
         Effect.flatMap(findProjectRoot(fs, path, cwd()), (root) =>
           Effect.succeed(root === null ? Option.none() : Option.some(root)),
@@ -182,26 +171,174 @@ const makeEngramStoreLive = (
           return projectEngramsDir(root);
         });
 
-      const list: EngramStoreShape["list"] = (scope) =>
+      /** Read and validate every `.md` candidate in one scope's store.
+       *
+       * File-level failures (unreadable, malformed, semantically invalid)
+       * become diagnostics and scanning continues; only a failure to list
+       * the store directory itself fails the Effect: validity cannot be
+       * established then. Cross-file checks (duplicate ids) run afterwards,
+       * over partial values so a file with one bad field still participates. */
+      const scan: EngramStoreShape["scan"] = (scope) =>
         Effect.gen(function* () {
           const dir = yield* dirForScope(scope);
-          const exists = yield* fs.exists(dir);
-          if (!exists) return [];
-          const entries = yield* fs.readDirectory(dir);
-          const files = entries
+          if (!(yield* fs.exists(dir))) {
+            return {
+              scope,
+              directory: dir,
+              filesChecked: 0,
+              entries: [],
+              diagnostics: [],
+              omittedFiles: 0,
+            } satisfies StoreScan;
+          }
+          const names = yield* fs.readDirectory(dir);
+          const files = names
             .filter((f) => f.endsWith(".md"))
             .sort()
             .map((f) => path.join(dir, f));
-          const parsed = yield* Effect.forEach(files, (f) => parseFile(f).pipe(Effect.option));
-          return parsed
-            .flatMap((o) => Option.match(o, { onNone: () => [], onSome: (m) => [m] }))
-            .sort(chronological);
+
+          type Candidate = {
+            readonly file: string;
+            readonly engram: Engram | undefined;
+            readonly diagnostics: Array<StoreDiagnostic>;
+          } & PartialFrontmatter;
+
+          const candidates: ReadonlyArray<Candidate> = yield* Effect.forEach(files, (file) =>
+            Effect.gen(function* () {
+              const read = yield* Effect.result(fs.readFileString(file));
+              return Result.match(read, {
+                onSuccess: (raw) => {
+                  const v = validateEntry(raw);
+                  return {
+                    file,
+                    engram:
+                      v.frontmatter === undefined
+                        ? undefined
+                        : toEngram(v.frontmatter, v.content.trim(), file),
+                    id: v.partial.id,
+                    title: v.partial.title,
+                    scope: v.partial.scope,
+                    diagnostics: v.issues.map((issue): StoreDiagnostic => ({
+                      code: issue.code,
+                      severity: "error",
+                      scope,
+                      file,
+                      message: issue.message,
+                      hint: issue.hint,
+                    })),
+                  } satisfies Candidate;
+                },
+                onFailure: (e) =>
+                  ({
+                    file,
+                    engram: undefined,
+                    id: undefined,
+                    title: undefined,
+                    scope: undefined,
+                    diagnostics: [
+                      {
+                        code: "file_unreadable",
+                        severity: "error",
+                        scope,
+                        file,
+                        message: `could not read file: ${(e as Error).message}`,
+                        hint: "Check the file's permissions and that it is a readable file, then re-run.",
+                      },
+                    ],
+                  }) satisfies Candidate,
+              });
+            }),
+          );
+
+          // Per-file cross-checks against the filename and the directory's scope.
+          const cross: Array<StoreDiagnostic> = [];
+          for (const c of candidates) {
+            const name = path.basename(c.file);
+            const parsed = parseEntryFilename(name);
+            if (parsed === undefined) {
+              cross.push({
+                code: "filename_invalid",
+                severity: "error",
+                scope,
+                file: c.file,
+                message: `filename "${name}" does not follow <id>-<slug>.md`,
+                hint: "Rename to <id>-<slug>.md: the frontmatter id plus a slug of the title, e.g. 0001-my-note.md.",
+              });
+            } else {
+              if (c.id !== undefined && parsed.id !== c.id) {
+                cross.push({
+                  code: "filename_id_mismatch",
+                  severity: "error",
+                  scope,
+                  file: c.file,
+                  message: `filename id "${parsed.id}" does not match frontmatter id "${c.id}"`,
+                  hint: "Fix the filename prefix or frontmatter id so they agree.",
+                });
+              }
+              if (c.title !== undefined && parsed.slug !== slugify(c.title)) {
+                cross.push({
+                  code: "filename_slug_mismatch",
+                  severity: "error",
+                  scope,
+                  file: c.file,
+                  message: `filename slug "${parsed.slug}" does not match title ${JSON.stringify(c.title)} (expected "${slugify(c.title)}")`,
+                  hint: `Rename the file to ${parsed.id}-${slugify(c.title)}.md, or restore the title it was named after.`,
+                });
+              }
+            }
+            if (c.scope !== undefined && c.scope !== scope) {
+              cross.push({
+                code: "scope_mismatch",
+                severity: "error",
+                scope,
+                file: c.file,
+                message: `frontmatter scope "${c.scope}" does not match the ${scope} store this file lives in`,
+                hint: `Move the file to the ${c.scope} store, or change its "scope" field to "${scope}".`,
+              });
+            }
+          }
+
+          // Cross-file uniqueness, over partial ids so entries with another
+          // defect still participate in duplicate detection.
+          const byId = new Map<string, ReadonlyArray<string>>();
+          for (const c of candidates) {
+            if (c.id === undefined || c.id === "") continue;
+            byId.set(c.id, [...(byId.get(c.id) ?? []), c.file]);
+          }
+          for (const [id, files] of byId) {
+            if (files.length < 2) continue;
+            for (const file of files) {
+              const others = files.filter((f) => f !== file).sort();
+              cross.push({
+                code: "duplicate_id",
+                severity: "error",
+                scope,
+                file,
+                message: `duplicate id "${id}": also claimed by ${others.join(", ")}`,
+                hint: "Run `engram dedupe` to renumber the extras automatically, or renumber/remove them by hand.",
+              });
+            }
+          }
+
+          return {
+            scope,
+            directory: dir,
+            filesChecked: files.length,
+            entries: candidates.flatMap((c) => (c.engram ? [c.engram] : [])).sort(chronological),
+            diagnostics: [...candidates.flatMap((c) => c.diagnostics), ...cross].sort(
+              compareDiagnostics,
+            ),
+            omittedFiles: candidates.filter((c) => c.engram === undefined).length,
+          } satisfies StoreScan;
         });
+
+      /** Compatibility view: just the valid entries (see `scan`). */
+      const list: EngramStoreShape["list"] = (scope) => Effect.map(scan(scope), (s) => s.entries);
 
       const get: EngramStoreShape["get"] = (scope, id) =>
         Effect.gen(function* () {
-          const all = yield* list(scope);
-          const exact = all.filter((m) => m.id === id);
+          const scanned = yield* scan(scope);
+          const exact = scanned.entries.filter((m) => m.id === id);
           if (exact.length === 1) return exact[0];
           if (exact.length > 1) {
             // Two files claim the same id (e.g. hand-written with a guessed id) —
@@ -210,7 +347,7 @@ const makeEngramStoreLive = (
               new DuplicateIdError({ id, files: exact.map((m) => m.path) }),
             );
           }
-          const matches = all.filter((m) => m.id.startsWith(id));
+          const matches = scanned.entries.filter((m) => m.id.startsWith(id));
           if (matches.length === 1) return matches[0];
           if (matches.length > 1) {
             return yield* Effect.fail(
@@ -219,6 +356,19 @@ const makeEngramStoreLive = (
                 matches: matches.map((m) => m.id),
               }),
             );
+          }
+          // No valid entry has this id, but if an invalid candidate file
+          // does, report its actionable parse failure instead of "not found".
+          const diagnosed = scanned.diagnostics.filter(
+            (d) => parseEntryFilename(path.basename(d.file))?.id === id,
+          );
+          if (diagnosed.length > 0) {
+            const file = diagnosed[0].file;
+            const detail = scanned.diagnostics
+              .filter((d) => d.file === file)
+              .map((d) => d.message)
+              .join("; ");
+            return yield* Effect.fail(new FrontmatterParseError({ file, message: detail }));
           }
           return yield* Effect.fail(new EngramNotFoundError({ id, scope }));
         });
@@ -299,9 +449,29 @@ const makeEngramStoreLive = (
       const dedupe: EngramStoreShape["dedupe"] = (scope) =>
         Effect.gen(function* () {
           const dir = yield* dirForScope(scope);
-          const all = yield* list(scope);
+          const scanned = yield* scan(scope);
+          // A partially readable store must not be rewritten: repairs need a
+          // complete integrity view.
+          if (scanned.omittedFiles > 0) {
+            // Omitted candidates are exactly the diagnosed files that did not
+            // become entries (soft defects like duplicate ids stay listed).
+            const entryPaths = new Set(scanned.entries.map((m) => m.path));
+            const badFiles = [
+              ...new Set(
+                scanned.diagnostics.filter((d) => !entryPaths.has(d.file)).map((d) => d.file),
+              ),
+            ].sort();
+            return yield* Effect.fail(
+              new IntegrityCheckFailedError({
+                message:
+                  `refusing to dedupe: ${scanned.omittedFiles} of ${scanned.filesChecked} file(s) in "${dir}" could not be read as valid engrams` +
+                  ` (${badFiles.join(", ")}). ` +
+                  `Run \`engram check\` for exact paths and repair guidance, then retry.`,
+              }),
+            );
+          }
           const byId = new Map<string, Engram[]>();
-          for (const m of all) byId.set(m.id, [...(byId.get(m.id) ?? []), m]);
+          for (const m of scanned.entries) byId.set(m.id, [...(byId.get(m.id) ?? []), m]);
           const renumbered: Array<{ from: string; to: string; title: string }> = [];
           for (const group of byId.values()) {
             if (group.length < 2) continue;
@@ -334,6 +504,7 @@ const makeEngramStoreLive = (
         projectRoot,
         dirForScope,
         list,
+        scan,
         get,
         add,
         update,

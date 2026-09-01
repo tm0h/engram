@@ -7,6 +7,7 @@
  */
 export * from "./domain.js";
 export * from "./errors.js";
+export * from "./integrity.js";
 export * from "./config.js";
 export * from "./store.js";
 export * from "./frontmatter.js";

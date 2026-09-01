@@ -1,0 +1,71 @@
+/**
+ * Store integrity diagnostics: the machine-facing result contract shared by
+ * `EngramStore.scan` and the `engram check` command.
+ *
+ * Codes are a stable API: they stay concise and independent of the rendered
+ * `message`/`hint` prose, so later checks (lifecycle schemas, secret
+ * scanning) can append findings without changing scan or CLI consumers.
+ * Every diagnostic names the exact file; `severity` is `"error"` today and
+ * can gain milder levels later without changing the shape.
+ */
+import type { Engram, Scope } from "./domain.js";
+
+/** Every invalid store condition `engram check` can report. */
+export type StoreDiagnosticCode =
+  /* frontmatter parsing and semantic validation (packages/core/src/frontmatter.ts) */
+  | "frontmatter_missing"
+  | "yaml_invalid"
+  | "frontmatter_not_object"
+  | "required_field_missing"
+  | "field_type_invalid"
+  | "type_invalid"
+  | "scope_invalid"
+  | "id_invalid"
+  | "title_invalid"
+  | "created_invalid"
+  | "updated_invalid"
+  | "updated_before_created"
+  /* store scanning and cross-file checks (packages/core/src/store.ts) */
+  | "file_unreadable"
+  | "filename_invalid"
+  | "filename_id_mismatch"
+  | "filename_slug_mismatch"
+  | "scope_mismatch"
+  | "duplicate_id"
+  /* config validation (packages/core/src/config.ts) */
+  | "config_unreadable"
+  | "config_json_invalid"
+  | "config_schema_invalid"
+  | "config_version_unsupported";
+
+/** Diagnostic weight. Only "error" exists today. */
+export type StoreDiagnosticSeverity = "error";
+
+/** One defect in one file: `message` states the problem, `hint` the repair. */
+export interface StoreDiagnostic {
+  readonly code: StoreDiagnosticCode;
+  readonly severity: StoreDiagnosticSeverity;
+  readonly scope: Scope;
+  /** absolute path of the offending file */
+  readonly file: string;
+  readonly message: string;
+  readonly hint: string;
+}
+
+/** Result of scanning one scope's store directory. */
+export interface StoreScan {
+  readonly scope: Scope;
+  readonly directory: string;
+  readonly filesChecked: number;
+  /** Entries whose frontmatter passed validation (the `list()` view). */
+  readonly entries: ReadonlyArray<Engram>;
+  /** Every detected defect, sorted by scope, absolute path, then code. */
+  readonly diagnostics: ReadonlyArray<StoreDiagnostic>;
+  /** Candidates that could not become an entry (unreadable or invalid). */
+  readonly omittedFiles: number;
+}
+
+/** Deterministic diagnostic order (scope, then file path, then code) so
+ * human output, JSON output, and tests all agree. */
+export const compareDiagnostics = (a: StoreDiagnostic, b: StoreDiagnostic): number =>
+  a.scope.localeCompare(b.scope) || a.file.localeCompare(b.file) || a.code.localeCompare(b.code);
