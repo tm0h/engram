@@ -52,6 +52,15 @@ export interface StoreDiagnostic {
   readonly hint: string;
 }
 
+/** An id claimed by two or more candidate files, valid or not. Structured
+ * data (not rendered prose) so consumers like `get()` can refuse to pick a
+ * claimant without re-parsing diagnostic messages. */
+export interface DuplicateIdClaim {
+  readonly id: string;
+  /** absolute paths of every claiming file, sorted */
+  readonly files: ReadonlyArray<string>;
+}
+
 /** Result of scanning one scope's store directory. */
 export interface StoreScan {
   readonly scope: Scope;
@@ -61,6 +70,9 @@ export interface StoreScan {
   readonly entries: ReadonlyArray<Engram>;
   /** Every detected defect, sorted by scope, absolute path, then code. */
   readonly diagnostics: ReadonlyArray<StoreDiagnostic>;
+  /** Every id claimed by two or more candidate files, sorted by id. Feeds
+   * `duplicate_id` diagnostics and refusal logic in `get()`. */
+  readonly duplicateIds: ReadonlyArray<DuplicateIdClaim>;
   /** Candidates that could not become an entry (unreadable or invalid). */
   readonly omittedFiles: number;
 }

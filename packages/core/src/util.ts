@@ -118,12 +118,35 @@ export const parseEntryFilename = (
 /** Accepted timestamp form: ISO 8601 date-time with an explicit zone,
  * `Z` (what `nowISO()` writes) or a numeric `±hh:mm` offset. Date-only and
  * zone-less strings are not accepted. */
-const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+const ISO_TIME =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-](\d{2}):(\d{2}))$/;
+
+const isLeapYear = (year: number): boolean =>
+  (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+
+const daysInMonth = (year: number, month: number): number => {
+  if (month === 2) return isLeapYear(year) ? 29 : 28;
+  return month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31;
+};
 
 /** Epoch millis for an accepted ISO timestamp, or undefined when the value
- * is not in the accepted form or not a possible date. */
+ * is not in the accepted form or not a real date/time. `Date.parse` alone
+ * silently normalizes impossible dates (Feb 30 becomes Mar 2), so the
+ * calendar and clock components are validated explicitly. */
 export const parseTimestamp = (value: string): number | undefined => {
-  if (!ISO_TIME.test(value)) return undefined;
+  const m = ISO_TIME.exec(value);
+  if (!m) return undefined;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const hour = Number(m[4]);
+  const minute = Number(m[5]);
+  const second = Number(m[6]);
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) {
+    return undefined;
+  }
+  if (hour > 23 || minute > 59 || second > 59) return undefined;
+  if (m[8] !== undefined && (Number(m[8]) > 23 || Number(m[9]) > 59)) return undefined;
   const ms = Date.parse(value);
   return Number.isNaN(ms) ? undefined : ms;
 };

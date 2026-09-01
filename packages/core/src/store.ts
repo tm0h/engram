@@ -35,7 +35,7 @@ import {
   ProjectNotInitializedError,
 } from "./errors.js";
 import { compareDiagnostics } from "./integrity.js";
-import type { StoreDiagnostic, StoreScan } from "./integrity.js";
+import type { DuplicateIdClaim, StoreDiagnostic, StoreScan } from "./integrity.js";
 import { globalEngramsDir, projectEngramsDir } from "./paths.js";
 import { findProjectRoot } from "./location.js";
 import { nowISO, slugify, newId, parseEntryFilename } from "./util.js";
@@ -188,6 +188,7 @@ const makeEngramStoreLive = (
               filesChecked: 0,
               entries: [],
               diagnostics: [],
+              duplicateIds: [],
               omittedFiles: 0,
             } satisfies StoreScan;
           }
@@ -299,16 +300,20 @@ const makeEngramStoreLive = (
           }
 
           // Cross-file uniqueness, over partial ids so entries with another
-          // defect still participate in duplicate detection.
+          // defect still participate in duplicate detection. Claims are kept
+          // as structured data (StoreScan.duplicateIds), not just prose.
           const byId = new Map<string, ReadonlyArray<string>>();
           for (const c of candidates) {
             if (c.id === undefined || c.id === "") continue;
             byId.set(c.id, [...(byId.get(c.id) ?? []), c.file]);
           }
-          for (const [id, files] of byId) {
-            if (files.length < 2) continue;
+          const duplicateIds: ReadonlyArray<DuplicateIdClaim> = [...byId]
+            .filter(([, files]) => files.length >= 2)
+            .map(([id, files]) => ({ id, files: [...files].sort() }))
+            .sort((a, b) => a.id.localeCompare(b.id));
+          for (const { id, files } of duplicateIds) {
             for (const file of files) {
-              const others = files.filter((f) => f !== file).sort();
+              const others = files.filter((f) => f !== file);
               cross.push({
                 code: "duplicate_id",
                 severity: "error",
@@ -328,6 +333,7 @@ const makeEngramStoreLive = (
             diagnostics: [...candidates.flatMap((c) => c.diagnostics), ...cross].sort(
               compareDiagnostics,
             ),
+            duplicateIds,
             omittedFiles: candidates.filter((c) => c.engram === undefined).length,
           } satisfies StoreScan;
         });
@@ -338,15 +344,34 @@ const makeEngramStoreLive = (
       const get: EngramStoreShape["get"] = (scope, id) =>
         Effect.gen(function* () {
           const scanned = yield* scan(scope);
+
+          // A duplicated id must never resolve to a single claimant, even
+          // when only some claimants are valid entries: `update` and `remove`
+          // build on `get`, so picking one would silently mutate past a
+          // known conflict.
+          const claimed = scanned.duplicateIds.find((c) => c.id === id);
+          if (claimed !== undefined) {
+            return yield* Effect.fail(new DuplicateIdError({ id, files: claimed.files }));
+          }
+
           const exact = scanned.entries.filter((m) => m.id === id);
           if (exact.length === 1) return exact[0];
           if (exact.length > 1) {
-            // Two files claim the same id (e.g. hand-written with a guessed id) —
-            // refuse to pick one silently.
+            // Unreachable while duplicateIds is built from the same data, but
+            // keep the refusal explicit in case the invariants drift.
             return yield* Effect.fail(
               new DuplicateIdError({ id, files: exact.map((m) => m.path) }),
             );
           }
+
+          // A prefix reaching into a duplicated id gets the same refusal.
+          const claimedByPrefix = scanned.duplicateIds.find((c) => c.id.startsWith(id));
+          if (claimedByPrefix !== undefined) {
+            return yield* Effect.fail(
+              new DuplicateIdError({ id: claimedByPrefix.id, files: claimedByPrefix.files }),
+            );
+          }
+
           const matches = scanned.entries.filter((m) => m.id.startsWith(id));
           if (matches.length === 1) return matches[0];
           if (matches.length > 1) {
@@ -450,9 +475,11 @@ const makeEngramStoreLive = (
         Effect.gen(function* () {
           const dir = yield* dirForScope(scope);
           const scanned = yield* scan(scope);
-          // A partially readable store must not be rewritten: repairs need a
-          // complete integrity view.
-          if (scanned.omittedFiles > 0) {
+          // A partially readable store must not be rewritten, and repairs
+          // need a complete integrity view: duplicate ids are the only
+          // defect `dedupe` knows how to repair safely.
+          const otherDefects = scanned.diagnostics.filter((d) => d.code !== "duplicate_id");
+          if (scanned.omittedFiles > 0 || otherDefects.length > 0) {
             // Omitted candidates are exactly the diagnosed files that did not
             // become entries (soft defects like duplicate ids stay listed).
             const entryPaths = new Set(scanned.entries.map((m) => m.path));
@@ -461,11 +488,14 @@ const makeEngramStoreLive = (
                 scanned.diagnostics.filter((d) => !entryPaths.has(d.file)).map((d) => d.file),
               ),
             ].sort();
+            const reason =
+              scanned.omittedFiles > 0
+                ? `${scanned.omittedFiles} of ${scanned.filesChecked} file(s) in "${dir}" could not be read as valid engrams (${badFiles.join(", ")})`
+                : `the store has ${otherDefects.length} diagnostic(s) beyond duplicate ids (e.g. ${path.basename(otherDefects[0].file)})`;
             return yield* Effect.fail(
               new IntegrityCheckFailedError({
                 message:
-                  `refusing to dedupe: ${scanned.omittedFiles} of ${scanned.filesChecked} file(s) in "${dir}" could not be read as valid engrams` +
-                  ` (${badFiles.join(", ")}). ` +
+                  `refusing to dedupe: ${reason}. ` +
                   `Run \`engram check\` for exact paths and repair guidance, then retry.`,
               }),
             );

@@ -265,6 +265,24 @@ describe("validateEntry", () => {
     ]);
   });
 
+  it("rejects impossible calendar dates and clock values", () => {
+    // Date.parse silently normalizes these; entry validation must not
+    for (const bad of [
+      "2025-02-30T10:00:00Z",
+      "2023-02-29T10:00:00Z",
+      "2025-13-01T10:00:00Z",
+      "2025-08-15T24:00:00Z",
+      "2025-08-15T10:60:00Z",
+    ]) {
+      expect(codes(validateEntry(raw({ created: bad })))).toEqual(["created_invalid"]);
+    }
+  });
+
+  it("accepts real leap days", () => {
+    expect(validateEntry(raw({ created: "2024-02-29T10:00:00Z" })).issues).toEqual([]);
+    expect(validateEntry(raw({ updated: "2028-02-29T10:00:00Z" })).issues).toEqual([]);
+  });
+
   it("rejects updated before created but keeps the entry usable", () => {
     const v = validateEntry(raw({ updated: "2025-08-15T09:59:59.000Z" })); // before created 10:00
     expect(codes(v)).toEqual(["updated_before_created"]);

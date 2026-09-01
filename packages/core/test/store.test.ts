@@ -684,7 +684,93 @@ describe("EngramStore / scan", () => {
       expect(codesByName["0001-duplicate-a.md"]).toEqual(["duplicate_id"]);
       expect(scanned.entries).toHaveLength(1);
       expect(scanned.omittedFiles).toBe(1);
+      // the claim is structured scan data, not prose to re-parse
+      expect(scanned.duplicateIds).toEqual([
+        {
+          id: "0001",
+          files: [
+            path.join(engramsDir(), "0001-duplicate-a.md"),
+            path.join(engramsDir(), "0001-duplicate-b.md"),
+          ],
+        },
+      ]);
     }).pipe(Effect.provide(StoreLive));
+  });
+
+  it.live("get refuses to pick when an invalid file shares a valid entry's id", () => {
+    const valid = writeConsistent("0001", "Valid claimant");
+    const invalid = write(
+      "0001-invalid-claimant.md",
+      scanFm({ id: "0001", title: "Invalid claimant", type: "blogpost" }),
+    );
+    const validBefore = fs.readFileSync(valid, "utf8");
+    const invalidBefore = fs.readFileSync(invalid, "utf8");
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const e = yield* Effect.flip(store.get("project", "0001"));
+      expect((e as { _tag: string })._tag).toBe("DuplicateIdError");
+      // both claimants are named, valid and invalid alike
+      expect((e as unknown as { files: string[] }).files.sort()).toEqual([invalid, valid].sort());
+      // neither file changed
+      expect(fs.readFileSync(valid, "utf8")).toBe(validBefore);
+      expect(fs.readFileSync(invalid, "utf8")).toBe(invalidBefore);
+    }).pipe(Effect.provide(StoreLive));
+  });
+
+  it.live("update refuses when an invalid file shares the id", () => {
+    const valid = writeConsistent("0001", "Valid claimant");
+    const invalid = write(
+      "0001-invalid-claimant.md",
+      scanFm({ id: "0001", title: "Invalid claimant", type: "blogpost" }),
+    );
+    const validBefore = fs.readFileSync(valid, "utf8");
+    const invalidBefore = fs.readFileSync(invalid, "utf8");
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      return yield* store.update("project", "0001", { title: "Rewritten" });
+    }).pipe(
+      Effect.provide(StoreLive),
+      Effect.flip,
+      Effect.map((e) => {
+        expect((e as { _tag: string })._tag).toBe("DuplicateIdError");
+        expect(fs.readFileSync(valid, "utf8")).toBe(validBefore);
+        expect(fs.readFileSync(invalid, "utf8")).toBe(invalidBefore);
+      }),
+    );
+  });
+
+  it.live("remove refuses when an invalid file shares the id", () => {
+    const valid = writeConsistent("0001", "Valid claimant");
+    const invalid = write(
+      "0001-invalid-claimant.md",
+      scanFm({ id: "0001", title: "Invalid claimant", type: "blogpost" }),
+    );
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      return yield* store.remove("project", "0001");
+    }).pipe(
+      Effect.provide(StoreLive),
+      Effect.flip,
+      Effect.map((e) => {
+        expect((e as { _tag: string })._tag).toBe("DuplicateIdError");
+        // nothing was deleted
+        expect(fs.existsSync(valid)).toBe(true);
+        expect(fs.existsSync(invalid)).toBe(true);
+      }),
+    );
+  });
+
+  it.live("get by prefix also refuses a duplicated id", () => {
+    writeConsistent("0001", "Duplicate a");
+    write("0001-duplicate-b.md", scanFm({ id: "0001", title: "Duplicate b", type: "blogpost" }));
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      return yield* store.get("project", "000");
+    }).pipe(
+      Effect.provide(StoreLive),
+      Effect.flip,
+      Effect.map((e) => expect((e as { _tag: string })._tag).toBe("DuplicateIdError")),
+    );
   });
 
   it.live("invalid and reversed timestamps are diagnosed", () => {
@@ -718,6 +804,38 @@ describe("EngramStore / scan", () => {
         ["0002-b.md", "updated_before_created"],
         [`${SCAN_ID}-broken-type.md`, "type_invalid"],
       ]);
+    }).pipe(Effect.provide(StoreLive));
+  });
+
+  it.live("dedupe refuses to mutate a store with defects beyond duplicates", () => {
+    writeConsistent("0001", "Duplicate a");
+    writeConsistent("0001", "Duplicate b");
+    writeConsistent("0009", "Stray note", { scope: "personal" }); // scope_mismatch
+    const before = fs.readdirSync(engramsDir()).sort();
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      return yield* store.dedupe("project");
+    }).pipe(
+      Effect.provide(StoreLive),
+      Effect.flip,
+      Effect.map((e) => {
+        expect((e as { _tag: string })._tag).toBe("IntegrityCheckFailedError");
+        expect((e as unknown as { message: string }).message).toContain("duplicate ids");
+        expect(fs.readdirSync(engramsDir()).sort()).toEqual(before);
+      }),
+    );
+  });
+
+  it.live("dedupe repairs a store whose only defect is duplicate ids", () => {
+    writeConsistent("0001", "Duplicate a");
+    writeConsistent("0001", "Duplicate b");
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const { renumbered } = yield* store.dedupe("project");
+      expect(renumbered).toHaveLength(1);
+      const scanned = yield* store.scan("project");
+      expect(scanned.diagnostics).toEqual([]);
+      expect(scanned.entries).toHaveLength(2);
     }).pipe(Effect.provide(StoreLive));
   });
 
