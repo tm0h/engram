@@ -38,30 +38,88 @@ export interface EditedEngram {
   readonly type: string | undefined;
   readonly tags: ReadonlyArray<string>;
   readonly body: string;
+  /* ENG-13 lifecycle fields; undefined means the line was absent or blank
+   * (add: unset, edit: explicit clear via the command's diff). */
+  readonly status?: string | undefined;
+  readonly supersedes?: string | undefined;
+  readonly reviewAfter?: string | undefined;
+  readonly expires?: string | undefined;
+  readonly sourceType?: string | undefined;
+  readonly sourceRef?: string | undefined;
 }
 
+/** Canonical camelCase lifecycle keys, matching the serialized file format
+ * and the flag names' option properties. */
+const LIFECYCLE_KEYS = [
+  "status",
+  "supersedes",
+  "reviewAfter",
+  "expires",
+  "sourceType",
+  "sourceRef",
+] as const;
+
+const BODY_PLACEHOLDER = "Write what should be remembered here.";
+
+/** Render the editor document: a flat `key: value` frontmatter block above
+ * the body. Lifecycle lines are always present (empty when unset) so the
+ * key names are discoverable and blanking one is an explicit edit. Pure:
+ * `openEditor` wraps this with the temp file and editor process. */
+export const renderEditorDocument = (initial: Partial<EditedEngram> = {}): string => {
+  const lifecycle = LIFECYCLE_KEYS.map((key) => {
+    const value = initial[key];
+    return `${key}:${value ? " " + value : ""}`;
+  });
+  return [
+    "---",
+    `title: ${initial.title ?? ""}`,
+    `type: ${initial.type ?? "note"}`,
+    `tags: ${(initial.tags ?? []).join(", ")}`,
+    ...lifecycle,
+    "---",
+    "",
+    initial.body ?? BODY_PLACEHOLDER,
+    "",
+  ].join("\n");
+};
+
+/** Parse a saved editor document back into fields. Splits each header line
+ * at the FIRST colon, so timestamp offsets, URLs, and references containing
+ * colons survive. Blank or missing lifecycle lines parse as undefined;
+ * commands turn that into unset (add) or an explicit clear (edit). Pure. */
+export const parseEditorDocument = (raw: string): EditedEngram => {
+  const m = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  if (!m) return { title: "", type: undefined, tags: [], body: raw.trim() };
+  const data: Record<string, string> = {};
+  for (const line of m[1].split("\n")) {
+    const idx = line.indexOf(":");
+    if (idx > -1) data[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+  }
+  const lifecycle = (key: (typeof LIFECYCLE_KEYS)[number]): string | undefined =>
+    data[key] || undefined;
+  return {
+    title: data.title ?? "",
+    type: data.type || undefined,
+    tags: (data.tags ?? "")
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean),
+    status: lifecycle("status"),
+    supersedes: lifecycle("supersedes"),
+    reviewAfter: lifecycle("reviewAfter"),
+    expires: lifecycle("expires"),
+    sourceType: lifecycle("sourceType"),
+    sourceRef: lifecycle("sourceRef"),
+    body: m[2].trim(),
+  };
+};
+
 /** Open $EDITOR on a temp file pre-filled with frontmatter; parse on save. */
-export const openEditor = (initial: {
-  title?: string;
-  type?: string;
-  tags?: ReadonlyArray<string>;
-  body?: string;
-}): Effect.Effect<EditedEngram | null> =>
+export const openEditor = (initial: Partial<EditedEngram> = {}): Effect.Effect<EditedEngram | null> =>
   Effect.sync(() => {
     const editor = process.env.EDITOR || process.env.VISUAL || "nano";
-    const tmpl = [
-      "---",
-      `title: ${initial.title ?? ""}`,
-      `type: ${initial.type ?? "note"}`,
-      `tags: ${(initial.tags ?? []).join(", ")}`,
-      "---",
-      "",
-      initial.body ?? "Write what should be remembered here.",
-      "",
-    ].join("\n");
-
     const file = path.join(os.tmpdir(), `engram-${Date.now()}.md`);
-    fs.writeFileSync(file, tmpl, "utf8");
+    fs.writeFileSync(file, renderEditorDocument(initial), "utf8");
     const result = spawnSync(editor, [file], { stdio: "inherit" });
     if (result.status !== 0) {
       fs.unlinkSync(file);
@@ -69,21 +127,5 @@ export const openEditor = (initial: {
     }
     const raw = fs.readFileSync(file, "utf8");
     fs.unlinkSync(file);
-
-    const m = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-    if (!m) return { title: "", type: undefined, tags: [], body: raw.trim() };
-    const data: Record<string, string> = {};
-    for (const line of m[1].split("\n")) {
-      const idx = line.indexOf(":");
-      if (idx > -1) data[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
-    }
-    return {
-      title: data.title ?? "",
-      type: data.type || undefined,
-      tags: (data.tags ?? "")
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean),
-      body: m[2].trim(),
-    };
+    return parseEditorDocument(raw);
   });
