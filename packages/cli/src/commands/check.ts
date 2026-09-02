@@ -132,10 +132,14 @@ export const checkCommand = (opts: CheckOptions) =>
     const diagnostics = checks
       .flatMap((c) => [...c.scan.diagnostics, ...c.config])
       .sort(compareDiagnostics);
+    /* ENG-13: only errors decide the outcome. Warnings (lifecycle advisory
+     * conditions) are reported in every output mode but a warning-only scan
+     * stays ok: the report is the product, the warning is the advice. */
+    const errors = diagnostics.filter((d) => d.severity === "error");
     const filesChecked = checks.reduce((n, c) => n + c.scan.filesChecked, 0);
     const validEntries = checks.reduce((n, c) => n + c.scan.entries.length, 0);
     const omittedFiles = checks.reduce((n, c) => n + c.scan.omittedFiles, 0);
-    const ok = diagnostics.length === 0 && uncheckable.length === 0;
+    const ok = errors.length === 0 && uncheckable.length === 0;
 
     if (opts.json) {
       // Exactly one self-contained JSON document on stdout; any summary goes
@@ -158,9 +162,18 @@ export const checkCommand = (opts: CheckOptions) =>
     } else {
       for (const c of checks) {
         const scopeDiags = [...c.scan.diagnostics, ...c.config];
+        const scopeErrors = scopeDiags.filter((d) => d.severity === "error");
+        const scopeWarnings = scopeDiags.filter((d) => d.severity === "warning");
         if (scopeDiags.length === 0) {
           yield* out(
             `${chalk.green("✓")} ${c.scope}: ${c.scan.filesChecked} files checked, no problems found`,
+          );
+        } else if (scopeErrors.length === 0) {
+          // advisory only: yellow, and no error summary is produced below
+          yield* out(
+            `${chalk.yellow("⚠")} ${c.scope}: ${c.scan.filesChecked} files checked, ${
+              scopeWarnings.length
+            } warning${scopeWarnings.length === 1 ? "" : "s"}`,
           );
         } else {
           yield* out(
@@ -168,11 +181,12 @@ export const checkCommand = (opts: CheckOptions) =>
               scopeDiags.length
             } problem${scopeDiags.length === 1 ? "" : "s"} found`,
           );
-          for (const d of scopeDiags) {
-            yield* out(`${chalk.red("error")} [${d.code}] ${d.file}`);
-            yield* out(`  ${d.message}`);
-            yield* out(chalk.gray(`  ${d.hint}`));
-          }
+        }
+        for (const d of scopeDiags) {
+          const label = d.severity === "warning" ? chalk.yellow("warning") : chalk.red("error");
+          yield* out(`${label} [${d.code}] ${d.file}`);
+          yield* out(`  ${d.message}`);
+          yield* out(chalk.gray(`  ${d.hint}`));
         }
       }
       for (const u of uncheckable) {
@@ -184,8 +198,8 @@ export const checkCommand = (opts: CheckOptions) =>
 
     if (!ok) {
       const bits: string[] = [];
-      if (diagnostics.length > 0) {
-        bits.push(`${diagnostics.length} problem${diagnostics.length === 1 ? "" : "s"} found`);
+      if (errors.length > 0) {
+        bits.push(`${errors.length} problem${errors.length === 1 ? "" : "s"} found`);
       }
       for (const u of uncheckable) bits.push(`${u.scope} scope could not be checked`);
       return yield* Effect.fail(new IntegrityCheckFailedError({ message: bits.join("; ") }));
