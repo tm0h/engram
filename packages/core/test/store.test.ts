@@ -903,7 +903,10 @@ describe("EngramStore / scan", () => {
   it.live("a claimant that is itself invalid still counts as present", () => {
     // the claimant file has a valid id but an invalid type, so only its
     // partial id participates; that is enough to keep the reference honest
-    write("0001-invalid-claimant.md", scanFm({ id: "0001", title: "Invalid claimant", type: "blogpost" }));
+    write(
+      "0001-invalid-claimant.md",
+      scanFm({ id: "0001", title: "Invalid claimant", type: "blogpost" }),
+    );
     write("0002-referrer.md", scanFm({ id: "0002", title: "Referrer", supersedes: "0001" }));
     return Effect.gen(function* () {
       const store = yield* EngramStore;
@@ -986,7 +989,10 @@ describe("EngramStore / lifecycle metadata", () => {
     Effect.gen(function* () {
       const store = yield* EngramStore;
       const pred = yield* store.add("project", input({ title: "Old guidance" }));
-      const m = yield* store.add("project", input({ title: "New guidance", ...LIFECYCLE_INPUT, supersedes: pred.id }));
+      const m = yield* store.add(
+        "project",
+        input({ title: "New guidance", ...LIFECYCLE_INPUT, supersedes: pred.id }),
+      );
 
       const fileRaw = fs.readFileSync(m.path, "utf8");
       expect(fileRaw).toMatch(/^status: superseded$/m);
@@ -1014,7 +1020,10 @@ describe("EngramStore / lifecycle metadata", () => {
     Effect.gen(function* () {
       const store = yield* EngramStore;
       const pred = yield* store.add("project", input({ title: "Old guidance" }));
-      const m = yield* store.add("project", input({ title: "New guidance", ...LIFECYCLE_INPUT, supersedes: pred.id }));
+      const m = yield* store.add(
+        "project",
+        input({ title: "New guidance", ...LIFECYCLE_INPUT, supersedes: pred.id }),
+      );
 
       const patched = yield* store.update("project", m.id, {
         body: "an unrelated body edit",
@@ -1056,7 +1065,14 @@ describe("EngramStore / lifecycle metadata", () => {
 
       const patched = yield* store.update("project", "0001", { title: "Legacy note renamed" });
       const fileRaw = fs.readFileSync(patched.path, "utf8");
-      for (const key of ["status", "supersedes", "reviewAfter", "expires", "sourceType", "sourceRef"]) {
+      for (const key of [
+        "status",
+        "supersedes",
+        "reviewAfter",
+        "expires",
+        "sourceType",
+        "sourceRef",
+      ]) {
         expect(fileRaw).not.toMatch(new RegExp(`^${key}:`, "m"));
       }
       expect(patched.status).toBeUndefined();
@@ -1086,7 +1102,10 @@ describe("EngramStore / lifecycle metadata", () => {
       const store = yield* EngramStore;
       const before = filesNow();
       const err = yield* Effect.flip(
-        store.add("project", input({ reviewAfter: "2026-01-01" } as unknown as Partial<EngramInput>)),
+        store.add(
+          "project",
+          input({ reviewAfter: "2026-01-01" } as unknown as Partial<EngramInput>),
+        ),
       );
       expect((err as { _tag: string })._tag).toBe("FrontmatterParseError");
       expect((err as { message: string }).message).toContain("reviewAfter");
@@ -1181,14 +1200,22 @@ describe("lifecycleDiagnostics", () => {
   it("emits multiple findings for one entry in a fixed order", () => {
     const nowMs = Date.parse("2026-01-01T00:00:00.000Z");
     expect(
-      codesOf(nowMs, { reviewAfter: "2025-06-01T00:00:00.000Z", expires: "2025-01-01T00:00:00.000Z", supersedes: "0099" }),
+      codesOf(nowMs, {
+        reviewAfter: "2025-06-01T00:00:00.000Z",
+        expires: "2025-01-01T00:00:00.000Z",
+        supersedes: "0099",
+      }),
     ).toEqual(["supersedes_not_found", "review_due", "expired"]);
   });
 
   it("every lifecycle diagnostic is a warning", () => {
     const nowMs = Date.parse("2026-01-01T00:00:00.000Z");
     const out = lifecycleDiagnostics(
-      entry({ reviewAfter: "2025-06-01T00:00:00.000Z", expires: "2025-01-01T00:00:00.000Z", supersedes: "0099" }),
+      entry({
+        reviewAfter: "2025-06-01T00:00:00.000Z",
+        expires: "2025-01-01T00:00:00.000Z",
+        supersedes: "0099",
+      }),
       context(nowMs),
     );
     expect(out.map((d) => d.severity)).toEqual(["warning", "warning", "warning"]);
@@ -1237,7 +1264,10 @@ describe("EngramStore / supersedes scope resolution", () => {
     );
     return Effect.gen(function* () {
       const store = yield* EngramStore;
-      const m = yield* store.add("project", input({ title: "Project referrer", supersedes: "0001" }));
+      const m = yield* store.add(
+        "project",
+        input({ title: "Project referrer", supersedes: "0001" }),
+      );
       void m;
       const projectScan = yield* store.scan("project");
       expect(projectScan.diagnostics.map((d) => [d.code, d.severity])).toEqual([

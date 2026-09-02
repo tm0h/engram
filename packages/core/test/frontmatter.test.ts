@@ -388,9 +388,7 @@ describe("validateEntry / lifecycle metadata", () => {
 
   it("accepts zoned UTC and offset timestamps for reviewAfter and expires", () => {
     expect(codes(validateEntry(raw({ reviewAfter: "2026-01-01T00:00:00Z" })))).toEqual([]);
-    expect(
-      codes(validateEntry(raw({ reviewAfter: "2026-03-01T12:00:00+02:00" }))),
-    ).toEqual([]);
+    expect(codes(validateEntry(raw({ reviewAfter: "2026-03-01T12:00:00+02:00" })))).toEqual([]);
     expect(codes(validateEntry(raw({ expires: "2026-01-01T00:00:00.000Z" })))).toEqual([]);
     expect(codes(validateEntry(raw({ expires: "2026-03-01T12:00:00-05:00" })))).toEqual([]);
   });

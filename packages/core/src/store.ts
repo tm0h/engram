@@ -303,6 +303,7 @@ const makeEngramStoreLive = (
                     id: v.partial.id,
                     title: v.partial.title,
                     scope: v.partial.scope,
+                    supersedes: v.partial.supersedes,
                     diagnostics: v.issues.map((issue): StoreDiagnostic => ({
                       code: issue.code,
                       severity: "error",
@@ -420,7 +421,9 @@ const makeEngramStoreLive = (
           const lifecycle: Array<StoreDiagnostic> = [];
           for (const c of candidates) {
             if (c.engram === undefined) continue;
-            lifecycle.push(...lifecycleDiagnostics(c.engram, { scope, file: c.file, nowMs, knownIds }));
+            lifecycle.push(
+              ...lifecycleDiagnostics(c.engram, { scope, file: c.file, nowMs, knownIds }),
+            );
           }
 
           return {

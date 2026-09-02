@@ -25,6 +25,14 @@ export type StoreDiagnosticCode =
   | "created_invalid"
   | "updated_invalid"
   | "updated_before_created"
+  /* ENG-13 lifecycle entry validation (packages/core/src/frontmatter.ts) */
+  | "status_invalid"
+  | "supersedes_invalid"
+  | "self_supersession"
+  | "review_after_invalid"
+  | "expires_invalid"
+  | "source_type_invalid"
+  | "source_ref_invalid"
   /* store scanning and cross-file checks (packages/core/src/store.ts) */
   | "file_unreadable"
   | "filename_invalid"

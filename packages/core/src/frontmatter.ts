@@ -419,10 +419,7 @@ export const validateEntry = (raw: string): ValidatedEntry => {
   }
 
   const sourceRef = field("sourceRef");
-  if (
-    sourceRef !== undefined &&
-    (typeof sourceRef !== "string" || sourceRef.trim() === "")
-  ) {
+  if (sourceRef !== undefined && (typeof sourceRef !== "string" || sourceRef.trim() === "")) {
     issues.push({
       code: "source_ref_invalid",
       message: `"sourceRef" is empty`,
