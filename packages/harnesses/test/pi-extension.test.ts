@@ -4,7 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { projectConfigPath, projectEngramsDir } from "@engram/core";
+import { Value } from "typebox/value";
+import { z } from "zod";
 import engramExtension from "../src/pi/index.js";
+import { registerEngramTools } from "../src/pi/tools.js";
+import { engramAddTool as ocAddTool } from "../src/opencode/tools.js";
 
 /* --------------------------- fake pi harness --------------------------- */
 
@@ -122,6 +126,12 @@ describe("engram extension / registration", () => {
       "scope",
       "tags",
       "pinned",
+      "status",
+      "supersedes",
+      "reviewAfter",
+      "expires",
+      "sourceType",
+      "sourceRef",
     ]);
   });
 });
@@ -182,6 +192,28 @@ describe("engram extension / tool execution", () => {
       content: Array<{ text: string }>;
     };
     expect(digest.content[0].text).toContain("Chose Vitest over Jest");
+  });
+
+  it("engram_add passes lifecycle params through to the store", async () => {
+    const { pi, tools } = fakePi();
+    engramExtension(pi);
+    const add = tools.find((t) => t.name === "engram_add")!;
+
+    const res = (await add.execute("call-1", {
+      title: "Recorded with lifecycle",
+      body: "b",
+      status: "superseded",
+      supersedes: "0001",
+      reviewAfter: "2026-01-01T00:00:00.000Z",
+      expires: "2026-06-01T00:00:00.000Z",
+      sourceType: "file",
+      sourceRef: "docs/a.md",
+    })) as { isError: boolean; details: Record<string, unknown> };
+    expect(res.isError).toBe(false);
+    const content = fs.readFileSync(res.details.path as string, "utf8");
+    expect(content).toContain("status: superseded");
+    expect(content).toContain("reviewAfter: 2026-01-01T00:00:00.000Z");
+    expect(content).toContain("sourceType: file");
   });
 
   it("engram_show on an unknown id is an isError result", async () => {
@@ -316,5 +348,114 @@ describe("engram extension / /engram command", () => {
     expect(notes[0].level).toBe("error");
     expect(notes[0].text).toContain('"descision"');
     expect(fs.readdirSync(projectEngramsDir(tmp))).toEqual([]);
+  });
+});
+
+describe("engram extension / lifecycle schema contract", () => {
+  const baseParams = { title: "T", body: "b" };
+
+  const piAddTool = () => {
+    const { pi, tools } = fakePi();
+    engramExtension(pi);
+    return tools.find((t) => t.name === "engram_add")!;
+  };
+
+  it("engram_add schema enforces the lifecycle enums (TypeBox Value.Check)", () => {
+    const parameters = piAddTool().parameters;
+    const accepts = {
+      ...baseParams,
+      status: "active",
+      supersedes: "0001",
+      reviewAfter: "2026-01-01T00:00:00.000Z",
+      expires: "2026-06-01T00:00:00.000Z",
+      sourceType: "file",
+      sourceRef: "docs/a.md",
+    };
+    expect(Value.Check(parameters, accepts)).toBe(true);
+    for (const status of ["active", "superseded", "archived"]) {
+      expect(Value.Check(parameters, { ...baseParams, status })).toBe(true);
+    }
+    expect(Value.Check(parameters, { ...baseParams, status: "bogus" })).toBe(false);
+    for (const sourceType of ["conversation", "file", "url", "command", "other"]) {
+      expect(Value.Check(parameters, { ...baseParams, sourceType })).toBe(true);
+    }
+    expect(Value.Check(parameters, { ...baseParams, sourceType: "website" })).toBe(false);
+  });
+
+  it("lifecycle param descriptions state the real contract without overclaims", () => {
+    const props = piAddTool().parameters.properties as Record<
+      string,
+      { description?: string } | undefined
+    >;
+    expect(props.status?.description).toContain("active | superseded | archived");
+    expect(props.sourceType?.description).toContain(
+      "conversation | file | url | command | other",
+    );
+    // timestamps, ids, and refs are enforced when saved, not by the schema:
+    // descriptions must say so instead of claiming schema-level enforcement
+    for (const field of ["supersedes", "reviewAfter", "expires", "sourceRef"] as const) {
+      expect(props[field]?.description, field).toMatch(/when saved/);
+      expect(props[field]?.description, field).not.toMatch(/schema|type:|must be a valid/);
+    }
+  });
+
+  it("add schemas agree on the lifecycle contract across pi and opencode", () => {
+    const parameters = piAddTool().parameters;
+    const ocSchema = z.object(ocAddTool.args as z.ZodRawShape);
+    const cases: Array<Record<string, unknown>> = [
+      { ...baseParams },
+      { ...baseParams, status: "active" },
+      { ...baseParams, status: "superseded" },
+      { ...baseParams, status: "archived" },
+      { ...baseParams, status: "bogus" },
+      { ...baseParams, sourceType: "conversation" },
+      { ...baseParams, sourceType: "other" },
+      { ...baseParams, sourceType: "website" },
+      { ...baseParams, reviewAfter: "2026-01-01T00:00:00.000Z" },
+      { ...baseParams, reviewAfter: "2026-01-01" },
+      { ...baseParams, expires: "2026-06-01T00:00:00.000Z" },
+      { ...baseParams, supersedes: "0001" },
+      { ...baseParams, sourceRef: "docs/a.md" },
+      { ...baseParams, sourceRef: "" },
+    ];
+    for (const params of cases) {
+      const piOk = Value.Check(parameters, params);
+      const ocOk = ocSchema.safeParse(params).success;
+      expect(piOk, JSON.stringify(params)).toBe(ocOk);
+    }
+  });
+});
+
+describe("engram extension / add refresh hook", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "engram-pihome-"));
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("refreshes the cache on successful adds only", async () => {
+    let refreshes = 0;
+    const fake = fakePi();
+    registerEngramTools(fake.pi, { onAddSuccess: () => refreshes++ });
+    const add = fake.tools.find((t) => t.name === "engram_add")!;
+
+    await add.execute("c1", { title: "T", body: "b", status: "bogus" });
+    expect(refreshes).toBe(0);
+
+    await add.execute("c2", { title: "T", body: "b", status: "active" });
+    expect(refreshes).toBe(1);
   });
 });
