@@ -223,8 +223,9 @@ moment.js is frozen/in-maintenance and ships a large bundle…
 
 The frontmatter fields `id`, `title`, `type`, `tags`, `scope`, `created`, and
 `updated` are required; `author` and `pinned` are optional. Unknown fields are
-preserved and tolerated, so future engram versions can add metadata without
-breaking older readers.
+tolerated by validation and reads, so future engram versions can add metadata
+without breaking older readers. They are not preserved across `engram edit`:
+rewrites carry only the modeled fields above.
 
 Hand-edited files are validated on read: malformed entries never disappear
 silently. `engram list` stays fail-open but prints one bounded warning to
