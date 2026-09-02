@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import { NodeServices } from "@effect/platform-node";
+import { FileSystem } from "effect/FileSystem";
+import { systemError } from "effect/PlatformError";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -11,7 +13,7 @@ import {
   AutoContextLimitSchema,
 } from "../src/domain.js";
 import { Schema } from "effect";
-import { projectConfigPath } from "../src/paths.js";
+import { projectConfigPath, globalConfigPath } from "../src/paths.js";
 
 const ConfigLayer = ConfigRepoLive.pipe(Layer.provide(NodeServices.layer));
 
@@ -164,5 +166,226 @@ describe("ConfigRepo / global auto-context keys", () => {
     }
     expect(Schema.decodeSync(AutoContextLimitSchema)(1)).toBe(1);
     expect(Schema.decodeSync(AutoContextLimitSchema)(100)).toBe(100);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* validateGlobal / validateProject: config integrity diagnostics    */
+/* ------------------------------------------------------------------ */
+
+/** A ConfigRepo layer whose `readFileString` fails for one exact path. */
+const unreadableConfigLive = (file: string) =>
+  ConfigRepoLive.pipe(
+    Layer.provide(
+      Layer.effect(
+        FileSystem,
+        Effect.gen(function* () {
+          const real = yield* FileSystem;
+          return {
+            ...real,
+            readFileString: (p: string) =>
+              p === file
+                ? Effect.fail(
+                    systemError({
+                      _tag: "PermissionDenied",
+                      module: "FileSystem",
+                      method: "readFileString",
+                      pathOrDescriptor: p,
+                      syscall: "open",
+                    }),
+                  )
+                : real.readFileString(p),
+          } satisfies FileSystem;
+        }),
+      ).pipe(Layer.provide(NodeServices.layer)),
+    ),
+    Layer.provide(NodeServices.layer),
+  );
+
+describe("ConfigRepo / validateProject", () => {
+  let tmp = "";
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "amem-vcfg-"));
+  });
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const writeProject = (data: unknown) => {
+    fs.mkdirSync(path.dirname(projectConfigPath(tmp)), { recursive: true });
+    fs.writeFileSync(
+      projectConfigPath(tmp),
+      typeof data === "string" ? data : JSON.stringify(data),
+    );
+  };
+
+  it.live("a valid v0.4 project config passes", () => {
+    writeProject({ version: 1, tracked: true, defaultType: "note", author: "alice" });
+    return Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      expect(yield* cfg.validateProject(tmp)).toEqual([]);
+    }).pipe(Effect.provide(ConfigLayer));
+  });
+
+  it.live("a missing project config is diagnosed (it identified the root)", () => {
+    return Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      const diags = yield* cfg.validateProject(tmp);
+      expect(diags).toHaveLength(1);
+      expect(diags[0].code).toBe("config_unreadable");
+      expect(diags[0].file).toBe(projectConfigPath(tmp));
+      expect(diags[0].severity).toBe("error");
+      expect(diags[0].scope).toBe("project");
+    }).pipe(Effect.provide(ConfigLayer));
+  });
+
+  it.live("invalid JSON reports the exact path", () => {
+    writeProject("{not json");
+    return Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      const diags = yield* cfg.validateProject(tmp);
+      expect(diags.map((d) => d.code)).toEqual(["config_json_invalid"]);
+      expect(diags[0].file).toBe(projectConfigPath(tmp));
+      expect(diags[0].message).toContain("JSON");
+    }).pipe(Effect.provide(ConfigLayer));
+  });
+
+  it.live("schema violations report field-level reasons and the exact path", () => {
+    writeProject({ version: 1, tracked: "yes" }); // tracked must be boolean
+    return Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      const diags = yield* cfg.validateProject(tmp);
+      expect(diags.map((d) => d.code)).toEqual(["config_schema_invalid"]);
+      expect(diags[0].file).toBe(projectConfigPath(tmp));
+      expect(diags[0].message).toContain("tracked");
+      expect(diags[0].hint.length).toBeGreaterThan(0);
+    }).pipe(Effect.provide(ConfigLayer));
+  });
+
+  it.live("defaults do not hide missing required on-disk fields", () => {
+    writeProject({ version: 1 }); // tracked/defaultType missing on disk
+    return Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      // validation sees the raw on-disk defect and names the offending field…
+      const diags = yield* cfg.validateProject(tmp);
+      expect(diags.map((d) => d.code)).toEqual(["config_schema_invalid"]);
+      expect(diags[0].message).toContain("tracked");
+      // …and normal loading rejects it too (defaults only apply when the
+      // config file is absent entirely, never to fill in missing fields)
+      const loadErr = yield* Effect.flip(cfg.loadProject(tmp));
+      expect((loadErr as { _tag: string })._tag).toBe("ConfigError");
+    }).pipe(Effect.provide(ConfigLayer));
+  });
+
+  it.live("names the offending field for wrong-typed values", () => {
+    writeProject({ version: 1, tracked: true, defaultType: 42 });
+    return Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      const diags = yield* cfg.validateProject(tmp);
+      expect(diags.map((d) => d.code)).toEqual(["config_schema_invalid"]);
+      expect(diags[0].message).toContain("defaultType");
+    }).pipe(Effect.provide(ConfigLayer));
+  });
+
+  it.live("unsupported versions are diagnosed", () => {
+    writeProject({ version: 99, tracked: true, defaultType: "note" });
+    return Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      const diags = yield* cfg.validateProject(tmp);
+      expect(diags.map((d) => d.code)).toEqual(["config_version_unsupported"]);
+      expect(diags[0].message).toContain("99");
+    }).pipe(Effect.provide(ConfigLayer));
+  });
+
+  it.live("an unreadable config is diagnosed", () => {
+    writeProject({ version: 1, tracked: true, defaultType: "note" });
+    return Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      const diags = yield* cfg.validateProject(tmp);
+      expect(diags.map((d) => d.code)).toEqual(["config_unreadable"]);
+      expect(diags[0].message).toContain("PermissionDenied");
+    }).pipe(Effect.provide(unreadableConfigLive(projectConfigPath(tmp))));
+  });
+});
+
+describe("ConfigRepo / validateGlobal", () => {
+  let origHome: string | undefined;
+  let tmp = "";
+  beforeEach(() => {
+    origHome = process.env.HOME;
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "amem-vgcfg-"));
+    process.env.HOME = tmp;
+  });
+  afterEach(() => {
+    process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const writeGlobal = (data: unknown) => {
+    fs.mkdirSync(path.dirname(globalConfigPath()), { recursive: true });
+    fs.writeFileSync(globalConfigPath(), typeof data === "string" ? data : JSON.stringify(data));
+  };
+
+  it.live("a missing global config is valid (defaults are supported)", () =>
+    Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      expect(yield* cfg.validateGlobal()).toEqual([]);
+    }).pipe(Effect.provide(ConfigLayer)),
+  );
+
+  it.live("a valid v0.4 global config passes", () => {
+    writeGlobal({
+      version: 1,
+      author: "alice",
+      editor: "vim",
+      autoContext: "off",
+      autoContextScope: "both",
+      autoContextLimit: 40,
+    });
+    return Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      expect(yield* cfg.validateGlobal()).toEqual([]);
+    }).pipe(Effect.provide(ConfigLayer));
+  });
+
+  it.live("invalid JSON reports the exact path", () => {
+    writeGlobal("{oops");
+    return Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      const diags = yield* cfg.validateGlobal();
+      expect(diags.map((d) => d.code)).toEqual(["config_json_invalid"]);
+      expect(diags[0].file).toBe(globalConfigPath());
+      expect(diags[0].scope).toBe("personal");
+    }).pipe(Effect.provide(ConfigLayer));
+  });
+
+  it.live("schema violations are diagnosed with the exact path", () => {
+    writeGlobal({ version: 1, autoContext: "maybe" });
+    return Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      const diags = yield* cfg.validateGlobal();
+      expect(diags.map((d) => d.code)).toEqual(["config_schema_invalid"]);
+      expect(diags[0].file).toBe(globalConfigPath());
+      expect(diags[0].message).toContain("autoContext");
+    }).pipe(Effect.provide(ConfigLayer));
+  });
+
+  it.live("unsupported versions are diagnosed", () => {
+    writeGlobal({ version: 2, author: "from the future" });
+    return Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      const diags = yield* cfg.validateGlobal();
+      expect(diags.map((d) => d.code)).toEqual(["config_version_unsupported"]);
+    }).pipe(Effect.provide(ConfigLayer));
+  });
+
+  it.live("an unreadable config is diagnosed", () => {
+    writeGlobal({ version: 1 });
+    return Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      const diags = yield* cfg.validateGlobal();
+      expect(diags.map((d) => d.code)).toEqual(["config_unreadable"]);
+      expect(diags[0].file).toBe(globalConfigPath());
+    }).pipe(Effect.provide(unreadableConfigLive(globalConfigPath())));
   });
 });

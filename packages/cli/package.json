@@ -51,6 +51,7 @@
     "zod": "^4.1.8"
   },
   "devDependencies": {
+    "@effect/platform-node": "catalog:",
     "@engram/core": "workspace:*",
     "@engram/harnesses": "workspace:*"
   },

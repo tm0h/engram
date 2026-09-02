@@ -174,6 +174,99 @@ describe("shared ops / contextDigest", () => {
   });
 });
 
+/* --------------------- integrity warnings --------------------- */
+
+const WARNING_PREFIX = "WARNING: Engram memory is incomplete.";
+
+const seedBroken = (dir: string, name: string): string => {
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, "---\ntitle: [unclosed\n---\nBody\n");
+  return file;
+};
+
+describe("shared ops / integrity warnings", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = mkHome();
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("contextDigest returns valid memory plus one bounded warning for a malformed sibling", async () => {
+    seed(tmp, "0001", { title: "Healthy note" });
+    seedBroken(projectEngramsDir(tmp), "0002-broken.md");
+
+    const res = await run(contextDigest({ scope: "project" }));
+    expect(res.isError).toBe(false);
+    expect(res.text.startsWith(WARNING_PREFIX)).toBe(true);
+    expect(res.text).toContain("Healthy note");
+    expect(res.text).toContain("engram check");
+    // bounded: exactly one warning occurrence, no file lists
+    expect(res.text.split(WARNING_PREFIX)).toHaveLength(2);
+    expect(res.text).not.toContain("0002-broken.md");
+    // structured details report incomplete memory and counts
+    expect(res.details).toMatchObject({
+      memoryIncomplete: true,
+      omittedFiles: 1,
+    });
+    expect(res.details.diagnosticCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("a clean digest carries no warning and reports complete memory", async () => {
+    // title slugifies to "entry", matching the seed's <id>-entry.md filename:
+    // a fully consistent store, diagnostics-free
+    seed(tmp, "0001", { title: "Entry" });
+
+    const res = await run(contextDigest({ scope: "project" }));
+    expect(res.isError).toBe(false);
+    expect(res.text).not.toContain(WARNING_PREFIX);
+    expect(res.details).toMatchObject({
+      memoryIncomplete: false,
+      omittedFiles: 0,
+      diagnosticCount: 0,
+    });
+  });
+
+  it("warnings aggregate across scopes into one line", async () => {
+    seed(tmp, "0001", { title: "Healthy note" });
+    seedBroken(projectEngramsDir(tmp), "0002-broken.md");
+    seedBroken(path.join(home, ".engram", "engrams"), "0003-broken.md");
+
+    const res = await run(contextDigest({ scope: "both" }));
+    expect(res.isError).toBe(false);
+    expect(res.text.startsWith(WARNING_PREFIX)).toBe(true);
+    expect(res.text).toContain("Skipped 2 unreadable or invalid files");
+    expect(res.text.split(WARNING_PREFIX)).toHaveLength(2);
+  });
+
+  it("the warning survives result capping (prepended, cap cuts the tail)", async () => {
+    for (let i = 0; i < 200; i++) {
+      seed(tmp, String(i).padStart(4, "0"), { title: `Filler entry number ${i} for the cap test` });
+    }
+    seedBroken(projectEngramsDir(tmp), "9001-broken.md");
+
+    const res = await run(contextDigest({ scope: "project", limit: 250 }));
+    expect(res.isError).toBe(false);
+    // the body exceeded the cap and was truncated...
+    expect(res.text).toContain("(result truncated)");
+    // ...and the warning is still first, intact
+    expect(res.text.startsWith(WARNING_PREFIX)).toBe(true);
+    expect(res.details).toMatchObject({ memoryIncomplete: true, omittedFiles: 1 });
+  });
+});
+
 /* ----------------------------- search ----------------------------- */
 
 describe("shared ops / searchOp", () => {

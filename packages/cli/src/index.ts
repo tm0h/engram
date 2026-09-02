@@ -27,6 +27,7 @@ import * as Config from "./commands/configCmd.js";
 import * as Inject from "./commands/inject.js";
 import * as Where from "./commands/where.js";
 import * as Dedupe from "./commands/dedupe.js";
+import * as Check from "./commands/check.js";
 
 const DOMAIN_TAGS = new Set([
   "ProjectNotInitializedError",
@@ -37,6 +38,7 @@ const DOMAIN_TAGS = new Set([
   "ValidationError",
   "FrontmatterParseError",
   "ConfigError",
+  "IntegrityCheckFailedError",
 ]);
 
 function isDomainError(e: unknown): e is DomainError {
@@ -237,6 +239,22 @@ program
     run(
       Dedupe.dedupeCommand({
         scope: opts.scope,
+      }),
+    ),
+  );
+
+program
+  .command("check")
+  .description(
+    "Check store integrity (frontmatter, required fields, id uniqueness, filenames, configs). Read-only.",
+  )
+  .option("-s, --scope <scope>", "personal | project | all (default: project if initialized)")
+  .option("--json", "Emit a single JSON report on stdout.")
+  .action((opts: Record<string, string | boolean | undefined>) =>
+    run(
+      Check.checkCommand({
+        scope: opts.scope as string | undefined,
+        json: Boolean(opts.json),
       }),
     ),
   );

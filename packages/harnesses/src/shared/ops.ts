@@ -19,6 +19,7 @@ import {
   findGitRoot,
   findProjectRoot,
   formatDomainError,
+  incompleteMemoryWarning,
   projectEngramsDir,
   projectReadmeContent,
   projectReadmePath,
@@ -213,14 +214,23 @@ export const contextDigest = (
       if (resolved === null) return err(projectUninitialized("read"));
 
       const sections: Array<{ scope: Scope; items: Engram[] }> = [];
+      // Full scans: malformed candidates must not vanish silently. The
+      // aggregate warning is prepended to the text (before any cap, which
+      // only cuts the tail) and mirrored in structured details.
+      let omittedFiles = 0;
+      let diagnosticCount = 0;
       for (const scope of resolved.scopes) {
-        sections.push({ scope, items: ordered(yield* store.list(scope)) });
+        const scanned = yield* store.scan(scope);
+        omittedFiles += scanned.omittedFiles;
+        diagnosticCount += scanned.diagnostics.length;
+        sections.push({ scope, items: ordered(scanned.entries) });
       }
       const flat = sections.flatMap((s) => s.items);
       const page = paginate(flat, opts.offset ?? 0, opts.limit ?? DEFAULT_CONTEXT_LIMIT);
 
       const lines = digestLines(sections, flat, page, root, resolved.personalOnly);
       if (!flat.length) lines.push("No engrams in scope yet.");
+      if (omittedFiles > 0) lines.unshift(incompleteMemoryWarning(omittedFiles));
 
       const from = page.offset + 1;
       const to = page.offset + page.items.length;
@@ -241,6 +251,9 @@ export const contextDigest = (
         limit: page.limit,
         nextOffset: page.nextOffset,
         personalOnly: resolved.personalOnly,
+        memoryIncomplete: omittedFiles > 0,
+        omittedFiles,
+        diagnosticCount,
       });
     }),
   );
@@ -504,18 +517,21 @@ const sanitizeAutoLine = (line: string): string =>
     .slice(0, AUTO_LINE_CAP)
     .trimEnd();
 
-/** Assemble the bounded injectable payload around the digest body lines. */
+/** Assemble the bounded injectable payload around the digest body lines.
+ * `warning` (optional) is a trusted constant line placed first, inside the
+ * frame, where result capping can never truncate it. */
 const assembleAutoPayload = (
   sections: ReadonlyArray<{ scope: Scope; items: Engram[] }>,
   flat: ReadonlyArray<Engram>,
   page: Page<Engram>,
   root: Option.Option<string>,
   personalOnly: boolean,
+  warning: string | null,
 ): { text: string; truncated: boolean } => {
   // Every dynamic line — root-bearing headers, digest entries, footer — goes
   // through the same sanitization; only the trusted wrapper constants bypass it.
   const body = digestLines(sections, flat, page, root, personalOnly).map(sanitizeAutoLine);
-  const lines = [AUTO_OPEN, AUTO_INTRO, "", ...body];
+  const lines = [AUTO_OPEN, AUTO_INTRO, ...(warning ? ["", warning] : []), "", ...body];
   if (page.nextOffset !== null && page.items.length > 0) {
     lines.push(
       "",
@@ -570,9 +586,16 @@ const autoContextImpl = (): Effect.Effect<OpResult, unknown, EngramStore | Confi
             ? ["project", "personal"]
             : ["personal"];
 
+    // Full scans: malformed candidates must not vanish silently, including
+    // for headless consumers that never see UI notifications.
+    let omittedFiles = 0;
+    let diagnosticCount = 0;
     const sections: Array<{ scope: Scope; items: Engram[] }> = [];
     for (const scope of scopes) {
-      sections.push({ scope, items: ordered(yield* store.list(scope)) });
+      const scanned = yield* store.scan(scope);
+      omittedFiles += scanned.omittedFiles;
+      diagnosticCount += scanned.diagnostics.length;
+      sections.push({ scope, items: ordered(scanned.entries) });
     }
     const flat = sections.flatMap((s) => s.items);
     const page = paginate(flat, 0, limit);
@@ -584,15 +607,20 @@ const autoContextImpl = (): Effect.Effect<OpResult, unknown, EngramStore | Confi
       limit: page.limit,
       offset: page.offset,
       nextOffset: page.nextOffset,
+      memoryIncomplete: omittedFiles > 0,
+      omittedFiles,
+      diagnosticCount,
     };
 
-    // Nothing selected/available or empty stores: no block, no error.
-    if (!flat.length) {
+    // Nothing selected/available and nothing skipped: no block, no error.
+    // A skipped-file count still injects the bounded warning below.
+    if (!flat.length && omittedFiles === 0) {
       return { text: "", isError: false, details: { ...base, loaded: false, truncated: false } };
     }
 
     const personalOnly = scopeSetting === "both" && Option.isNone(root);
-    const payload = assembleAutoPayload(sections, flat, page, root, personalOnly);
+    const warning = omittedFiles > 0 ? incompleteMemoryWarning(omittedFiles) : null;
+    const payload = assembleAutoPayload(sections, flat, page, root, personalOnly, warning);
 
     return {
       text: payload.text,

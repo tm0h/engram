@@ -92,6 +92,65 @@ export const parseTags = (input?: string): ReadonlyArray<string> => {
 
 export const padId = (n: number): string => String(n).padStart(4, "0");
 
+/* ------------------------------ ids ------------------------------ */
+
+/** Legacy ids are exactly four decimal digits; generated ids are exactly
+ * 26 lowercase Crockford-base32 characters (see `newId`). */
+const LEGACY_ID = /^\d{4}$/;
+const ULID_ID = /^[0-9a-hjkmnp-tv-z]{26}$/;
+
+export const isValidId = (id: string): boolean => LEGACY_ID.test(id) || ULID_ID.test(id);
+
+/** Decompose a `<id>-<slug>.md` basename into its parts. Returns undefined
+ * when the name does not follow the generated shape (a valid id part plus a
+ * non-empty slug part). Pure string math; no filesystem access. */
+export const parseEntryFilename = (
+  basename: string,
+): { readonly id: string; readonly slug: string } | undefined => {
+  const m = /^([^-]+)-(.+)\.md$/.exec(basename);
+  if (!m) return undefined;
+  const [, idPart, slugPart] = m;
+  return isValidId(idPart) ? { id: idPart, slug: slugPart } : undefined;
+};
+
+/* --------------------------- timestamps --------------------------- */
+
+/** Accepted timestamp form: ISO 8601 date-time with an explicit zone,
+ * `Z` (what `nowISO()` writes) or a numeric `±hh:mm` offset. Date-only and
+ * zone-less strings are not accepted. */
+const ISO_TIME =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-](\d{2}):(\d{2}))$/;
+
+const isLeapYear = (year: number): boolean =>
+  (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+
+const daysInMonth = (year: number, month: number): number => {
+  if (month === 2) return isLeapYear(year) ? 29 : 28;
+  return month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31;
+};
+
+/** Epoch millis for an accepted ISO timestamp, or undefined when the value
+ * is not in the accepted form or not a real date/time. `Date.parse` alone
+ * silently normalizes impossible dates (Feb 30 becomes Mar 2), so the
+ * calendar and clock components are validated explicitly. */
+export const parseTimestamp = (value: string): number | undefined => {
+  const m = ISO_TIME.exec(value);
+  if (!m) return undefined;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const hour = Number(m[4]);
+  const minute = Number(m[5]);
+  const second = Number(m[6]);
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) {
+    return undefined;
+  }
+  if (hour > 23 || minute > 59 || second > 59) return undefined;
+  if (m[8] !== undefined && (Number(m[8]) > 23 || Number(m[9]) > 59)) return undefined;
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? undefined : ms;
+};
+
 export const numericId = (id: string): number => {
   const n = parseInt(id, 10);
   return Number.isFinite(n) ? n : 0;

@@ -2,9 +2,8 @@
 import { Effect, Option } from "effect";
 import chalk from "chalk";
 import { EngramStore } from "@engram/core";
-import { scopesToQuery } from "@engram/core";
+import { incompleteMemoryWarning, renderContext, scopesToQuery } from "@engram/core";
 import { searchEngrams } from "@engram/core";
-import { renderContext } from "@engram/core";
 import { findProjectRoot } from "@engram/core";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
@@ -30,21 +29,18 @@ export const contextCommand = (opts: ContextOptions) =>
     const scopes = scopesToQuery(opts.scope, projectRootOpt);
 
     const blocks: string[] = [];
-    const duplicateWarnings: string[] = [];
+    const duplicateIds: Array<{ id: string; files: ReadonlyArray<string> }> = [];
+    let omitted = 0;
     let first = true;
     for (const scope of scopes) {
-      let engrams = yield* store.list(scope);
-      // Ids must be unique; surface duplicates loudly — this digest is what
-      // agents read at session start.
-      const byId = new Map<string, string[]>();
-      for (const m of engrams) {
-        byId.set(m.id, [...(byId.get(m.id) ?? []), m.path]);
-      }
-      for (const [id, files] of byId) {
-        if (files.length > 1) {
-          duplicateWarnings.push(`- id ${id}: ${files.join(", ")}`);
-        }
-      }
+      // Consume the full scan so malformed candidates cannot vanish silently;
+      // the bounded warning below is what the agent sees instead.
+      const scanned = yield* store.scan(scope);
+      omitted += scanned.omittedFiles;
+      duplicateIds.push(...scanned.duplicateIds);
+      let engrams = scanned.entries;
+      // Ids must be unique; surface duplicates loudly but bounded (this
+      // digest is what agents read at session start).
       if (opts.query) {
         engrams = searchEngrams(engrams, opts.query, opts.limit).map((r) => r.engram);
       } else if (typeof opts.limit === "number") {
@@ -65,17 +61,23 @@ export const contextCommand = (opts: ContextOptions) =>
       blocks.push(rendered);
     }
 
-    if (duplicateWarnings.length) {
-      blocks.unshift(
-        [
-          "# WARNING: duplicate engram ids",
-          "",
-          "Multiple files claim the same id — `engram show <id>` fails until they are renumbered",
-          "(filename prefix + frontmatter id). Offenders:",
-          ...duplicateWarnings,
-        ].join("\n"),
+    // Bounded, cap-protected preamble, prepended so it can never be cut by
+    // downstream truncation: the incomplete-memory warning first (stdout,
+    // because agents may ignore stderr), then duplicate visibility that stays
+    // constant-length and points to `engram check` instead of listing an
+    // unbounded offender set.
+    const preamble: string[] = [];
+    if (omitted > 0) preamble.push(incompleteMemoryWarning(omitted));
+    if (duplicateIds.length > 0) {
+      preamble.push(
+        `# WARNING: duplicate engram ids (${duplicateIds.length} ${
+          duplicateIds.length === 1 ? "id" : "ids"
+        })\n` +
+          "Multiple files claim the same id, so `engram show <id>` cannot resolve them. " +
+          "Run `engram check --scope all` for exact paths, or `engram dedupe` to renumber.",
       );
     }
 
-    yield* out(blocks.length ? blocks.join("\n\n") : "(no engrams available)");
+    const body = blocks.length ? blocks.join("\n\n") : "(no engrams available)";
+    yield* out(preamble.length ? [...preamble, body].join("\n\n") : body);
   });

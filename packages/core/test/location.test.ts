@@ -40,6 +40,22 @@ describe("findProjectRoot", () => {
     expect(result).toBe(root);
   });
 
+  it("a malformed but present project config still identifies the project root", async () => {
+    // presence, not validity, marks an initialized project — so `engram check`
+    // can report the actual config defect instead of "not initialized"
+    const root = path.join(tmp, "proj");
+    const nested = path.join(root, "apps", "web");
+    fs.mkdirSync(nested, { recursive: true });
+    fs.mkdirSync(path.join(root, ".engram"), { recursive: true });
+    fs.writeFileSync(projectConfigPath(root), "{not json");
+
+    const result = await withFsPath((fs, path) => findProjectRoot(fs, path, nested)).pipe(
+      Effect.provide(NodeServices.layer),
+      Effect.runPromise,
+    );
+    expect(result).toBe(root);
+  });
+
   it("returns null when no project is initialized", async () => {
     const result = await withFsPath((fs, path) => findProjectRoot(fs, path, tmp)).pipe(
       Effect.provide(NodeServices.layer),

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "@effect/vitest";
 import { Option, Result } from "effect";
-import { parseFrontmatter, stringifyFrontmatter } from "../src/frontmatter.js";
+import { parseFrontmatter, stringifyFrontmatter, validateEntry } from "../src/frontmatter.js";
 
 /** Success value of parsing `raw`, or undefined when it failed. */
 const ok = (raw: string) => Option.getOrUndefined(Result.getSuccess(parseFrontmatter(raw)));
@@ -118,5 +118,189 @@ describe("stringifyFrontmatter", () => {
   it("round-trips a body containing --- lines", () => {
     const body = "Intro\n\n---\n\nSection\n";
     expect(ok(stringifyFrontmatter(body, { title: "Hello" }))?.content).toBe(body);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* validateEntry: staged entry validation                            */
+/* ------------------------------------------------------------------ */
+
+const VALID_ID = "01arz3ndektsv4rrffq69g5fav"; // 26 lowercase Crockford-base32 chars
+
+const VALID: Record<string, unknown> = {
+  id: VALID_ID,
+  title: "Valid title",
+  type: "note",
+  tags: ["a"],
+  scope: "project",
+  created: "2025-08-15T10:00:00.000Z",
+  updated: "2025-08-15T11:00:00.000Z",
+};
+
+/** A full valid entry rendered from `over`/`omit`, mirroring generated files. */
+const raw = (over: Record<string, unknown> = {}, omit: ReadonlyArray<string> = []): string => {
+  const fm = { ...VALID, ...over };
+  for (const name of omit) delete fm[name];
+  return stringifyFrontmatter("Body\n", fm);
+};
+
+const codes = (v: ReturnType<typeof validateEntry>): string[] => v.issues.map((i) => i.code);
+
+describe("validateEntry", () => {
+  it("accepts a fully valid entry and decodes it", () => {
+    const v = validateEntry(raw());
+    expect(v.issues).toEqual([]);
+    expect(v.frontmatter?.id).toBe(VALID_ID);
+    expect(v.frontmatter?.title).toBe("Valid title");
+    expect(v.frontmatter?.pinned).toBeUndefined();
+    expect(v.frontmatter?.author).toBeUndefined();
+    expect(v.partial).toEqual({ id: VALID_ID, title: "Valid title", scope: "project" });
+    expect(v.content).toBe("Body\n");
+  });
+
+  it("accepts unknown fields for future extensions", () => {
+    const v = validateEntry(raw({ status: "draft", "next-review": "2026-01-01" }));
+    expect(v.issues).toEqual([]);
+    expect(v.frontmatter).toBeDefined();
+  });
+
+  it("accepts legacy four-digit ids", () => {
+    expect(validateEntry(raw({ id: "0001" })).issues).toEqual([]);
+  });
+
+  it("accepts generated 26-character ids", () => {
+    expect(validateEntry(raw({ id: "01arz3ndektsv4rrffq69g5fav" })).issues).toEqual([]);
+  });
+
+  it("diagnoses plain markdown without frontmatter as frontmatter_missing", () => {
+    const v = validateEntry("Just markdown, no frontmatter.\n");
+    expect(codes(v)).toEqual(["frontmatter_missing"]);
+    expect(v.frontmatter).toBeUndefined();
+    expect(v.partial.id).toBeUndefined();
+  });
+
+  it("diagnoses an unterminated frontmatter block as frontmatter_missing", () => {
+    const v = validateEntry("---\ntitle: Hello\nno closing delimiter\n");
+    expect(codes(v)).toEqual(["frontmatter_missing"]);
+  });
+
+  it("diagnoses malformed YAML as yaml_invalid", () => {
+    const v = validateEntry("---\ntitle: [unclosed\n---\nBody\n");
+    expect(codes(v)).toEqual(["yaml_invalid"]);
+    expect(v.issues[0].message).toContain("invalid YAML");
+    expect(v.issues[0].hint.length).toBeGreaterThan(0);
+  });
+
+  it("rejects scalar frontmatter", () => {
+    expect(codes(validateEntry("---\njust a string\n---\nBody\n"))).toEqual([
+      "frontmatter_not_object",
+    ]);
+  });
+
+  it("rejects sequence frontmatter", () => {
+    expect(codes(validateEntry("---\n- a\n- b\n---\nBody\n"))).toEqual(["frontmatter_not_object"]);
+  });
+
+  it("rejects null frontmatter", () => {
+    expect(codes(validateEntry("---\n~\n---\nBody\n"))).toEqual(["frontmatter_not_object"]);
+  });
+
+  it("diagnoses every missing required field actionably", () => {
+    for (const name of ["id", "title", "type", "tags", "scope", "created", "updated"]) {
+      const v = validateEntry(raw({}, [name]));
+      expect(v.issues).toHaveLength(1);
+      expect(v.issues[0].code).toBe("required_field_missing");
+      expect(v.issues[0].message).toContain(`"${name}"`);
+      expect(v.issues[0].hint.length).toBeGreaterThan(0);
+      expect(v.frontmatter).toBeUndefined();
+    }
+  });
+
+  it("treats an explicit YAML null field as missing", () => {
+    const v = validateEntry(
+      "---\nid:\ntitle: Valid title\ntype: note\ntags: []\nscope: project\ncreated: 2025-08-15T10:00:00.000Z\nupdated: 2025-08-15T11:00:00.000Z\n---\nBody\n",
+    );
+    expect(codes(v)).toEqual(["required_field_missing"]);
+    expect(v.issues[0].message).toContain('"id"');
+  });
+
+  it("rejects wrong field types", () => {
+    expect(codes(validateEntry(raw({ tags: "deps" })))).toEqual(["field_type_invalid"]);
+    expect(codes(validateEntry(raw({ tags: ["a", 2] })))).toEqual(["field_type_invalid"]);
+    expect(codes(validateEntry(raw({ author: 42 })))).toEqual(["field_type_invalid"]);
+    expect(codes(validateEntry(raw({ pinned: "yes" })))).toEqual(["field_type_invalid"]);
+    expect(codes(validateEntry(raw({ id: 7 })))).toEqual(["field_type_invalid"]);
+  });
+
+  it("rejects invalid type and scope enum values", () => {
+    expect(codes(validateEntry(raw({ type: "blogpost" })))).toEqual(["type_invalid"]);
+    expect(codes(validateEntry(raw({ type: 5 })))).toEqual(["type_invalid"]);
+    expect(codes(validateEntry(raw({ scope: "team" })))).toEqual(["scope_invalid"]);
+  });
+
+  it("rejects empty and malformed ids", () => {
+    expect(codes(validateEntry(raw({ id: "" })))).toEqual(["id_invalid"]);
+    expect(codes(validateEntry(raw({ id: "abc" })))).toEqual(["id_invalid"]);
+    expect(codes(validateEntry(raw({ id: "00001" })))).toEqual(["id_invalid"]);
+  });
+
+  it("rejects an empty title", () => {
+    expect(codes(validateEntry(raw({ title: "   " })))).toEqual(["title_invalid"]);
+    expect(codes(validateEntry(raw({ title: "" })))).toEqual(["title_invalid"]);
+  });
+
+  it("validates accepted timestamp forms", () => {
+    // canonical UTC (what engram writes), no-milliseconds, and explicit offsets
+    expect(validateEntry(raw({ created: "2025-08-15T10:00:00.000Z" })).issues).toEqual([]);
+    expect(validateEntry(raw({ created: "2025-08-15T10:00:00Z" })).issues).toEqual([]);
+    expect(validateEntry(raw({ created: "2025-08-15T12:00:00+02:00" })).issues).toEqual([]);
+  });
+
+  it("rejects unaccepted timestamp forms", () => {
+    expect(codes(validateEntry(raw({ created: "2025-08-15" })))).toEqual(["created_invalid"]);
+    expect(codes(validateEntry(raw({ created: "08:30" })))).toEqual(["created_invalid"]);
+    expect(codes(validateEntry(raw({ created: "yesterday" })))).toEqual(["created_invalid"]);
+    expect(codes(validateEntry(raw({ updated: "2025-08-15 11:00:00" })))).toEqual([
+      "updated_invalid",
+    ]);
+  });
+
+  it("rejects impossible calendar dates and clock values", () => {
+    // Date.parse silently normalizes these; entry validation must not
+    for (const bad of [
+      "2025-02-30T10:00:00Z",
+      "2023-02-29T10:00:00Z",
+      "2025-13-01T10:00:00Z",
+      "2025-08-15T24:00:00Z",
+      "2025-08-15T10:60:00Z",
+    ]) {
+      expect(codes(validateEntry(raw({ created: bad })))).toEqual(["created_invalid"]);
+    }
+  });
+
+  it("accepts real leap days", () => {
+    expect(validateEntry(raw({ created: "2024-02-29T10:00:00Z" })).issues).toEqual([]);
+    expect(validateEntry(raw({ updated: "2028-02-29T10:00:00Z" })).issues).toEqual([]);
+  });
+
+  it("rejects updated before created but keeps the entry usable", () => {
+    const v = validateEntry(raw({ updated: "2025-08-15T09:59:59.000Z" })); // before created 10:00
+    expect(codes(v)).toEqual(["updated_before_created"]);
+    // the defect is diagnosed, not hidden: the entry still becomes an Engram
+    expect(v.frontmatter).toBeDefined();
+  });
+
+  it("collects multiple issues in one pass", () => {
+    const fm: Record<string, unknown> = { ...VALID, type: "blogpost" };
+    delete fm.title;
+    const v = validateEntry(stringifyFrontmatter("Body\n", fm));
+    expect(new Set(codes(v))).toEqual(new Set(["required_field_missing", "type_invalid"]));
+  });
+
+  it("retains a partial id and title when other fields are invalid", () => {
+    const v = validateEntry(raw({ type: "blogpost" }));
+    expect(v.frontmatter).toBeUndefined();
+    expect(v.partial.id).toBe(VALID_ID);
+    expect(v.partial.title).toBe("Valid title");
   });
 });

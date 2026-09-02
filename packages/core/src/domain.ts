@@ -86,6 +86,10 @@ export interface EngramPatch {
 /* Configuration schemas                                               */
 /* ------------------------------------------------------------------ */
 
+/** The only config schema version this release understands. Configs with a
+ * different version load as data but fail integrity validation. */
+export const SUPPORTED_CONFIG_VERSION = 1;
+
 export const ProjectConfigSchema = Schema.Struct({
   version: Schema.Number,
   tracked: Schema.Boolean,
@@ -127,7 +131,7 @@ export const GlobalConfigSchema = Schema.Struct({
 export type GlobalConfig = Schema.Schema.Type<typeof GlobalConfigSchema>;
 
 export const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
-  version: 1,
+  version: SUPPORTED_CONFIG_VERSION,
   tracked: true,
   defaultType: "note",
 };
