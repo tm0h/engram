@@ -52,6 +52,12 @@ const seed = (root: string, id: string, over: Partial<EngramInput>): string => {
     "updated: 2026-08-16T10:00:00.000Z",
     `author: ${JSON.stringify(i.author ?? "Tester")}`,
     ...(i.pinned ? ["pinned: true"] : []),
+    ...(i.status !== undefined ? [`status: ${i.status}`] : []),
+    ...(i.supersedes !== undefined ? [`supersedes: ${i.supersedes}`] : []),
+    ...(i.reviewAfter !== undefined ? [`reviewAfter: ${i.reviewAfter}`] : []),
+    ...(i.expires !== undefined ? [`expires: ${i.expires}`] : []),
+    ...(i.sourceType !== undefined ? [`sourceType: ${i.sourceType}`] : []),
+    ...(i.sourceRef !== undefined ? [`sourceRef: ${JSON.stringify(i.sourceRef)}`] : []),
   ].join("\n");
   fs.writeFileSync(file, `---\n${fm}\n---\n${i.body}\n`);
   return file;
@@ -464,6 +470,99 @@ describe("shared ops / showOp", () => {
   });
 });
 
+/* ------------------------- show: lifecycle ------------------------- */
+
+describe("shared ops / showOp lifecycle", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = mkHome();
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("renders all six lifecycle fields when set, with exact instants", async () => {
+    seed(tmp, "0001", {
+      title: "Superseded pick",
+      status: "superseded",
+      supersedes: "0001",
+      reviewAfter: "2026-01-01T00:00:00.000Z",
+      expires: "2026-06-01T00:00:00.000Z",
+      sourceType: "file",
+      sourceRef: "docs/a.md",
+    });
+
+    const res = await run(showOp({ id: "0001", scope: "project" }));
+    expect(res.isError).toBe(false);
+    // exact stored instants, never date-shortened
+    expect(res.text).toContain("status: superseded");
+    expect(res.text).toContain("supersedes: 0001");
+    expect(res.text).toContain("review-after: 2026-01-01T00:00:00.000Z");
+    expect(res.text).toContain("expires: 2026-06-01T00:00:00.000Z");
+    // independent provenance fields, renderFull-style join
+    expect(res.text).toContain("source: file \u00b7 docs/a.md");
+  });
+
+  it("renders no lifecycle labels for an entry without lifecycle fields", async () => {
+    seed(tmp, "0002", { title: "Plain entry", body: "b" });
+
+    const res = await run(showOp({ id: "0002", scope: "project" }));
+    expect(res.isError).toBe(false);
+    expect(res.text).not.toContain("status:");
+    expect(res.text).not.toContain("supersedes:");
+    expect(res.text).not.toContain("review-after:");
+    expect(res.text).not.toContain("expires:");
+    expect(res.text).not.toContain("source:");
+  });
+
+  it("renders a one-sided provenance field without a placeholder", async () => {
+    seed(tmp, "0003", { title: "Only a ref", sourceRef: "docs/a.md" });
+    const refOnly = await run(showOp({ id: "0003", scope: "project" }));
+    expect(refOnly.text).toContain("source: docs/a.md");
+    expect(refOnly.text).not.toContain("undefined");
+
+    seed(tmp, "0004", { title: "Only a type", sourceType: "command" });
+    const typeOnly = await run(showOp({ id: "0004", scope: "project" }));
+    expect(typeOnly.text).toContain("source: command");
+    expect(typeOnly.text).not.toContain("undefined");
+  });
+
+  it("lifecycle header is built before body-capacity math: cursor walk stays lossless", async () => {
+    seed(tmp, "0005", {
+      title: "Huge with lifecycle",
+      status: "active",
+      reviewAfter: "2026-01-01T00:00:00.000Z",
+      body: "z".repeat(30_000),
+    });
+
+    const page1 = await run(showOp({ id: "0005", scope: "project" }));
+    expect(page1.text.length).toBeLessThanOrEqual(8192);
+    expect(page1.text).toContain("body truncated - call");
+
+    let offset = 0;
+    let total = 0;
+    for (let guard = 0; guard < 10; guard++) {
+      const r = await run(showOp({ id: "0005", scope: "project", offset }));
+      total += (r.text.match(/z/g) ?? []).length;
+      const next = r.details.nextOffset as number | null;
+      if (next === null) break;
+      offset = next;
+    }
+    expect(total).toBe(30_000);
+  });
+});
+
 /* ------------------------------- add ------------------------------- */
 
 describe("shared ops / addOp", () => {
@@ -525,6 +624,65 @@ describe("shared ops / addOp", () => {
     const res = await run(addOp({ title: "   ", body: "b" }));
     expect(res.isError).toBe(true);
     expect(res.text.toLowerCase()).toContain("title");
+  });
+
+  it("carries all six lifecycle inputs end-to-end through the store", async () => {
+    const res = await run(
+      addOp({
+        title: "Recorded with lifecycle",
+        body: "b",
+        status: "active",
+        supersedes: "0001",
+        reviewAfter: "2026-01-01T00:00:00.000Z",
+        expires: "2026-06-01T00:00:00.000Z",
+        sourceType: "conversation",
+        sourceRef: "standup notes, 2026-08-01",
+      }),
+    );
+    expect(res.isError).toBe(false);
+    const file = res.details.path as string;
+    const content = fs.readFileSync(file, "utf8");
+    expect(content).toContain("status: active");
+    expect(content).toContain("supersedes: 0001");
+    expect(content).toContain("reviewAfter: 2026-01-01T00:00:00.000Z");
+    expect(content).toContain("expires: 2026-06-01T00:00:00.000Z");
+    expect(content).toContain("sourceType: conversation");
+    expect(content).toContain("standup notes, 2026-08-01");
+
+    // round trip: the id from addOp renders through showOp
+    const shown = await run(showOp({ id: res.details.id as string, scope: "project" }));
+    expect(shown.text).toContain("status: active");
+    expect(shown.text).toContain("source: conversation \u00b7 standup notes, 2026-08-01");
+  });
+
+  it("rejects an invalid status before anything is written", async () => {
+    const res = await run(addOp({ title: "T", body: "b", status: "bogus" as never }));
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain('"bogus"');
+    expect(res.text).toContain("Valid: active, superseded, archived");
+    expect(fs.readdirSync(projectEngramsDir(tmp))).toEqual([]);
+  });
+
+  it("rejects an invalid sourceType before anything is written", async () => {
+    const res = await run(addOp({ title: "T", body: "b", sourceType: "website" as never }));
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain('"website"');
+    expect(res.text).toContain("Valid: conversation, file, url, command, other");
+    expect(fs.readdirSync(projectEngramsDir(tmp))).toEqual([]);
+  });
+
+  it("store write boundary rejects a malformed supersedes id with no mutation", async () => {
+    const res = await run(addOp({ title: "T", body: "b", supersedes: "nope" }));
+    expect(res.isError).toBe(true);
+    expect(fs.readdirSync(projectEngramsDir(tmp))).toEqual([]);
+  });
+
+  it("store write boundary rejects a date-only reviewAfter with no mutation", async () => {
+    const res = await run(
+      addOp({ title: "T", body: "b", reviewAfter: "2026-01-01" }),
+    );
+    expect(res.isError).toBe(true);
+    expect(fs.readdirSync(projectEngramsDir(tmp))).toEqual([]);
   });
 });
 
