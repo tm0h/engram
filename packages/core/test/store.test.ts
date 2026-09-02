@@ -6,11 +6,11 @@ import { NodeServices } from "@effect/platform-node";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { EngramStore, EngramStoreLive } from "../src/store.js";
+import { EngramStore, EngramStoreLive, lifecycleDiagnostics } from "../src/store.js";
 import { projectConfigPath, projectEngramsDir, globalEngramsDir } from "../src/paths.js";
 import { stringifyFrontmatter } from "../src/frontmatter.js";
 import { slugify } from "../src/util.js";
-import type { EngramInput } from "../src/domain.js";
+import type { Engram, EngramInput, EngramPatch } from "../src/domain.js";
 
 const StoreLive = EngramStoreLive.pipe(Layer.provide(NodeServices.layer));
 
@@ -857,6 +857,393 @@ describe("EngramStore / scan", () => {
         expect(fs.readdirSync(engramsDir()).sort()).toEqual(before);
       }),
     );
+  });
+
+  /* ------------------ ENG-13 lifecycle diagnostics ------------------ */
+
+  it.live("a dangling supersedes is a warning and the entry is retained", () => {
+    const file = writeConsistent("0001", "Dangling ref", { supersedes: "0099" });
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const scanned = yield* store.scan("project");
+      expect(scanned.diagnostics.map((d) => [d.code, d.severity])).toEqual([
+        ["supersedes_not_found", "warning"],
+      ]);
+      expect(scanned.diagnostics[0].file).toBe(file);
+      expect(scanned.diagnostics[0].message).toContain('"0099"');
+      // the entry is kept and the store is not considered incomplete
+      expect(scanned.entries.map((m) => m.id)).toEqual(["0001"]);
+      expect(scanned.omittedFiles).toBe(0);
+    }).pipe(Effect.provide(StoreLive));
+  });
+
+  it.live("no supersedes warning when the claimant exists", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const pred = yield* store.add("project", input({ title: "Predecessor" }));
+      write(`${pred.id}-referrer.md`, scanFm({ id: pred.id, title: "Referrer", supersedes: pred.id }));
+      const scanned = yield* store.scan("project");
+      expect(scanned.diagnostics).toEqual([]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("no supersedes warning for a legacy-id claimant", () => {
+    writeConsistent("0001", "Legacy predecessor");
+    write("0002-referrer.md", scanFm({ id: "0002", title: "Referrer", supersedes: "0001" }));
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const scanned = yield* store.scan("project");
+      expect(scanned.diagnostics).toEqual([]);
+      expect(scanned.entries).toHaveLength(2);
+    }).pipe(Effect.provide(StoreLive));
+  });
+
+  it.live("a claimant that is itself invalid still counts as present", () => {
+    // the claimant file has a valid id but an invalid type, so only its
+    // partial id participates; that is enough to keep the reference honest
+    write("0001-claimant.md", scanFm({ id: "0001", title: "Invalid claimant", type: "blogpost" }));
+    write("0002-referrer.md", scanFm({ id: "0002", title: "Referrer", supersedes: "0001" }));
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const scanned = yield* store.scan("project");
+      expect(scanned.diagnostics.map((d) => d.code)).toEqual(["type_invalid"]);
+      expect(scanned.diagnostics.every((d) => d.severity === "error")).toBe(true);
+    }).pipe(Effect.provide(StoreLive));
+  });
+
+  it.live("due and expired warnings fire for past timestamps, not future ones", () => {
+    const past = new Date(Date.now() - 86_400_000).toISOString();
+    const future = new Date(Date.now() + 86_400_000).toISOString();
+    writeConsistent("0001", "Due for review", { reviewAfter: past });
+    writeConsistent("0002", "Expired note", { expires: past });
+    writeConsistent("0003", "Still fresh", { reviewAfter: future, expires: future });
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const scanned = yield* store.scan("project");
+      expect(tuples(scanned)).toEqual([
+        ["0001-due-for-review.md", "review_due"],
+        ["0002-expired-note.md", "expired"],
+      ]);
+      // all three entries are retained; no omitted files
+      expect(scanned.entries).toHaveLength(3);
+      expect(scanned.omittedFiles).toBe(0);
+    }).pipe(Effect.provide(StoreLive));
+  });
+
+  it.live("invalid lifecycle values are errors that omit the entry", () => {
+    writeConsistent("0001", "Bad status", { status: "draft" });
+    writeConsistent("0002", "Self ref", { supersedes: "0002" });
+    writeConsistent("0003", "Bad review", { reviewAfter: "2026-01-01" });
+    writeConsistent("0004", "Bad source", { sourceType: "chatlog" });
+    writeConsistent("0005", "Empty ref", { sourceRef: "   " });
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const scanned = yield* store.scan("project");
+      expect(tuples(scanned)).toEqual([
+        ["0001-bad-status.md", "status_invalid"],
+        ["0002-self-ref.md", "self_supersession"],
+        ["0003-bad-review.md", "review_after_invalid"],
+        ["0004-bad-source.md", "source_type_invalid"],
+        ["0005-empty-ref.md", "source_ref_invalid"],
+      ]);
+      expect(scanned.entries).toEqual([]);
+      expect(scanned.omittedFiles).toBe(5);
+    }).pipe(Effect.provide(StoreLive));
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* ENG-13 lifecycle metadata: store round-trip and write boundary      */
+/* ------------------------------------------------------------------ */
+
+const LIFECYCLE_INPUT = {
+  status: "superseded",
+  reviewAfter: "2026-06-01T00:00:00.000Z",
+  expires: "2027-01-01T00:00:00.000Z",
+  sourceType: "file",
+  sourceRef: "docs/spec.md",
+} as const;
+
+describe("EngramStore / lifecycle metadata", () => {
+  let orig = "";
+  let tmp = "";
+  const engramsDir = (): string => projectEngramsDir(tmp);
+  const filesNow = (): string[] => fs.readdirSync(engramsDir()).sort();
+
+  beforeEach(() => {
+    orig = process.cwd();
+    tmp = mkProject();
+    process.chdir(tmp);
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it.live("add with all six fields survives serialization, read-back, and get", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const pred = yield* store.add("project", input({ title: "Old guidance" }));
+      const m = yield* store.add("project", input({ title: "New guidance", ...LIFECYCLE_INPUT, supersedes: pred.id }));
+
+      const fileRaw = fs.readFileSync(m.path, "utf8");
+      expect(fileRaw).toMatch(/^status: superseded$/m);
+      expect(fileRaw).toContain(`supersedes: ${pred.id}`);
+      expect(fileRaw).toMatch(/^reviewAfter: 2026-06-01T00:00:00\.000Z$/m);
+      expect(fileRaw).toMatch(/^expires: 2027-01-01T00:00:00\.000Z$/m);
+      expect(fileRaw).toMatch(/^sourceType: file$/m);
+      expect(fileRaw).toMatch(/^sourceRef: docs\/spec\.md$/m);
+
+      const got = yield* store.get("project", m.id);
+      expect(got.status).toBe("superseded");
+      expect(got.supersedes).toBe(pred.id);
+      expect(got.reviewAfter).toBe("2026-06-01T00:00:00.000Z");
+      expect(got.expires).toBe("2027-01-01T00:00:00.000Z");
+      expect(got.sourceType).toBe("file");
+      expect(got.sourceRef).toBe("docs/spec.md");
+      // the predecessor carries no lifecycle fields
+      const old = yield* store.get("project", pred.id);
+      expect(old.status).toBeUndefined();
+      expect(old.supersedes).toBeUndefined();
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("an unrelated update preserves all six lifecycle fields", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const pred = yield* store.add("project", input({ title: "Old guidance" }));
+      const m = yield* store.add("project", input({ title: "New guidance", ...LIFECYCLE_INPUT, supersedes: pred.id }));
+
+      const patched = yield* store.update("project", m.id, {
+        body: "an unrelated body edit",
+        tags: ["unrelated"],
+      });
+      expect(patched.status).toBe("superseded");
+      expect(patched.supersedes).toBe(pred.id);
+      expect(patched.reviewAfter).toBe("2026-06-01T00:00:00.000Z");
+      expect(patched.expires).toBe("2027-01-01T00:00:00.000Z");
+      expect(patched.sourceType).toBe("file");
+      expect(patched.sourceRef).toBe("docs/spec.md");
+
+      const fileRaw = fs.readFileSync(patched.path, "utf8");
+      expect(fileRaw).toMatch(/^status: superseded$/m);
+      expect(fileRaw).toContain(`supersedes: ${pred.id}`);
+      expect(fileRaw).toMatch(/^reviewAfter: 2026-06-01T00:00:00\.000Z$/m);
+      expect(fileRaw).toMatch(/^expires: 2027-01-01T00:00:00\.000Z$/m);
+      expect(fileRaw).toMatch(/^sourceType: file$/m);
+      expect(fileRaw).toMatch(/^sourceRef: docs\/spec\.md$/m);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("updating an old v0.4 file inserts no lifecycle defaults", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const seeded = path.join(engramsDir(), "0001-legacy-note.md");
+      fs.writeFileSync(
+        seeded,
+        stringifyFrontmatter("Old body\n", {
+          id: "0001",
+          title: "Legacy note",
+          type: "note",
+          tags: [],
+          scope: "project",
+          created: "2025-08-15T10:00:00.000Z",
+          updated: "2025-08-15T11:00:00.000Z",
+        }),
+      );
+
+      const patched = yield* store.update("project", "0001", { title: "Legacy note renamed" });
+      const fileRaw = fs.readFileSync(patched.path, "utf8");
+      for (const key of ["status", "supersedes", "reviewAfter", "expires", "sourceType", "sourceRef"]) {
+        expect(fileRaw).not.toMatch(new RegExp(`^${key}:`, "m"));
+      }
+      expect(patched.status).toBeUndefined();
+      expect(patched.supersedes).toBeUndefined();
+      expect(patched.reviewAfter).toBeUndefined();
+      expect(patched.expires).toBeUndefined();
+      expect(patched.sourceType).toBeUndefined();
+      expect(patched.sourceRef).toBeUndefined();
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("add rejects an invalid status before creating any file", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const before = filesNow();
+      const err = yield* Effect.flip(
+        store.add("project", input({ status: "draft" } as unknown as Partial<EngramInput>)),
+      );
+      expect((err as { _tag: string })._tag).toBe("FrontmatterParseError");
+      expect((err as { message: string }).message).toContain("status");
+      expect(filesNow()).toEqual(before);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("add rejects a date-only reviewAfter before creating any file", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const before = filesNow();
+      const err = yield* Effect.flip(
+        store.add("project", input({ reviewAfter: "2026-01-01" } as unknown as Partial<EngramInput>)),
+      );
+      expect((err as { _tag: string })._tag).toBe("FrontmatterParseError");
+      expect((err as { message: string }).message).toContain("reviewAfter");
+      expect(filesNow()).toEqual(before);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("update rejects supersedes pointing at the entry itself without mutation", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const m = yield* store.add("project", input({ title: "Self ref target" }));
+      const before = fs.readFileSync(m.path, "utf8");
+
+      const err = yield* Effect.flip(
+        store.update("project", m.id, { supersedes: m.id } as EngramPatch),
+      );
+      expect((err as { _tag: string })._tag).toBe("FrontmatterParseError");
+      expect((err as { message: string }).message).toContain("supersedes");
+      expect(fs.readFileSync(m.path, "utf8")).toBe(before);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("update rejects an invalid expires without mutation", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const m = yield* store.add("project", input({ title: "Expiry target" }));
+      const before = fs.readFileSync(m.path, "utf8");
+
+      const err = yield* Effect.flip(
+        store.update("project", m.id, { expires: "2026-01-01" } as EngramPatch),
+      );
+      expect((err as { _tag: string })._tag).toBe("FrontmatterParseError");
+      expect(fs.readFileSync(m.path, "utf8")).toBe(before);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+});
+
+/* ------------------------------------------------------------------ */
+/* ENG-13 lifecycle metadata: the pure time helper                     */
+/* ------------------------------------------------------------------ */
+
+describe("lifecycleDiagnostics", () => {
+  const entry = (over: Partial<Engram> = {}): Engram => ({
+    id: "0001",
+    title: "Lifecycled",
+    type: "note",
+    tags: [],
+    scope: "project",
+    created: "2025-08-15T10:00:00.000Z",
+    updated: "2025-08-15T11:00:00.000Z",
+    author: undefined,
+    pinned: false,
+    body: "",
+    path: "/store/0001-lifecycled.md",
+    ...over,
+  });
+  const context = (nowMs: number, knownIds: string[] = []) => ({
+    scope: "project" as const,
+    file: "/store/0001-lifecycled.md",
+    nowMs,
+    knownIds: new Set(knownIds),
+  });
+  const codesOf = (nowMs: number, over: Partial<Engram>, knownIds: string[] = []) =>
+    lifecycleDiagnostics(entry(over), context(nowMs, knownIds)).map((d) => d.code);
+
+  it("treats a reviewAfter at the check time as due (equality boundary)", () => {
+    const nowMs = Date.parse("2026-01-01T00:00:00.000Z");
+    expect(codesOf(nowMs, { reviewAfter: "2026-01-01T00:00:00.000Z" })).toEqual(["review_due"]);
+    expect(codesOf(nowMs, { reviewAfter: "2025-12-31T23:59:59.999Z" })).toEqual(["review_due"]);
+    expect(codesOf(nowMs, { reviewAfter: "2026-01-01T00:00:00.001Z" })).toEqual([]);
+  });
+
+  it("treats an expires at the check time as expired (equality boundary)", () => {
+    const nowMs = Date.parse("2026-01-01T00:00:00.000Z");
+    expect(codesOf(nowMs, { expires: "2026-01-01T00:00:00.000Z" })).toEqual(["expired"]);
+    expect(codesOf(nowMs, { expires: "2025-12-31T23:59:59.999Z" })).toEqual(["expired"]);
+    expect(codesOf(nowMs, { expires: "2026-01-01T00:00:00.001Z" })).toEqual([]);
+  });
+
+  it("reports offset-form timestamps at their instant, not their text", () => {
+    // 2026-01-01T02:00:00+02:00 == 2026-01-01T00:00:00.000Z
+    const nowMs = Date.parse("2026-01-01T00:00:00.000Z");
+    expect(codesOf(nowMs, { reviewAfter: "2026-01-01T02:00:00+02:00" })).toEqual(["review_due"]);
+  });
+
+  it("warns when supersedes has no claimant in the known id set", () => {
+    const nowMs = Date.parse("2026-01-01T00:00:00.000Z");
+    expect(codesOf(nowMs, { supersedes: "0002" }, ["0002", "0003"])).toEqual([]);
+    expect(codesOf(nowMs, { supersedes: "0002" }, ["0003"])).toEqual(["supersedes_not_found"]);
+  });
+
+  it("emits multiple findings for one entry in a fixed order", () => {
+    const nowMs = Date.parse("2026-01-01T00:00:00.000Z");
+    expect(
+      codesOf(nowMs, { reviewAfter: "2025-06-01T00:00:00.000Z", expires: "2025-01-01T00:00:00.000Z", supersedes: "0099" }),
+    ).toEqual(["supersedes_not_found", "review_due", "expired"]);
+  });
+
+  it("every lifecycle diagnostic is a warning", () => {
+    const nowMs = Date.parse("2026-01-01T00:00:00.000Z");
+    const out = lifecycleDiagnostics(
+      entry({ reviewAfter: "2025-06-01T00:00:00.000Z", expires: "2025-01-01T00:00:00.000Z", supersedes: "0099" }),
+      context(nowMs),
+    );
+    expect(out.map((d) => d.severity)).toEqual(["warning", "warning", "warning"]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* ENG-13 lifecycle metadata: supersedes scope resolution              */
+/* ------------------------------------------------------------------ */
+
+describe("EngramStore / supersedes scope resolution", () => {
+  let origCwd = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+
+  beforeEach(() => {
+    origCwd = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "amem-sups-home-"));
+    fs.mkdirSync(globalEngramsDir(), { recursive: true });
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(origCwd);
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it.live("a personal claimant does not satisfy a project supersedes", () => {
+    fs.writeFileSync(
+      path.join(globalEngramsDir(), "0001-personal-note.md"),
+      stringifyFrontmatter("Personal body\n", {
+        id: "0001",
+        title: "Personal note",
+        type: "note",
+        tags: [],
+        scope: "personal",
+        created: "2025-08-15T10:00:00.000Z",
+        updated: "2025-08-15T11:00:00.000Z",
+      }),
+    );
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const m = yield* store.add("project", input({ title: "Project referrer", supersedes: "0001" }));
+      void m;
+      const projectScan = yield* store.scan("project");
+      expect(projectScan.diagnostics.map((d) => [d.code, d.severity])).toEqual([
+        ["supersedes_not_found", "warning"],
+      ]);
+      const personalScan = yield* store.scan("personal");
+      expect(personalScan.diagnostics).toEqual([]);
+    }).pipe(Effect.provide(StoreLive));
   });
 });
 
