@@ -129,8 +129,11 @@ export interface EngramInput {
 }
 
 /** Partial changes to an existing engram (see EngramStore.update).
- * Undefined fields keep their current value; there is deliberately no
- * clearing representation yet (planned as paired CLI clear flags). */
+ * For lifecycle fields there are three states: undefined keeps the current
+ * value, null clears the field (it becomes absent, never serialized), and
+ * a concrete value replaces it. Non-lifecycle fields keep the simpler
+ * undefined-means-unchanged rule; there is no clearing representation for
+ * them. */
 export interface EngramPatch {
   readonly title?: string;
   readonly type?: EngramType;
@@ -138,13 +141,12 @@ export interface EngramPatch {
   readonly body?: string;
   readonly pinned?: boolean;
   readonly author?: string;
-  /* ENG-13 lifecycle metadata; same undefined-means-unchanged rule. */
-  readonly status?: Status | undefined;
-  readonly supersedes?: string | undefined;
-  readonly reviewAfter?: string | undefined;
-  readonly expires?: string | undefined;
-  readonly sourceType?: SourceType | undefined;
-  readonly sourceRef?: string | undefined;
+  readonly status?: Status | null | undefined;
+  readonly supersedes?: string | null | undefined;
+  readonly reviewAfter?: string | null | undefined;
+  readonly expires?: string | null | undefined;
+  readonly sourceType?: SourceType | null | undefined;
+  readonly sourceRef?: string | null | undefined;
 }
 
 /* ------------------------------------------------------------------ */

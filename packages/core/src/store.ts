@@ -143,6 +143,19 @@ function serialize(m: Engram): string {
   return stringifyFrontmatter(m.body ? m.body + "\n" : "", data);
 }
 
+/** Three-state lifecycle patch merge: `undefined` preserves the current
+ * value, `null` clears it (becomes absent, never serialized), and a
+ * concrete value replaces it. Explicit branches keep null and preserve
+ * distinct; defaulting operators like `??` would collapse them. */
+const applyLifecyclePatch = <T>(
+  current: T | undefined,
+  instruction: T | null | undefined,
+): T | undefined => {
+  if (instruction === undefined) return current;
+  if (instruction === null) return undefined;
+  return instruction;
+};
+
 /** ENG-13 write boundary: the complete candidate is validated with the same
  * entry validation `scan` uses, before any file is written, so neither
  * `add` nor `update` can create a file the next scan would reject (invalid
@@ -564,12 +577,12 @@ const makeEngramStoreLive = (
             body: patch.body !== undefined ? patch.body.trim() : mem.body,
             pinned: patch.pinned ?? mem.pinned,
             author: patch.author !== undefined ? patch.author : mem.author,
-            status: patch.status ?? mem.status,
-            supersedes: patch.supersedes ?? mem.supersedes,
-            reviewAfter: patch.reviewAfter ?? mem.reviewAfter,
-            expires: patch.expires ?? mem.expires,
-            sourceType: patch.sourceType ?? mem.sourceType,
-            sourceRef: patch.sourceRef ?? mem.sourceRef,
+            status: applyLifecyclePatch(mem.status, patch.status),
+            supersedes: applyLifecyclePatch(mem.supersedes, patch.supersedes),
+            reviewAfter: applyLifecyclePatch(mem.reviewAfter, patch.reviewAfter),
+            expires: applyLifecyclePatch(mem.expires, patch.expires),
+            sourceType: applyLifecyclePatch(mem.sourceType, patch.sourceType),
+            sourceRef: applyLifecyclePatch(mem.sourceRef, patch.sourceRef),
             updated: nowISO(),
           };
           const dir = yield* dirForScope(scope);
