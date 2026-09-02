@@ -428,6 +428,57 @@ describe("engram check", () => {
     expect(output()).toContain("[config_unreadable]");
   });
 
+  /* ------------------------ lifecycle warnings ------------------------ */
+
+  it("a warning-only scan passes, renders warnings distinctly, and json stays ok", async () => {
+    const past = new Date(Date.now() - 3_600_000).toISOString();
+    seedConsistent(tmp, "0001", "Due note", { reviewAfter: past });
+    await run(checkCommand({}));
+    const o = output();
+    // stable human text, distinct from errors, with no error summary
+    expect(o).toContain("warning [review_due]");
+    expect(o).not.toContain("error [");
+    expect(o).toContain("1 warning");
+    expect(o).not.toContain("problem");
+    // json keeps ok true and describes the warning fully
+    outLines = [];
+    await run(checkCommand({ json: true }));
+    const doc = JSON.parse(output()) as {
+      ok: boolean;
+      diagnostics: Array<Record<string, string>>;
+    };
+    expect(doc.ok).toBe(true);
+    expect(doc.diagnostics).toHaveLength(1);
+    expect(doc.diagnostics[0]).toMatchObject({ code: "review_due", severity: "warning" });
+  });
+
+  it("a mixed scan reports warnings and errors and still exits nonzero", async () => {
+    const past = new Date(Date.now() - 3_600_000).toISOString();
+    seedConsistent(tmp, "0001", "Due note", { reviewAfter: past });
+    seed(tmp, "0002-broken.md", fm({ id: "0002", title: "Broken", type: "blogpost" }));
+    const info = await runFail(checkCommand({}));
+    expect(info._tag).toBe("IntegrityCheckFailedError");
+    const o = output();
+    expect(o).toContain("warning [review_due]");
+    expect(o).toContain("error [type_invalid]");
+    // the failure summary counts errors, not the advisory warning
+    expect(info.message).toContain("1 problem found");
+    // json reports both severities with ok false
+    outLines = [];
+    await runFail(checkCommand({ json: true }));
+    const doc = JSON.parse(output()) as {
+      ok: boolean;
+      diagnostics: Array<Record<string, string>>;
+    };
+    expect(doc.ok).toBe(false);
+    expect(
+      doc.diagnostics.some((d) => d.code === "review_due" && d.severity === "warning"),
+    ).toBe(true);
+    expect(
+      doc.diagnostics.some((d) => d.code === "type_invalid" && d.severity === "error"),
+    ).toBe(true);
+  });
+
   /* ------------------------ rendering ------------------------ */
 
   it("human output includes exact paths, stable codes, reasons, and hints", async () => {
