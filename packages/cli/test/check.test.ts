@@ -471,12 +471,12 @@ describe("engram check", () => {
       diagnostics: Array<Record<string, string>>;
     };
     expect(doc.ok).toBe(false);
-    expect(
-      doc.diagnostics.some((d) => d.code === "review_due" && d.severity === "warning"),
-    ).toBe(true);
-    expect(
-      doc.diagnostics.some((d) => d.code === "type_invalid" && d.severity === "error"),
-    ).toBe(true);
+    expect(doc.diagnostics.some((d) => d.code === "review_due" && d.severity === "warning")).toBe(
+      true,
+    );
+    expect(doc.diagnostics.some((d) => d.code === "type_invalid" && d.severity === "error")).toBe(
+      true,
+    );
   });
 
   /* ------------------------ rendering ------------------------ */
