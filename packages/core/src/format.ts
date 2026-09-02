@@ -56,6 +56,20 @@ export function renderList(engrams: ReadonlyArray<Engram>): string {
 
 /** Render a single engram in full (the `show` view). */
 export function renderFull(m: Engram): string {
+  // Lifecycle/provenance block: only defined values get labels, so old
+  // entries render exactly as before. reviewAfter/expires are shown as the
+  // exact stored instants, never date-shortened: the boundary is the
+  // timestamp, not the day.
+  const lifecycle: string[] = [];
+  if (m.status !== undefined) lifecycle.push(`status: ${m.status}`);
+  if (m.supersedes !== undefined) lifecycle.push(`supersedes: ${m.supersedes}`);
+  if (m.reviewAfter !== undefined) lifecycle.push(`review-after: ${m.reviewAfter}`);
+  if (m.expires !== undefined) lifecycle.push(`expires: ${m.expires}`);
+  const source = [m.sourceType, m.sourceRef].filter((p) => p !== undefined).join(" · ");
+  if (source !== "") lifecycle.push(`source: ${source}`);
+  const block =
+    lifecycle.length > 0 ? "\n" + chalk.gray(lifecycle.map((l) => `  ${l}`).join("\n")) : "";
+
   const head = [
     `${chalk.bold(m.id)} ${chalk.bold(m.title)}`,
     `${typeColor(m.type)}${tagsStr(m.tags)}${m.pinned ? " " + chalk.yellow("★ pinned") : ""}`,
@@ -63,7 +77,7 @@ export function renderFull(m: Engram): string {
       `${dateShort(m.created)}${m.updated !== m.created ? ` (updated ${dateShort(m.updated)})` : ""}${m.author ? ` · ${m.author}` : ""}`,
     ),
   ].join("\n");
-  return `${head}\n\n${m.body || chalk.gray("(no body)")}`;
+  return `${head}${block}\n\n${m.body || chalk.gray("(no body)")}`;
 }
 
 /** Render search results with scores. */
