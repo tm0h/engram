@@ -1,5 +1,5 @@
 /** Serializable types shared by every harness adapter (pi tools, CLI, …). */
-import type { EngramType, Scope } from "@engram/core";
+import type { EngramType, Scope, SourceType, Status } from "@engram/core";
 
 /** Scope selection for read ops: one scope or both. */
 export type ScopeFilter = Scope | "both";
@@ -54,6 +54,16 @@ export interface AddOptions {
   readonly tags?: ReadonlyArray<string>;
   readonly pinned?: boolean;
   readonly author?: string;
+  /* Optional lifecycle metadata. Only the closed enums are checked here;
+   * timestamp, id, and sourceRef semantics are enforced by the store write
+   * boundary (undefined stays "unset"; there is no clear instruction on an
+   * add surface). */
+  readonly status?: Status;
+  readonly supersedes?: string;
+  readonly reviewAfter?: string;
+  readonly expires?: string;
+  readonly sourceType?: SourceType;
+  readonly sourceRef?: string;
 }
 
 export interface InitOptions {

@@ -14,6 +14,8 @@ import {
   EngramStore,
   DEFAULT_AUTO_CONTEXT_LIMIT,
   DEFAULT_AUTO_CONTEXT_SCOPE,
+  ENGRAM_STATUSES,
+  SOURCE_TYPES,
   detectAuthor,
   ensureGitignoreLine,
   findGitRoot,
@@ -310,6 +312,16 @@ export const searchOp = (opts: SearchOptions): Effect.Effect<OpResult, never, En
     }),
   );
 
+/** Fail fast on a closed-enum lifecycle value, mirroring the CLI's posture:
+ * a clear pre-store error reusing the core enum constants. Timestamp, id,
+ * and sourceRef semantics stay at the store write boundary. */
+const lifecycleEnumError = (
+  field: string,
+  value: string,
+  valid: ReadonlyArray<string>,
+): string | null =>
+  valid.includes(value) ? null : `invalid ${field} "${value}". Valid: ${valid.join(", ")}.`;
+
 /** Full view of one engram; body sliced by char offset/limit. */
 export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, EngramStore> =>
   capture(
@@ -325,6 +337,15 @@ export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, Engram
 
       const m = yield* store.get(scope, opts.id);
 
+      // Lifecycle block, renderFull-consistent: only defined values get
+      // labels, reviewAfter/expires keep the exact stored instants (never
+      // date-shortened), and the independent provenance fields join into one
+      // source line. Part of the header, so pagination's body-capacity math
+      // sees the growth. Plain text; no authority implication.
+      const source = [m.sourceType, m.sourceRef]
+        .filter((p) => p !== undefined)
+        .join(" \u00b7 ");
+
       const header = [
         `# [${m.id}] ${m.title}`,
         `type: ${m.type}`,
@@ -333,6 +354,11 @@ export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, Engram
         `created: ${dateShort(m.created)} (updated: ${dateShort(m.updated)})`,
         ...(m.author ? [`author: ${m.author}`] : []),
         ...(m.pinned ? ["pinned: true"] : []),
+        ...(m.status !== undefined ? [`status: ${m.status}`] : []),
+        ...(m.supersedes !== undefined ? [`supersedes: ${m.supersedes}`] : []),
+        ...(m.reviewAfter !== undefined ? [`review-after: ${m.reviewAfter}`] : []),
+        ...(m.expires !== undefined ? [`expires: ${m.expires}`] : []),
+        ...(source !== "" ? [`source: ${source}`] : []),
         "",
       ].join("\n");
 
@@ -389,6 +415,14 @@ export const addOp = (opts: AddOptions): Effect.Effect<OpResult, never, EngramSt
         return err(projectUninitialized("add"));
       }
 
+      // Closed enums fail fast before anything is written; every other
+      // lifecycle value is validated by the store write boundary below.
+      const statusError = opts.status === undefined ? null : lifecycleEnumError("status", opts.status, ENGRAM_STATUSES);
+      if (statusError !== null) return err(statusError);
+      const sourceTypeError =
+        opts.sourceType === undefined ? null : lifecycleEnumError("sourceType", opts.sourceType, SOURCE_TYPES);
+      if (sourceTypeError !== null) return err(sourceTypeError);
+
       const title = opts.title.trim();
       if (!title) return err("A title is required. Pass a short, descriptive title.");
 
@@ -415,6 +449,12 @@ export const addOp = (opts: AddOptions): Effect.Effect<OpResult, never, EngramSt
         body: opts.body,
         pinned: Boolean(opts.pinned),
         author,
+        status: opts.status,
+        supersedes: opts.supersedes,
+        reviewAfter: opts.reviewAfter,
+        expires: opts.expires,
+        sourceType: opts.sourceType,
+        sourceRef: opts.sourceRef,
       });
 
       const tracked =
