@@ -1016,6 +1016,112 @@ describe("EngramStore / lifecycle metadata", () => {
     }).pipe(Effect.provide(StoreLive)),
   );
 
+  it.live("update: a concrete lifecycle value replaces the old one", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const m = yield* store.add("project", input({
+        title: "Changing guidance",
+        status: "active",
+        reviewAfter: "2026-06-01T00:00:00.000Z",
+        sourceType: "file",
+        sourceRef: "docs/old.md",
+      }));
+
+      const patched = yield* store.update("project", m.id, {
+        status: "archived",
+        reviewAfter: "2027-01-01T00:00:00.000Z",
+        sourceRef: "docs/new.md",
+      });
+      expect(patched.status).toBe("archived");
+      expect(patched.reviewAfter).toBe("2027-01-01T00:00:00.000Z");
+      expect(patched.sourceRef).toBe("docs/new.md");
+      const fileRaw = fs.readFileSync(patched.path, "utf8");
+      expect(fileRaw).toMatch(/^status: archived$/m);
+      expect(fileRaw).toMatch(/^reviewAfter: 2027-01-01T00:00:00\.000Z$/m);
+      expect(fileRaw).not.toMatch(/^reviewAfter: 2026-/m);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("update: null clears a lifecycle field and omits the YAML key", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const m = yield* store.add("project", input({
+        title: "Clearing target",
+        status: "superseded",
+        expires: "2027-01-01T00:00:00.000Z",
+      }));
+
+      const patched = yield* store.update("project", m.id, { status: null });
+      expect(patched.status).toBeUndefined();
+      const fileRaw = fs.readFileSync(patched.path, "utf8");
+      expect(fileRaw).not.toMatch(/^status:/m);
+      // null never reaches serialization: no "key: null" anywhere
+      expect(fileRaw).not.toContain("null");
+      // the untouched sibling field survives
+      expect(patched.expires).toBe("2027-01-01T00:00:00.000Z");
+      expect(fileRaw).toMatch(/^expires: 2027-01-01T00:00:00\.000Z$/m);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("update: all six lifecycle fields clear in one update", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const m = yield* store.add("project", input({
+        title: "Full clear",
+        status: "archived",
+        supersedes: "0001",
+        reviewAfter: "2026-06-01T00:00:00.000Z",
+        expires: "2027-01-01T00:00:00.000Z",
+        sourceType: "url",
+        sourceRef: "https://example.com/post",
+      }));
+
+      const patched = yield* store.update("project", m.id, {
+        status: null,
+        supersedes: null,
+        reviewAfter: null,
+        expires: null,
+        sourceType: null,
+        sourceRef: null,
+      });
+      expect(patched.status).toBeUndefined();
+      expect(patched.supersedes).toBeUndefined();
+      expect(patched.reviewAfter).toBeUndefined();
+      expect(patched.expires).toBeUndefined();
+      expect(patched.sourceType).toBeUndefined();
+      expect(patched.sourceRef).toBeUndefined();
+      const fileRaw = fs.readFileSync(patched.path, "utf8");
+      for (const key of ["status", "supersedes", "reviewAfter", "expires", "sourceType", "sourceRef"]) {
+        expect(fileRaw).not.toMatch(new RegExp(`^${key}:`, "m"));
+      }
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("update: clearing lifecycle fields leaves author, pinned, body, and stamps alone", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const m = yield* store.add("project", input({
+        title: "Isolation target",
+        author: "mo",
+        pinned: true,
+        status: "archived",
+        sourceType: "file",
+      }));
+      yield* Effect.sleep("5 millis");
+
+      const patched = yield* store.update("project", m.id, {
+        status: null,
+        sourceType: null,
+      });
+      expect(patched.author).toBe("mo");
+      expect(patched.pinned).toBe(true);
+      expect(patched.body).toBe(m.body);
+      expect(patched.created).toBe(m.created);
+      expect(patched.updated > m.updated).toBe(true);
+      expect(patched.path).toBe(m.path);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
   it.live("an unrelated update preserves all six lifecycle fields", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
