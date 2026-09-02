@@ -7,7 +7,7 @@
 import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { ENGRAM_TYPES } from "@engram/core";
+import { ENGRAM_STATUSES, ENGRAM_TYPES, SOURCE_TYPES } from "@engram/core";
 import {
   DEFAULT_CONTEXT_LIMIT,
   DEFAULT_SEARCH_LIMIT,
@@ -145,7 +145,8 @@ export const engramAddTool = {
     `important choices (state the rationale and alternatives in the body), and record gotchas that cost ` +
     `debugging time. Do not record transient state, secrets, or anything the user says not to store. ` +
     `Project scope is committed to git and shared with the team; pass scope "personal" only for notes ` +
-    `that must stay on this machine.`,
+    `that must stay on this machine. Optional lifecycle/provenance metadata (status, supersedes, ` +
+    `reviewAfter, expires, sourceType, sourceRef) is an unauthenticated claim, not a verified truth.`,
   promptSnippet:
     "Record durable decisions (with rationale), gotchas, and conventions as you discover them; ask scope personal only for machine-private notes.",
   parameters: Type.Object({
@@ -167,6 +168,41 @@ export const engramAddTool = {
     pinned: Type.Optional(
       Type.Boolean({ description: "Pin to the top of the digest for high-value entries." }),
     ),
+    status: Type.Optional(
+      StringEnum([...ENGRAM_STATUSES], {
+        description: "Lifecycle status: active | superseded | archived. Optional; not set unless passed.",
+      }),
+    ),
+    supersedes: Type.Optional(
+      Type.String({
+        description:
+          "Id of the older entry this one replaces. Optional; validated when saved.",
+      }),
+    ),
+    reviewAfter: Type.Optional(
+      Type.String({
+        description:
+          "ISO 8601 timestamp with an explicit zone, e.g. 2026-01-01T00:00:00.000Z. Optional; validated when saved.",
+      }),
+    ),
+    expires: Type.Optional(
+      Type.String({
+        description:
+          "ISO 8601 timestamp with an explicit zone, e.g. 2026-06-01T00:00:00.000Z. Optional; validated when saved.",
+      }),
+    ),
+    sourceType: Type.Optional(
+      StringEnum([...SOURCE_TYPES], {
+        description:
+          "Provenance shape: conversation | file | url | command | other. Optional.",
+      }),
+    ),
+    sourceRef: Type.Optional(
+      Type.String({
+        description:
+          "Source reference: path, URL, command, or conversation note. Optional; validated when saved.",
+      }),
+    ),
   }),
   async execute(_id: string, params: any) {
     return toToolResult(
@@ -178,6 +214,12 @@ export const engramAddTool = {
           scope: params.scope,
           tags: params.tags,
           pinned: params.pinned,
+          status: params.status,
+          supersedes: params.supersedes,
+          reviewAfter: params.reviewAfter,
+          expires: params.expires,
+          sourceType: params.sourceType,
+          sourceRef: params.sourceRef,
         }),
       ),
     );

@@ -6,7 +6,14 @@
  * Keep descriptions in sync with src/pi/tools.ts.
  */
 import { z } from "zod";
-import { ENGRAM_TYPES, type EngramType } from "@engram/core";
+import {
+  ENGRAM_STATUSES,
+  ENGRAM_TYPES,
+  SOURCE_TYPES,
+  type EngramType,
+  type SourceType,
+  type Status,
+} from "@engram/core";
 import {
   DEFAULT_CONTEXT_LIMIT,
   DEFAULT_SEARCH_LIMIT,
@@ -23,6 +30,8 @@ const scopeFilter = (description: string) =>
   z.enum(["project", "personal", "both"]).optional().describe(description);
 
 const engramTypes = ENGRAM_TYPES as [EngramType, ...EngramType[]];
+const engramStatuses = ENGRAM_STATUSES as [Status, ...Status[]];
+const sourceTypes = SOURCE_TYPES as [SourceType, ...SourceType[]];
 
 interface OpenCodeToolContext {
   readonly directory: string;
@@ -122,7 +131,8 @@ export const engramAddTool = {
     `important choices (state the rationale and alternatives in the body), and record gotchas that cost ` +
     `debugging time. Do not record transient state, secrets, or anything the user says not to store. ` +
     `Project scope is committed to git and shared with the team; pass scope "personal" only for notes ` +
-    `that must stay on this machine.`,
+    `that must stay on this machine. Optional lifecycle/provenance metadata (status, supersedes, ` +
+    `reviewAfter, expires, sourceType, sourceRef) is an unauthenticated claim, not a verified truth.`,
   args: {
     title: z.string().describe("Short, descriptive title (one line)."),
     body: z.string().describe("Full content: rationale, context, details."),
@@ -136,6 +146,38 @@ export const engramAddTool = {
       .describe('Default "project" (team-shared, git-committed).'),
     tags: z.array(z.string()).optional().describe('Searchable tags, e.g. ["auth", "deps"].'),
     pinned: z.boolean().optional().describe("Pin to the top of the digest for high-value entries."),
+    status: z
+      .enum(engramStatuses)
+      .optional()
+      .describe(
+        "Lifecycle status: active | superseded | archived. Optional; not set unless passed.",
+      ),
+    supersedes: z
+      .string()
+      .optional()
+      .describe("Id of the older entry this one replaces. Optional; validated when saved."),
+    reviewAfter: z
+      .string()
+      .optional()
+      .describe(
+        "ISO 8601 timestamp with an explicit zone, e.g. 2026-01-01T00:00:00.000Z. Optional; validated when saved.",
+      ),
+    expires: z
+      .string()
+      .optional()
+      .describe(
+        "ISO 8601 timestamp with an explicit zone, e.g. 2026-06-01T00:00:00.000Z. Optional; validated when saved.",
+      ),
+    sourceType: z
+      .enum(sourceTypes)
+      .optional()
+      .describe("Provenance shape: conversation | file | url | command | other. Optional."),
+    sourceRef: z
+      .string()
+      .optional()
+      .describe(
+        "Source reference: path, URL, command, or conversation note. Optional; validated when saved.",
+      ),
   },
   async execute(
     args: {
@@ -145,6 +187,12 @@ export const engramAddTool = {
       scope?: "project" | "personal";
       tags?: string[];
       pinned?: boolean;
+      status?: Status;
+      supersedes?: string;
+      reviewAfter?: string;
+      expires?: string;
+      sourceType?: SourceType;
+      sourceRef?: string;
     },
     context: OpenCodeToolContext,
   ) {
