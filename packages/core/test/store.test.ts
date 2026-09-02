@@ -1019,13 +1019,16 @@ describe("EngramStore / lifecycle metadata", () => {
   it.live("update: a concrete lifecycle value replaces the old one", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const m = yield* store.add("project", input({
-        title: "Changing guidance",
-        status: "active",
-        reviewAfter: "2026-06-01T00:00:00.000Z",
-        sourceType: "file",
-        sourceRef: "docs/old.md",
-      }));
+      const m = yield* store.add(
+        "project",
+        input({
+          title: "Changing guidance",
+          status: "active",
+          reviewAfter: "2026-06-01T00:00:00.000Z",
+          sourceType: "file",
+          sourceRef: "docs/old.md",
+        }),
+      );
 
       const patched = yield* store.update("project", m.id, {
         status: "archived",
@@ -1045,11 +1048,14 @@ describe("EngramStore / lifecycle metadata", () => {
   it.live("update: null clears a lifecycle field and omits the YAML key", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const m = yield* store.add("project", input({
-        title: "Clearing target",
-        status: "superseded",
-        expires: "2027-01-01T00:00:00.000Z",
-      }));
+      const m = yield* store.add(
+        "project",
+        input({
+          title: "Clearing target",
+          status: "superseded",
+          expires: "2027-01-01T00:00:00.000Z",
+        }),
+      );
 
       const patched = yield* store.update("project", m.id, { status: null });
       expect(patched.status).toBeUndefined();
@@ -1066,15 +1072,18 @@ describe("EngramStore / lifecycle metadata", () => {
   it.live("update: all six lifecycle fields clear in one update", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const m = yield* store.add("project", input({
-        title: "Full clear",
-        status: "archived",
-        supersedes: "0001",
-        reviewAfter: "2026-06-01T00:00:00.000Z",
-        expires: "2027-01-01T00:00:00.000Z",
-        sourceType: "url",
-        sourceRef: "https://example.com/post",
-      }));
+      const m = yield* store.add(
+        "project",
+        input({
+          title: "Full clear",
+          status: "archived",
+          supersedes: "0001",
+          reviewAfter: "2026-06-01T00:00:00.000Z",
+          expires: "2027-01-01T00:00:00.000Z",
+          sourceType: "url",
+          sourceRef: "https://example.com/post",
+        }),
+      );
 
       const patched = yield* store.update("project", m.id, {
         status: null,
@@ -1091,7 +1100,14 @@ describe("EngramStore / lifecycle metadata", () => {
       expect(patched.sourceType).toBeUndefined();
       expect(patched.sourceRef).toBeUndefined();
       const fileRaw = fs.readFileSync(patched.path, "utf8");
-      for (const key of ["status", "supersedes", "reviewAfter", "expires", "sourceType", "sourceRef"]) {
+      for (const key of [
+        "status",
+        "supersedes",
+        "reviewAfter",
+        "expires",
+        "sourceType",
+        "sourceRef",
+      ]) {
         expect(fileRaw).not.toMatch(new RegExp(`^${key}:`, "m"));
       }
     }).pipe(Effect.provide(StoreLive)),
@@ -1100,13 +1116,16 @@ describe("EngramStore / lifecycle metadata", () => {
   it.live("update: clearing lifecycle fields leaves author, pinned, body, and stamps alone", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const m = yield* store.add("project", input({
-        title: "Isolation target",
-        author: "mo",
-        pinned: true,
-        status: "archived",
-        sourceType: "file",
-      }));
+      const m = yield* store.add(
+        "project",
+        input({
+          title: "Isolation target",
+          author: "mo",
+          pinned: true,
+          status: "archived",
+          sourceType: "file",
+        }),
+      );
       yield* Effect.sleep("5 millis");
 
       const patched = yield* store.update("project", m.id, {

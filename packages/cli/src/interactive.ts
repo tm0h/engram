@@ -115,7 +115,9 @@ export const parseEditorDocument = (raw: string): EditedEngram => {
 };
 
 /** Open $EDITOR on a temp file pre-filled with frontmatter; parse on save. */
-export const openEditor = (initial: Partial<EditedEngram> = {}): Effect.Effect<EditedEngram | null> =>
+export const openEditor = (
+  initial: Partial<EditedEngram> = {},
+): Effect.Effect<EditedEngram | null> =>
   Effect.sync(() => {
     const editor = process.env.EDITOR || process.env.VISUAL || "nano";
     const file = path.join(os.tmpdir(), `engram-${Date.now()}.md`);
