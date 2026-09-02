@@ -389,7 +389,7 @@ describe("engram extension / /engram command", () => {
     const file = notes[0].text.match(/  (\S+\.md)/)?.[1];
     const content = fs.readFileSync(file!, "utf8");
     // extracted into frontmatter verbatim, not left in the body
-    expect(content).toContain('sourceRef: "deps standup, 2025-01-14"');
+    expect(content).toContain("sourceRef: deps standup, 2025-01-14");
     expect(content).not.toContain("--source-ref");
   });
 
