@@ -7,6 +7,7 @@ import { projectConfigPath, projectEngramsDir } from "@engram/core";
 import { Value } from "typebox/value";
 import { z } from "zod";
 import engramExtension from "../src/pi/index.js";
+import { registerEngramCommand } from "../src/pi/commands.js";
 import { registerEngramTools } from "../src/pi/tools.js";
 import { engramAddTool as ocAddTool } from "../src/opencode/tools.js";
 
@@ -348,6 +349,107 @@ describe("engram extension / /engram command", () => {
     expect(notes[0].level).toBe("error");
     expect(notes[0].text).toContain('"descision"');
     expect(fs.readdirSync(projectEngramsDir(tmp))).toEqual([]);
+  });
+
+  it("add subcommand accepts the six lifecycle value flags", async () => {
+    const { pi, commands } = fakePi();
+    engramExtension(pi);
+    const ctx = fakeCtx();
+    await commands.get("engram")!.handler(
+      "add Superseded pick -- the new guidance --status superseded --supersedes 0001 " +
+        "--review-after 2026-01-01T00:00:00.000Z --expires 2026-06-01T00:00:00.000Z " +
+        "--source-type file --source-ref docs/a.md",
+      ctx,
+    );
+    const notes = notified(ctx);
+    expect(notes[0].level).toBe("info");
+    const file = notes[0].text.match(/  (\S+\.md)/)?.[1];
+    expect(file).toBeDefined();
+    const content = fs.readFileSync(file!, "utf8");
+    expect(content).toContain("status: superseded");
+    expect(content).toContain('supersedes: "0001"');
+    expect(content).toContain("reviewAfter: 2026-01-01T00:00:00.000Z");
+    expect(content).toContain("expires: 2026-06-01T00:00:00.000Z");
+    expect(content).toContain("sourceType: file");
+    expect(content).toContain("docs/a.md");
+  });
+
+  it("--source-ref accepts a quoted multiword reference verbatim", async () => {
+    const { pi, commands } = fakePi();
+    engramExtension(pi);
+    const ctx = fakeCtx();
+    await commands
+      .get("engram")!
+      .handler(
+        'add Quoted ref -- body --source-type conversation --source-ref "deps standup, 2025-01-14"',
+        ctx,
+      );
+    const notes = notified(ctx);
+    expect(notes[0].level).toBe("info");
+    const file = notes[0].text.match(/  (\S+\.md)/)?.[1];
+    const content = fs.readFileSync(file!, "utf8");
+    // extracted into frontmatter verbatim, not left in the body
+    expect(content).toContain('sourceRef: "deps standup, 2025-01-14"');
+    expect(content).not.toContain("--source-ref");
+  });
+
+  it("invalid --status is rejected, not silently defaulted", async () => {
+    const { pi, commands } = fakePi();
+    engramExtension(pi);
+    const ctx = fakeCtx();
+    await commands
+      .get("engram")!
+      .handler('add Never recorded --status bogus -- body', ctx);
+    const notes = notified(ctx);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].level).toBe("error");
+    expect(notes[0].text).toContain('"bogus"');
+    expect(notes[0].text).toContain("active | superseded | archived");
+    expect(fs.readdirSync(projectEngramsDir(tmp))).toEqual([]);
+  });
+
+  it("invalid --source-type is rejected, not silently defaulted", async () => {
+    const { pi, commands } = fakePi();
+    engramExtension(pi);
+    const ctx = fakeCtx();
+    await commands
+      .get("engram")!
+      .handler("add Never recorded --source-type website -- body", ctx);
+    const notes = notified(ctx);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].level).toBe("error");
+    expect(notes[0].text).toContain('"website"');
+    expect(fs.readdirSync(projectEngramsDir(tmp))).toEqual([]);
+  });
+
+  it("help discloses the lifecycle flags and the quoted source-ref rule", async () => {
+    const { pi, commands } = fakePi();
+    engramExtension(pi);
+    const ctx = fakeCtx();
+    await commands.get("engram")!.handler("help", ctx);
+    const help = notified(ctx)[0].text;
+    expect(help).toContain("--status active|superseded|archived");
+    expect(help).toContain("--supersedes");
+    expect(help).toContain("--review-after");
+    expect(help).toContain("--expires");
+    expect(help).toContain("--source-type");
+    expect(help).toContain("--source-ref");
+    expect(help).toMatch(/--source-ref .*quot/i);
+  });
+
+  it("command adds refresh the cache on success only", async () => {
+    let refreshes = 0;
+    const fake = fakePi();
+    registerEngramCommand(fake.pi, { onAddSuccess: () => refreshes++ });
+    const handler = fake.commands.get("engram")!.handler;
+
+    const bad = fakeCtx();
+    await handler("add Never recorded --status bogus -- body", bad);
+    expect(refreshes).toBe(0);
+
+    const good = fakeCtx();
+    await handler("add Refreshed -- it worked --status active", good);
+    expect(refreshes).toBe(1);
   });
 });
 
