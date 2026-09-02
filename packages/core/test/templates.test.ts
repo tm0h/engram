@@ -13,6 +13,29 @@ describe("projectReadmeContent", () => {
     expect(projectReadmeContent(true)).toContain("tracked in git");
     expect(projectReadmeContent(false)).toContain("gitignored");
   });
+
+  /* ENG-13 lifecycle metadata */
+  it("includes all six lifecycle fields in the format example", () => {
+    const md = projectReadmeContent(true);
+    expect(md).toContain("status:");
+    expect(md).toContain("supersedes:");
+    expect(md).toContain("reviewAfter:");
+    expect(md).toContain("expires:");
+    expect(md).toContain("sourceType:");
+    expect(md).toContain("sourceRef:");
+  });
+  it("states the lifecycle enums, timestamp rule, and supersedes direction", () => {
+    const md = projectReadmeContent(true);
+    expect(md).toContain("active | superseded | archived");
+    expect(md).toContain("conversation | file | url | command | other");
+    expect(md).toContain("explicit zone");
+    expect(md).toContain("older entry");
+  });
+  it("carries the provenance authority warning and instruction precedence", () => {
+    const md = projectReadmeContent(true);
+    expect(md).toContain("does not verify");
+    expect(md).toContain("system, user, and repository instructions");
+  });
 });
 
 describe("injectSnippet", () => {
