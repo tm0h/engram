@@ -104,9 +104,18 @@ describe("FrontmatterSchema / lifecycle metadata", () => {
     sourceType: "conversation",
     sourceRef: "standup notes",
   };
+  const v04 = {
+    id: "0001",
+    title: "Replaced libfoo with libbar",
+    type: "decision",
+    tags: ["deps", "auth"],
+    scope: "project",
+    created: "2025-01-15T10:30:00.000Z",
+    updated: "2025-01-15T10:30:00.000Z",
+  };
 
   it("decodes a complete object containing all six lifecycle fields", () => {
-    const out = Schema.decodeSync(FrontmatterSchema)({ ...valid, ...lifecycle } as never);
+    const out = Schema.decodeSync(FrontmatterSchema)({ ...v04, ...lifecycle } as never);
     expect(out.status).toBe("superseded");
     expect(out.supersedes).toBe("0001");
     expect(out.reviewAfter).toBe("2026-01-01T00:00:00.000Z");
@@ -116,7 +125,7 @@ describe("FrontmatterSchema / lifecycle metadata", () => {
   });
 
   it("keeps a v0.4 object decoding with all six lifecycle fields absent", () => {
-    const out = Schema.decodeSync(FrontmatterSchema)(valid as never);
+    const out = Schema.decodeSync(FrontmatterSchema)(v04 as never);
     expect(out.status).toBeUndefined();
     expect(out.supersedes).toBeUndefined();
     expect(out.reviewAfter).toBeUndefined();
@@ -127,13 +136,13 @@ describe("FrontmatterSchema / lifecycle metadata", () => {
 
   it("rejects an unknown status literal", () => {
     expect(() =>
-      Schema.decodeSync(FrontmatterSchema)({ ...valid, status: "draft" } as never),
+      Schema.decodeSync(FrontmatterSchema)({ ...v04, status: "draft" } as never),
     ).toThrow();
   });
 
   it("rejects an unknown source type", () => {
     expect(() =>
-      Schema.decodeSync(FrontmatterSchema)({ ...valid, sourceType: "chatlog" } as never),
+      Schema.decodeSync(FrontmatterSchema)({ ...v04, sourceType: "chatlog" } as never),
     ).toThrow();
   });
 });

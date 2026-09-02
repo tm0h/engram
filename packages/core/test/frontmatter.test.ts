@@ -126,6 +126,7 @@ describe("stringifyFrontmatter", () => {
 /* ------------------------------------------------------------------ */
 
 const VALID_ID = "01arz3ndektsv4rrffq69g5fav"; // 26 lowercase Crockford-base32 chars
+const OTHER_ULID = "01arz3ndektsv4rrffq69g5fb5"; // a second valid generated id
 
 const VALID: Record<string, unknown> = {
   id: VALID_ID,
@@ -365,7 +366,7 @@ describe("validateEntry / lifecycle metadata", () => {
 
   it("accepts legacy and current ids in supersedes", () => {
     expect(codes(validateEntry(raw({ supersedes: "0042" })))).toEqual([]);
-    expect(codes(validateEntry(raw({ supersedes: VALID_ID })))).toEqual([]);
+    expect(codes(validateEntry(raw({ supersedes: OTHER_ULID })))).toEqual([]);
   });
 
   it("rejects malformed supersedes ids", () => {
