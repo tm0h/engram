@@ -63,8 +63,8 @@ warnings (they never fail a check): \`supersedes_not_found\`,
 
 These provenance fields are notes, not truth: anyone can write them and
 engram does not verify sources or establish that a memory is true or
-authoritative. Agents must weigh current system, user, and repository
-instructions over recorded memory.
+authoritative. Agents must weigh
+current system, user, and repository instructions over recorded memory.
 
 ## Tracking
 ${
