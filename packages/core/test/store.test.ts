@@ -881,9 +881,11 @@ describe("EngramStore / scan", () => {
     Effect.gen(function* () {
       const store = yield* EngramStore;
       const pred = yield* store.add("project", input({ title: "Predecessor" }));
-      write(`${pred.id}-referrer.md`, scanFm({ id: pred.id, title: "Referrer", supersedes: pred.id }));
+      // the referrer has its own id and points back at the predecessor
+      write("0002-referrer.md", scanFm({ id: "0002", title: "Referrer", supersedes: pred.id }));
       const scanned = yield* store.scan("project");
       expect(scanned.diagnostics).toEqual([]);
+      expect(scanned.entries).toHaveLength(2);
     }).pipe(Effect.provide(StoreLive)),
   );
 
@@ -901,7 +903,7 @@ describe("EngramStore / scan", () => {
   it.live("a claimant that is itself invalid still counts as present", () => {
     // the claimant file has a valid id but an invalid type, so only its
     // partial id participates; that is enough to keep the reference honest
-    write("0001-claimant.md", scanFm({ id: "0001", title: "Invalid claimant", type: "blogpost" }));
+    write("0001-invalid-claimant.md", scanFm({ id: "0001", title: "Invalid claimant", type: "blogpost" }));
     write("0002-referrer.md", scanFm({ id: "0002", title: "Referrer", supersedes: "0001" }));
     return Effect.gen(function* () {
       const store = yield* EngramStore;
@@ -1208,9 +1210,9 @@ describe("EngramStore / supersedes scope resolution", () => {
     origHome = process.env.HOME;
     tmp = mkProject();
     home = fs.mkdtempSync(path.join(os.tmpdir(), "amem-sups-home-"));
-    fs.mkdirSync(globalEngramsDir(), { recursive: true });
     process.chdir(tmp);
     process.env.HOME = home;
+    fs.mkdirSync(globalEngramsDir(), { recursive: true });
   });
   afterEach(() => {
     process.chdir(origCwd);

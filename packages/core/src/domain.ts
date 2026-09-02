@@ -99,6 +99,14 @@ export interface Engram {
   readonly updated: string;
   readonly author: string | undefined;
   readonly pinned: boolean;
+  /* ENG-13 lifecycle metadata. Absence (undefined) stays undefined; no
+   * default is ever serialized. */
+  readonly status?: Status | undefined;
+  readonly supersedes?: string | undefined;
+  readonly reviewAfter?: string | undefined;
+  readonly expires?: string | undefined;
+  readonly sourceType?: SourceType | undefined;
+  readonly sourceRef?: string | undefined;
   readonly body: string;
   /** absolute path to the source file */
   readonly path: string;
@@ -111,10 +119,18 @@ export interface EngramInput {
   readonly body: string;
   readonly pinned: boolean;
   readonly author: string | undefined;
+  /* ENG-13 lifecycle metadata (optional; absent means "not set"). */
+  readonly status?: Status | undefined;
+  readonly supersedes?: string | undefined;
+  readonly reviewAfter?: string | undefined;
+  readonly expires?: string | undefined;
+  readonly sourceType?: SourceType | undefined;
+  readonly sourceRef?: string | undefined;
 }
 
 /** Partial changes to an existing engram (see EngramStore.update).
- * Undefined fields keep their current value. */
+ * Undefined fields keep their current value; there is deliberately no
+ * clearing representation yet (planned as paired CLI clear flags). */
 export interface EngramPatch {
   readonly title?: string;
   readonly type?: EngramType;
@@ -122,6 +138,13 @@ export interface EngramPatch {
   readonly body?: string;
   readonly pinned?: boolean;
   readonly author?: string;
+  /* ENG-13 lifecycle metadata; same undefined-means-unchanged rule. */
+  readonly status?: Status | undefined;
+  readonly supersedes?: string | undefined;
+  readonly reviewAfter?: string | undefined;
+  readonly expires?: string | undefined;
+  readonly sourceType?: SourceType | undefined;
+  readonly sourceRef?: string | undefined;
 }
 
 /* ------------------------------------------------------------------ */

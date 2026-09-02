@@ -32,14 +32,22 @@ export type StoreDiagnosticCode =
   | "filename_slug_mismatch"
   | "scope_mismatch"
   | "duplicate_id"
+  /* ENG-13 lifecycle advisory conditions (packages/core/src/store.ts:
+   * lifecycleDiagnostics). Warnings never omit an entry and never fail a
+   * check on their own. */
+  | "supersedes_not_found"
+  | "review_due"
+  | "expired"
   /* config validation (packages/core/src/config.ts) */
   | "config_unreadable"
   | "config_json_invalid"
   | "config_schema_invalid"
   | "config_version_unsupported";
 
-/** Diagnostic weight. Only "error" exists today. */
-export type StoreDiagnosticSeverity = "error";
+/** Diagnostic weight. "error" marks a defect that makes a check fail;
+ * "warning" is advisory (ENG-13 lifecycle conditions): reported in every
+ * output mode, but a warning-only scan still passes. */
+export type StoreDiagnosticSeverity = "error" | "warning";
 
 /** One defect in one file: `message` states the problem, `hint` the repair. */
 export interface StoreDiagnostic {
