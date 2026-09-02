@@ -6,7 +6,15 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vite-plus/test";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -244,8 +252,10 @@ describe("engram add/edit lifecycle flags (process level)", () => {
     if (home) rmSync(home, { recursive: true, force: true });
   });
 
+  let projSeq = 0;
   const freshProject = (): string => {
-    const proj = join(tmp, "proj");
+    projSeq += 1;
+    const proj = join(tmp, `proj-${projSeq}`);
     mkdirSync(join(proj, ".engram", "engrams"), { recursive: true });
     writeFileSync(
       join(proj, ".engram", "config.json"),
@@ -253,139 +263,138 @@ describe("engram add/edit lifecycle flags (process level)", () => {
     );
     return proj;
   };
-  const entryFile = (proj: string): string => {
+  const entryFile = (proj: string, needle?: string): string => {
     const dir = join(proj, ".engram", "engrams");
-    const name = readdirSync(dir).find((f) => f.endsWith(".md"));
+    const name = readdirSync(dir)
+      .filter((f) => f.endsWith(".md"))
+      .find((f) => {
+        if (needle === undefined) return true;
+        return readFileSync(join(dir, f), "utf8").includes(needle);
+      });
     if (name === undefined) throw new Error("no entry file written");
     return join(dir, name);
   };
 
-  it(
-    "add maps every kebab-case lifecycle flag to its camelCase option",
-    (ctx) => {
-      if (!spawnOk) ctx.skip();
-      const proj = freshProject();
-      // a legacy entry to supersede
-      writeFileSync(
-        join(proj, ".engram", "engrams", "0001-legacy.md"),
-        '---\nid: "0001"\ntitle: Legacy\ntype: note\ntags: []\nscope: project\ncreated: 2025-08-15T10:00:00.000Z\nupdated: 2025-08-15T11:00:00.000Z\n---\nB\n',
-      );
-      const r = runCli(
-        [
-          "add",
-          "--title",
-          "Flag mapping",
-          "--status",
-          "active",
-          "--supersedes",
-          "0001",
-          "--review-after",
-          "2026-06-01T00:00:00.000Z",
-          "--expires",
-          "2027-01-01T00:00:00.000Z",
-          "--source-type",
-          "file",
-          "--source-ref",
-          "docs/spec.md",
-          "body",
-        ],
-        proj,
-        home,
-      );
-      expect(r.status).toBe(0);
-      const raw = readFileSync(entryFile(proj), "utf8");
-      expect(raw).toMatch(/^status: active$/m);
-      expect(raw).toMatch(/^supersedes: "0001"$/m);
-      expect(raw).toMatch(/^reviewAfter: 2026-06-01T00:00:00\.000Z$/m);
-      expect(raw).toMatch(/^expires: 2027-01-01T00:00:00\.000Z$/m);
-      expect(raw).toMatch(/^sourceType: file$/m);
-      expect(raw).toMatch(/^sourceRef: docs\/spec\.md$/m);
-    },
-  );
+  it("add maps every kebab-case lifecycle flag to its camelCase option", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    // a legacy entry to supersede
+    writeFileSync(
+      join(proj, ".engram", "engrams", "0001-legacy.md"),
+      '---\nid: "0001"\ntitle: Legacy\ntype: note\ntags: []\nscope: project\ncreated: 2025-08-15T10:00:00.000Z\nupdated: 2025-08-15T11:00:00.000Z\n---\nB\n',
+    );
+    const r = runCli(
+      [
+        "add",
+        "--title",
+        "Flag mapping",
+        "--status",
+        "active",
+        "--supersedes",
+        "0001",
+        "--review-after",
+        "2026-06-01T00:00:00.000Z",
+        "--expires",
+        "2027-01-01T00:00:00.000Z",
+        "--source-type",
+        "file",
+        "--source-ref",
+        "docs/spec.md",
+        "body",
+      ],
+      proj,
+      home,
+    );
+    expect(r.status).toBe(0);
+    const raw = readFileSync(entryFile(proj, "Flag mapping"), "utf8");
+    expect(raw).toMatch(/^status: active$/m);
+    expect(raw).toMatch(/^supersedes: "0001"$/m);
+    expect(raw).toMatch(/^reviewAfter: 2026-06-01T00:00:00\.000Z$/m);
+    expect(raw).toMatch(/^expires: 2027-01-01T00:00:00\.000Z$/m);
+    expect(raw).toMatch(/^sourceType: file$/m);
+    expect(raw).toMatch(/^sourceRef: docs\/spec\.md$/m);
+  });
 
-  it(
-    "edit maps value and clear lifecycle flags to their camelCase options",
-    (ctx) => {
-      if (!spawnOk) ctx.skip();
-      const proj = freshProject();
-      writeFileSync(
-        join(proj, ".engram", "engrams", "0001-edit-me.md"),
-        '---\nid: "0001"\ntitle: Edit me\ntype: note\ntags: []\nscope: project\ncreated: 2025-08-15T10:00:00.000Z\nupdated: 2025-08-15T11:00:00.000Z\n---\nB\n',
-      );
-      // set all six via kebab-case flags
-      const set = runCli(
-        [
-          "edit",
-          "0001",
-          "--status",
-          "archived",
-          "--supersedes",
-          "0002",
-          "--review-after",
-          "2026-06-01T00:00:00.000Z",
-          "--expires",
-          "2027-01-01T00:00:00.000Z",
-          "--source-type",
-          "command",
-          "--source-ref",
-          "grep -r foo",
-          "body",
-        ],
-        proj,
-        home,
-      );
-      expect(set.status).toBe(0);
-      let raw = readFileSync(entryFile(proj), "utf8");
-      expect(raw).toMatch(/^status: archived$/m);
-      expect(raw).toMatch(/^supersedes: "0002"$/m);
-      expect(raw).toMatch(/^reviewAfter: 2026-06-01T00:00:00\.000Z$/m);
-      expect(raw).toMatch(/^expires: 2027-01-01T00:00:00\.000Z$/m);
-      expect(raw).toMatch(/^sourceType: command$/m);
-      expect(raw).toMatch(/^sourceRef: grep -r foo$/m);
+  it("edit maps value and clear lifecycle flags to their camelCase options", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    writeFileSync(
+      join(proj, ".engram", "engrams", "0001-edit-me.md"),
+      '---\nid: "0001"\ntitle: Edit me\ntype: note\ntags: []\nscope: project\ncreated: 2025-08-15T10:00:00.000Z\nupdated: 2025-08-15T11:00:00.000Z\n---\nB\n',
+    );
+    // set all six via kebab-case flags
+    const set = runCli(
+      [
+        "edit",
+        "0001",
+        "--status",
+        "archived",
+        "--supersedes",
+        "0002",
+        "--review-after",
+        "2026-06-01T00:00:00.000Z",
+        "--expires",
+        "2027-01-01T00:00:00.000Z",
+        "--source-type",
+        "command",
+        "--source-ref",
+        "grep -r foo",
+        "body",
+      ],
+      proj,
+      home,
+    );
+    expect(set.status).toBe(0);
+    let raw = readFileSync(entryFile(proj, "Edit me"), "utf8");
+    expect(raw).toMatch(/^status: archived$/m);
+    expect(raw).toMatch(/^supersedes: "0002"$/m);
+    expect(raw).toMatch(/^reviewAfter: 2026-06-01T00:00:00\.000Z$/m);
+    expect(raw).toMatch(/^expires: 2027-01-01T00:00:00\.000Z$/m);
+    expect(raw).toMatch(/^sourceType: command$/m);
+    expect(raw).toMatch(/^sourceRef: grep -r foo$/m);
 
-      // clear all six via the paired kebab-case flags
-      const clear = runCli(
-        [
-          "edit",
-          "0001",
-          "--clear-status",
-          "--clear-supersedes",
-          "--clear-review-after",
-          "--clear-expires",
-          "--clear-source-type",
-          "--clear-source-ref",
-          "body",
-        ],
-        proj,
-        home,
-      );
-      expect(clear.status).toBe(0);
-      raw = readFileSync(entryFile(proj), "utf8");
-      for (const key of ["status", "supersedes", "reviewAfter", "expires", "sourceType", "sourceRef"]) {
-        expect(raw).not.toMatch(new RegExp(`^${key}:`, "m"));
-      }
-    },
-  );
+    // clear all six via the paired kebab-case flags
+    const clear = runCli(
+      [
+        "edit",
+        "0001",
+        "--clear-status",
+        "--clear-supersedes",
+        "--clear-review-after",
+        "--clear-expires",
+        "--clear-source-type",
+        "--clear-source-ref",
+        "body",
+      ],
+      proj,
+      home,
+    );
+    expect(clear.status).toBe(0);
+    raw = readFileSync(entryFile(proj, "Edit me"), "utf8");
+    for (const key of [
+      "status",
+      "supersedes",
+      "reviewAfter",
+      "expires",
+      "sourceType",
+      "sourceRef",
+    ]) {
+      expect(raw).not.toMatch(new RegExp(`^${key}:`, "m"));
+    }
+  });
 
-  it(
-    "a value plus clear pair on the same field exits nonzero without mutation",
-    (ctx) => {
-      if (!spawnOk) ctx.skip();
-      const proj = freshProject();
-      writeFileSync(
-        join(proj, ".engram", "engrams", "0001-conflict.md"),
-        '---\nid: "0001"\ntitle: Conflict\ntype: note\ntags: []\nscope: project\ncreated: 2025-08-15T10:00:00.000Z\nupdated: 2025-08-15T11:00:00.000Z\n---\nB\n',
-      );
-      const file = entryFile(proj);
-      const before = readFileSync(file, "utf8");
-      const r = runCli(
-        ["edit", "0001", "--status", "active", "--clear-status", "body"],
-        proj,
-        home,
-      );
-      expect(r.status).toBe(1);
-      expect(r.stderr).toContain("--clear-status");
-      expect(readFileSync(file, "utf8")).toBe(before);
-    },
-  );
+  it("a value plus clear pair on the same field exits nonzero without mutation", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    writeFileSync(
+      join(proj, ".engram", "engrams", "0001-conflict.md"),
+      '---\nid: "0001"\ntitle: Conflict\ntype: note\ntags: []\nscope: project\ncreated: 2025-08-15T10:00:00.000Z\nupdated: 2025-08-15T11:00:00.000Z\n---\nB\n',
+    );
+    const file = entryFile(proj);
+    const before = readFileSync(file, "utf8");
+    const r = runCli(["edit", "0001", "--status", "active", "--clear-status", "body"], proj, home);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("--clear-status");
+    expect(readFileSync(file, "utf8")).toBe(before);
+  });
 });

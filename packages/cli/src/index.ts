@@ -97,6 +97,12 @@ program
   .option("--stdin", "Read body from stdin.")
   .option("--pinned", "Pin this engram (always surfaces in digests).")
   .option("--author <name>", "Override author.")
+  .option("--status <status>", "Lifecycle status: active | superseded | archived.")
+  .option("--supersedes <id>", "Id of the older entry this one replaces.")
+  .option("--review-after <ts>", "ISO 8601 timestamp with zone, e.g. 2026-01-01T00:00:00.000Z.")
+  .option("--expires <ts>", "ISO 8601 timestamp with zone, e.g. 2027-01-01T00:00:00.000Z.")
+  .option("--source-type <type>", "conversation | file | url | command | other.")
+  .option("--source-ref <ref>", "Source reference: path, URL, command, or conversation.")
   .action((content: string | undefined, opts: Record<string, string | boolean | undefined>) =>
     run(
       Add.addCommand({
@@ -108,6 +114,12 @@ program
         stdin: Boolean(opts.stdin),
         pinned: Boolean(opts.pinned),
         author: opts.author as string | undefined,
+        status: opts.status as string | undefined,
+        supersedes: opts.supersedes as string | undefined,
+        reviewAfter: opts.reviewAfter as string | undefined,
+        expires: opts.expires as string | undefined,
+        sourceType: opts.sourceType as string | undefined,
+        sourceRef: opts.sourceRef as string | undefined,
       }),
     ),
   );
@@ -163,6 +175,18 @@ program
   .option("--pinned", "Pin the engram.")
   .option("--no-pinned", "Unpin the engram.")
   .option("--author <name>", "Override author.")
+  .option("--status <status>", "Lifecycle status: active | superseded | archived.")
+  .option("--supersedes <id>", "Id of the older entry this one replaces.")
+  .option("--review-after <ts>", "ISO 8601 timestamp with zone, e.g. 2026-01-01T00:00:00.000Z.")
+  .option("--expires <ts>", "ISO 8601 timestamp with zone, e.g. 2027-01-01T00:00:00.000Z.")
+  .option("--source-type <type>", "conversation | file | url | command | other.")
+  .option("--source-ref <ref>", "Source reference: path, URL, command, or conversation.")
+  .option("--clear-status", "Remove the lifecycle status.")
+  .option("--clear-supersedes", "Remove the supersedes reference.")
+  .option("--clear-review-after", "Remove the review timestamp.")
+  .option("--clear-expires", "Remove the expiry timestamp.")
+  .option("--clear-source-type", "Remove the source type.")
+  .option("--clear-source-ref", "Remove the source reference.")
   .action(
     (id: string, content: string | undefined, opts: Record<string, string | boolean | undefined>) =>
       run(
@@ -175,6 +199,18 @@ program
           stdin: Boolean(opts.stdin),
           pinned: typeof opts.pinned === "boolean" ? opts.pinned : undefined,
           author: opts.author as string | undefined,
+          status: opts.status as string | undefined,
+          supersedes: opts.supersedes as string | undefined,
+          reviewAfter: opts.reviewAfter as string | undefined,
+          expires: opts.expires as string | undefined,
+          sourceType: opts.sourceType as string | undefined,
+          sourceRef: opts.sourceRef as string | undefined,
+          clearStatus: opts.clearStatus as boolean | undefined,
+          clearSupersedes: opts.clearSupersedes as boolean | undefined,
+          clearReviewAfter: opts.clearReviewAfter as boolean | undefined,
+          clearExpires: opts.clearExpires as boolean | undefined,
+          clearSourceType: opts.clearSourceType as boolean | undefined,
+          clearSourceRef: opts.clearSourceRef as boolean | undefined,
         }),
       ),
   );

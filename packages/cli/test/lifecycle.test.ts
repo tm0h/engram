@@ -11,6 +11,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  ConfigRepo,
+  EngramStore,
   MainLive,
   projectConfigPath,
   projectEngramsDir,
@@ -68,14 +70,15 @@ describe("engram add/edit lifecycle flags", () => {
   });
 
   const output = (): string => outLines.join("\n");
-  const run = (eff: Effect.Effect<unknown, unknown, never>): Promise<void> =>
+  const run = (eff: Effect.Effect<unknown, unknown, EngramStore | ConfigRepo>): Promise<void> =>
     Effect.runPromise(Effect.provide(eff as never, MainLive)) as Promise<void>;
   const runFail = (
-    eff: Effect.Effect<unknown, unknown, never>,
+    eff: Effect.Effect<unknown, unknown, EngramStore | ConfigRepo>,
   ): Promise<{ _tag: string; message?: string }> =>
-    Effect.runPromise(
-      Effect.provide(Effect.flip(eff) as never, MainLive),
-    ) as Promise<{ _tag: string; message?: string }>;
+    Effect.runPromise(Effect.provide(Effect.flip(eff) as never, MainLive)) as Promise<{
+      _tag: string;
+      message?: string;
+    }>;
 
   const engramsDir = (): string => projectEngramsDir(tmp);
   const fileContent = (needle: string): string => {
@@ -88,7 +91,7 @@ describe("engram add/edit lifecycle flags", () => {
   const idOf = (needle: string): string => {
     for (const f of fs.readdirSync(engramsDir()).sort()) {
       const c = fs.readFileSync(path.join(engramsDir(), f), "utf8");
-      if (c.includes(needle)) return /^id: "([^"]+)"$/m.exec(c)?.[1] ?? "";
+      if (c.includes(needle)) return /^id: ?"?([^"\n]+)"?$/m.exec(c)?.[1] ?? "";
     }
     return "";
   };
@@ -179,7 +182,12 @@ describe("engram add/edit lifecycle flags", () => {
     ];
     for (const [flag, clear, key] of cases) {
       await run(
-        addCommand({ title: `Clear ${flag}`, content: "b", ...LIFECYCLE_VALUES, supersedes: "0001" }),
+        addCommand({
+          title: `Clear ${flag}`,
+          content: "b",
+          ...LIFECYCLE_VALUES,
+          supersedes: "0001",
+        }),
       );
       const id = idOf(`Clear ${flag}`);
       await run(editCommand(id, { [clear]: true, content: "b" }));
@@ -197,15 +205,19 @@ describe("engram add/edit lifecycle flags", () => {
     const conflicts: Array<[Record<string, unknown>, string]> = [
       [{ status: "active", clearStatus: true }, "--clear-status"],
       [{ supersedes: "0001", clearSupersedes: true }, "--clear-supersedes"],
-      [
-        { reviewAfter: "2026-06-01T00:00:00.000Z", clearReviewAfter: true },
-        "--clear-review-after",
-      ],
+      [{ reviewAfter: "2026-06-01T00:00:00.000Z", clearReviewAfter: true }, "--clear-review-after"],
       [{ expires: "2027-01-01T00:00:00.000Z", clearExpires: true }, "--clear-expires"],
       [{ sourceType: "file", clearSourceType: true }, "--clear-source-type"],
       [{ sourceRef: "docs/spec.md", clearSourceRef: true }, "--clear-source-ref"],
     ];
-    await run(addCommand({ title: "Conflict target", content: "b", ...LIFECYCLE_VALUES, supersedes: "0001" }));
+    await run(
+      addCommand({
+        title: "Conflict target",
+        content: "b",
+        ...LIFECYCLE_VALUES,
+        supersedes: "0001",
+      }),
+    );
     const id = idOf("Conflict target");
     for (const [opts, clearFlag] of conflicts) {
       const before = snapshotAll();
@@ -217,7 +229,9 @@ describe("engram add/edit lifecycle flags", () => {
   });
 
   it("unknown enum values fail fast before file creation or mutation", async () => {
-    const badStatus = await runFail(addCommand({ title: "Bad status", content: "b", status: "draft" }));
+    const badStatus = await runFail(
+      addCommand({ title: "Bad status", content: "b", status: "draft" }),
+    );
     expect(badStatus._tag).toBe("ValidationError");
     expect(badStatus.message).toContain("active, superseded, archived");
     const badSource = await runFail(
