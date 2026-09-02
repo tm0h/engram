@@ -53,7 +53,7 @@ const seed = (root: string, id: string, over: Partial<EngramInput>): string => {
     `author: ${JSON.stringify(i.author ?? "Tester")}`,
     ...(i.pinned ? ["pinned: true"] : []),
     ...(i.status !== undefined ? [`status: ${i.status}`] : []),
-    ...(i.supersedes !== undefined ? [`supersedes: ${i.supersedes}`] : []),
+    ...(i.supersedes !== undefined ? [`supersedes: ${JSON.stringify(i.supersedes)}`] : []),
     ...(i.reviewAfter !== undefined ? [`reviewAfter: ${i.reviewAfter}`] : []),
     ...(i.expires !== undefined ? [`expires: ${i.expires}`] : []),
     ...(i.sourceType !== undefined ? [`sourceType: ${i.sourceType}`] : []),
@@ -494,9 +494,9 @@ describe("shared ops / showOp lifecycle", () => {
 
   it("renders all six lifecycle fields when set, with exact instants", async () => {
     seed(tmp, "0001", {
-      title: "Superseded pick",
+      title: "Entry",
       status: "superseded",
-      supersedes: "0001",
+      supersedes: "0002",
       reviewAfter: "2026-01-01T00:00:00.000Z",
       expires: "2026-06-01T00:00:00.000Z",
       sourceType: "file",
@@ -507,7 +507,7 @@ describe("shared ops / showOp lifecycle", () => {
     expect(res.isError).toBe(false);
     // exact stored instants, never date-shortened
     expect(res.text).toContain("status: superseded");
-    expect(res.text).toContain("supersedes: 0001");
+    expect(res.text).toContain("supersedes: 0002");
     expect(res.text).toContain("review-after: 2026-01-01T00:00:00.000Z");
     expect(res.text).toContain("expires: 2026-06-01T00:00:00.000Z");
     // independent provenance fields, renderFull-style join
@@ -643,7 +643,7 @@ describe("shared ops / addOp", () => {
     const file = res.details.path as string;
     const content = fs.readFileSync(file, "utf8");
     expect(content).toContain("status: active");
-    expect(content).toContain("supersedes: 0001");
+    expect(content).toContain('supersedes: "0001"');
     expect(content).toContain("reviewAfter: 2026-01-01T00:00:00.000Z");
     expect(content).toContain("expires: 2026-06-01T00:00:00.000Z");
     expect(content).toContain("sourceType: conversation");
@@ -678,9 +678,7 @@ describe("shared ops / addOp", () => {
   });
 
   it("store write boundary rejects a date-only reviewAfter with no mutation", async () => {
-    const res = await run(
-      addOp({ title: "T", body: "b", reviewAfter: "2026-01-01" }),
-    );
+    const res = await run(addOp({ title: "T", body: "b", reviewAfter: "2026-01-01" }));
     expect(res.isError).toBe(true);
     expect(fs.readdirSync(projectEngramsDir(tmp))).toEqual([]);
   });

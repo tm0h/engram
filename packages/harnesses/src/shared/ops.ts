@@ -342,9 +342,7 @@ export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, Engram
       // date-shortened), and the independent provenance fields join into one
       // source line. Part of the header, so pagination's body-capacity math
       // sees the growth. Plain text; no authority implication.
-      const source = [m.sourceType, m.sourceRef]
-        .filter((p) => p !== undefined)
-        .join(" \u00b7 ");
+      const source = [m.sourceType, m.sourceRef].filter((p) => p !== undefined).join(" \u00b7 ");
 
       const header = [
         `# [${m.id}] ${m.title}`,
@@ -417,10 +415,15 @@ export const addOp = (opts: AddOptions): Effect.Effect<OpResult, never, EngramSt
 
       // Closed enums fail fast before anything is written; every other
       // lifecycle value is validated by the store write boundary below.
-      const statusError = opts.status === undefined ? null : lifecycleEnumError("status", opts.status, ENGRAM_STATUSES);
+      const statusError =
+        opts.status === undefined
+          ? null
+          : lifecycleEnumError("status", opts.status, ENGRAM_STATUSES);
       if (statusError !== null) return err(statusError);
       const sourceTypeError =
-        opts.sourceType === undefined ? null : lifecycleEnumError("sourceType", opts.sourceType, SOURCE_TYPES);
+        opts.sourceType === undefined
+          ? null
+          : lifecycleEnumError("sourceType", opts.sourceType, SOURCE_TYPES);
       if (sourceTypeError !== null) return err(sourceTypeError);
 
       const title = opts.title.trim();

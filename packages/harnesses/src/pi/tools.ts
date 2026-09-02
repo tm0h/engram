@@ -170,13 +170,13 @@ export const engramAddTool = {
     ),
     status: Type.Optional(
       StringEnum([...ENGRAM_STATUSES], {
-        description: "Lifecycle status: active | superseded | archived. Optional; not set unless passed.",
+        description:
+          "Lifecycle status: active | superseded | archived. Optional; not set unless passed.",
       }),
     ),
     supersedes: Type.Optional(
       Type.String({
-        description:
-          "Id of the older entry this one replaces. Optional; validated when saved.",
+        description: "Id of the older entry this one replaces. Optional; validated when saved.",
       }),
     ),
     reviewAfter: Type.Optional(
@@ -193,8 +193,7 @@ export const engramAddTool = {
     ),
     sourceType: Type.Optional(
       StringEnum([...SOURCE_TYPES], {
-        description:
-          "Provenance shape: conversation | file | url | command | other. Optional.",
+        description: "Provenance shape: conversation | file | url | command | other. Optional.",
       }),
     ),
     sourceRef: Type.Optional(

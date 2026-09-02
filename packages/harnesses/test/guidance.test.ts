@@ -107,7 +107,14 @@ describe("guidance / skills stay aligned", () => {
       ["pi", piSkill],
       ["claude", claudeSkill],
     ] as const) {
-      for (const word of ["active", "superseded", "archived", "supersedes", "reviewAfter", "expires"]) {
+      for (const word of [
+        "active",
+        "superseded",
+        "archived",
+        "supersedes",
+        "reviewAfter",
+        "expires",
+      ]) {
         expect(skill, `${name}: lifecycle vocabulary ${word}`).toContain(word);
       }
       expect(skill, `${name}: provenance fields`).toContain("sourceType");

@@ -77,9 +77,7 @@ function parseAdd(rest: string): ParsedAdd | { ok: false; error: string } {
   const status = flag("--status");
   if (status !== null) {
     if (!(ENGRAM_STATUSES as readonly string[]).includes(status)) {
-      return parseAddError(
-        `Invalid --status "${status}". Valid: ${ENGRAM_STATUSES.join(" | ")}`,
-      );
+      return parseAddError(`Invalid --status "${status}". Valid: ${ENGRAM_STATUSES.join(" | ")}`);
     }
     parsed.status = status as Status;
   }

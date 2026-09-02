@@ -355,12 +355,14 @@ describe("engram extension / /engram command", () => {
     const { pi, commands } = fakePi();
     engramExtension(pi);
     const ctx = fakeCtx();
-    await commands.get("engram")!.handler(
-      "add Superseded pick -- the new guidance --status superseded --supersedes 0001 " +
-        "--review-after 2026-01-01T00:00:00.000Z --expires 2026-06-01T00:00:00.000Z " +
-        "--source-type file --source-ref docs/a.md",
-      ctx,
-    );
+    await commands
+      .get("engram")!
+      .handler(
+        "add Superseded pick -- the new guidance --status superseded --supersedes 0001 " +
+          "--review-after 2026-01-01T00:00:00.000Z --expires 2026-06-01T00:00:00.000Z " +
+          "--source-type file --source-ref docs/a.md",
+        ctx,
+      );
     const notes = notified(ctx);
     expect(notes[0].level).toBe("info");
     const file = notes[0].text.match(/  (\S+\.md)/)?.[1];
@@ -397,9 +399,7 @@ describe("engram extension / /engram command", () => {
     const { pi, commands } = fakePi();
     engramExtension(pi);
     const ctx = fakeCtx();
-    await commands
-      .get("engram")!
-      .handler('add Never recorded --status bogus -- body', ctx);
+    await commands.get("engram")!.handler("add Never recorded --status bogus -- body", ctx);
     const notes = notified(ctx);
     expect(notes).toHaveLength(1);
     expect(notes[0].level).toBe("error");
@@ -412,9 +412,7 @@ describe("engram extension / /engram command", () => {
     const { pi, commands } = fakePi();
     engramExtension(pi);
     const ctx = fakeCtx();
-    await commands
-      .get("engram")!
-      .handler("add Never recorded --source-type website -- body", ctx);
+    await commands.get("engram")!.handler("add Never recorded --source-type website -- body", ctx);
     const notes = notified(ctx);
     expect(notes).toHaveLength(1);
     expect(notes[0].level).toBe("error");
@@ -490,9 +488,7 @@ describe("engram extension / lifecycle schema contract", () => {
       { description?: string } | undefined
     >;
     expect(props.status?.description).toContain("active | superseded | archived");
-    expect(props.sourceType?.description).toContain(
-      "conversation | file | url | command | other",
-    );
+    expect(props.sourceType?.description).toContain("conversation | file | url | command | other");
     // timestamps, ids, and refs are enforced when saved, not by the schema:
     // descriptions must say so instead of claiming schema-level enforcement
     for (const field of ["supersedes", "reviewAfter", "expires", "sourceRef"] as const) {
