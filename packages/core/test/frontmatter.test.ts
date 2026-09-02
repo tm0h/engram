@@ -159,7 +159,9 @@ describe("validateEntry", () => {
   });
 
   it("accepts unknown fields for future extensions", () => {
-    const v = validateEntry(raw({ status: "draft", "next-review": "2026-01-01" }));
+    // "status" is a reserved ENG-13 lifecycle field now; unknown-field
+    // tolerance uses names that remain genuinely unknown.
+    const v = validateEntry(raw({ confidence: "high", "next-review": "2026-01-01" }));
     expect(v.issues).toEqual([]);
     expect(v.frontmatter).toBeDefined();
   });
@@ -302,5 +304,143 @@ describe("validateEntry", () => {
     expect(v.frontmatter).toBeUndefined();
     expect(v.partial.id).toBe(VALID_ID);
     expect(v.partial.title).toBe("Valid title");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* validateEntry: lifecycle metadata (ENG-13)                         */
+/* ------------------------------------------------------------------ */
+
+describe("validateEntry / lifecycle metadata", () => {
+  const LIFECYCLE: Record<string, unknown> = {
+    status: "superseded",
+    supersedes: "0001",
+    reviewAfter: "2026-01-01T00:00:00.000Z",
+    expires: "2026-06-01T00:00:00.000Z",
+    sourceType: "conversation",
+    sourceRef: "standup notes",
+  };
+
+  it("validates and returns all six lifecycle fields", () => {
+    const v = validateEntry(raw(LIFECYCLE));
+    expect(v.issues).toEqual([]);
+    expect(v.frontmatter?.status).toBe("superseded");
+    expect(v.frontmatter?.supersedes).toBe("0001");
+    expect(v.frontmatter?.reviewAfter).toBe("2026-01-01T00:00:00.000Z");
+    expect(v.frontmatter?.expires).toBe("2026-06-01T00:00:00.000Z");
+    expect(v.frontmatter?.sourceType).toBe("conversation");
+    expect(v.frontmatter?.sourceRef).toBe("standup notes");
+    expect(v.partial.supersedes).toBe("0001");
+  });
+
+  it("accepts omission of every lifecycle field", () => {
+    const v = validateEntry(raw());
+    expect(v.issues).toEqual([]);
+    expect(v.frontmatter?.status).toBeUndefined();
+    expect(v.frontmatter?.supersedes).toBeUndefined();
+    expect(v.frontmatter?.reviewAfter).toBeUndefined();
+    expect(v.frontmatter?.expires).toBeUndefined();
+    expect(v.frontmatter?.sourceType).toBeUndefined();
+    expect(v.frontmatter?.sourceRef).toBeUndefined();
+    expect(v.partial.supersedes).toBeUndefined();
+  });
+
+  it("accepts every status and sourceType enum value", () => {
+    for (const status of ["active", "superseded", "archived"]) {
+      expect(codes(validateEntry(raw({ status })))).toEqual([]);
+    }
+    for (const sourceType of ["conversation", "file", "url", "command", "other"]) {
+      expect(codes(validateEntry(raw({ sourceType })))).toEqual([]);
+    }
+  });
+
+  it("rejects status values and types outside the enum", () => {
+    expect(codes(validateEntry(raw({ status: "draft" })))).toEqual(["status_invalid"]);
+    expect(codes(validateEntry(raw({ status: "expired" })))).toEqual(["status_invalid"]);
+    expect(codes(validateEntry(raw({ status: 5 })))).toEqual(["status_invalid"]);
+    const v = validateEntry(raw({ status: "draft" }));
+    expect(v.frontmatter).toBeUndefined();
+    expect(v.issues[0].hint).toContain("active, superseded, archived");
+  });
+
+  it("accepts legacy and current ids in supersedes", () => {
+    expect(codes(validateEntry(raw({ supersedes: "0042" })))).toEqual([]);
+    expect(codes(validateEntry(raw({ supersedes: VALID_ID })))).toEqual([]);
+  });
+
+  it("rejects malformed supersedes ids", () => {
+    expect(codes(validateEntry(raw({ supersedes: "abc" })))).toEqual(["supersedes_invalid"]);
+    expect(codes(validateEntry(raw({ supersedes: "00001" })))).toEqual(["supersedes_invalid"]);
+    expect(codes(validateEntry(raw({ supersedes: 42 })))).toEqual(["supersedes_invalid"]);
+    expect(validateEntry(raw({ supersedes: "abc" })).frontmatter).toBeUndefined();
+  });
+
+  it("rejects supersedes pointing at the entry itself", () => {
+    const v = validateEntry(raw({ supersedes: VALID_ID }));
+    expect(codes(v)).toEqual(["self_supersession"]);
+    expect(v.frontmatter).toBeUndefined();
+    // the entry-preventing defect is also named for legacy ids
+    expect(codes(validateEntry(raw({ id: "0001", supersedes: "0001" })))).toEqual([
+      "self_supersession",
+    ]);
+  });
+
+  it("accepts zoned UTC and offset timestamps for reviewAfter and expires", () => {
+    expect(codes(validateEntry(raw({ reviewAfter: "2026-01-01T00:00:00Z" })))).toEqual([]);
+    expect(
+      codes(validateEntry(raw({ reviewAfter: "2026-03-01T12:00:00+02:00" }))),
+    ).toEqual([]);
+    expect(codes(validateEntry(raw({ expires: "2026-01-01T00:00:00.000Z" })))).toEqual([]);
+    expect(codes(validateEntry(raw({ expires: "2026-03-01T12:00:00-05:00" })))).toEqual([]);
+  });
+
+  it("rejects date-only, zone-less, impossible, and non-string reviewAfter values", () => {
+    expect(codes(validateEntry(raw({ reviewAfter: "2026-01-01" })))).toEqual([
+      "review_after_invalid",
+    ]);
+    expect(codes(validateEntry(raw({ reviewAfter: "2026-01-01T00:00:00" })))).toEqual([
+      "review_after_invalid",
+    ]);
+    expect(codes(validateEntry(raw({ reviewAfter: "2026-02-30T00:00:00Z" })))).toEqual([
+      "review_after_invalid",
+    ]);
+    expect(codes(validateEntry(raw({ reviewAfter: 42 })))).toEqual(["review_after_invalid"]);
+  });
+
+  it("rejects date-only, zone-less, impossible, and non-string expires values", () => {
+    expect(codes(validateEntry(raw({ expires: "2026-01-01" })))).toEqual(["expires_invalid"]);
+    expect(codes(validateEntry(raw({ expires: "2026-01-01T00:00:00" })))).toEqual([
+      "expires_invalid",
+    ]);
+    expect(codes(validateEntry(raw({ expires: "2023-02-29T00:00:00Z" })))).toEqual([
+      "expires_invalid",
+    ]);
+    expect(codes(validateEntry(raw({ expires: "soon" })))).toEqual(["expires_invalid"]);
+  });
+
+  it("rejects unknown sourceType values and non-strings", () => {
+    expect(codes(validateEntry(raw({ sourceType: "chatlog" })))).toEqual(["source_type_invalid"]);
+    expect(codes(validateEntry(raw({ sourceType: 7 })))).toEqual(["source_type_invalid"]);
+  });
+
+  it("rejects empty or whitespace-only sourceRef and preserves valid original values", () => {
+    expect(codes(validateEntry(raw({ sourceRef: "" })))).toEqual(["source_ref_invalid"]);
+    expect(codes(validateEntry(raw({ sourceRef: "   " })))).toEqual(["source_ref_invalid"]);
+    // emptiness is checked on trim; the original string is preserved
+    const v = validateEntry(raw({ sourceRef: " docs/spec.md " }));
+    expect(v.issues).toEqual([]);
+    expect(v.frontmatter?.sourceRef).toBe(" docs/spec.md ");
+  });
+
+  it("keeps supersedes in partial for cross-file checks when another field is invalid", () => {
+    const v = validateEntry(raw({ type: "blogpost", supersedes: "0001" }));
+    expect(v.frontmatter).toBeUndefined();
+    expect(v.partial.id).toBe(VALID_ID);
+    expect(v.partial.supersedes).toBe("0001");
+  });
+
+  it("stringifyFrontmatter and parseFrontmatter round-trip all six lifecycle values", () => {
+    const data = { ...VALID, ...LIFECYCLE };
+    expect(ok(stringifyFrontmatter("Body\n", data))).toEqual({ data, content: "Body\n" });
   });
 });

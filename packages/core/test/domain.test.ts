@@ -6,6 +6,10 @@ import {
   GlobalConfigSchema,
   EngramTypeSchema,
   ScopeSchema,
+  StatusSchema,
+  ENGRAM_STATUSES,
+  SourceTypeSchema,
+  SOURCE_TYPES,
 } from "../src/domain.js";
 
 describe("EngramTypeSchema", () => {
@@ -59,6 +63,77 @@ describe("FrontmatterSchema", () => {
   it("rejects an invalid type", () => {
     expect(() =>
       Schema.decodeSync(FrontmatterSchema)({ ...valid, type: "bogus" } as never),
+    ).toThrow();
+  });
+});
+
+describe("StatusSchema", () => {
+  it("decodes the closed status vocabulary", () => {
+    expect(ENGRAM_STATUSES).toEqual(["active", "superseded", "archived"]);
+    for (const s of ENGRAM_STATUSES) {
+      expect(Schema.decodeSync(StatusSchema)(s)).toBe(s);
+    }
+  });
+  it("rejects statuses outside the enum", () => {
+    expect(() => Schema.decodeSync(StatusSchema)("draft" as never)).toThrow();
+    expect(() => Schema.decodeSync(StatusSchema)("expired" as never)).toThrow();
+    expect(() => Schema.decodeSync(StatusSchema)("bogus" as never)).toThrow();
+    expect(() => Schema.decodeSync(StatusSchema)(5 as never)).toThrow();
+  });
+});
+
+describe("SourceTypeSchema", () => {
+  it("decodes the closed source-type vocabulary", () => {
+    expect(SOURCE_TYPES).toEqual(["conversation", "file", "url", "command", "other"]);
+    for (const t of SOURCE_TYPES) {
+      expect(Schema.decodeSync(SourceTypeSchema)(t)).toBe(t);
+    }
+  });
+  it("rejects source types outside the enum", () => {
+    expect(() => Schema.decodeSync(SourceTypeSchema)("chatlog" as never)).toThrow();
+    expect(() => Schema.decodeSync(SourceTypeSchema)(7 as never)).toThrow();
+  });
+});
+
+describe("FrontmatterSchema / lifecycle metadata", () => {
+  const lifecycle = {
+    status: "superseded",
+    supersedes: "0001",
+    reviewAfter: "2026-01-01T00:00:00.000Z",
+    expires: "2026-06-01T00:00:00.000Z",
+    sourceType: "conversation",
+    sourceRef: "standup notes",
+  };
+
+  it("decodes a complete object containing all six lifecycle fields", () => {
+    const out = Schema.decodeSync(FrontmatterSchema)({ ...valid, ...lifecycle } as never);
+    expect(out.status).toBe("superseded");
+    expect(out.supersedes).toBe("0001");
+    expect(out.reviewAfter).toBe("2026-01-01T00:00:00.000Z");
+    expect(out.expires).toBe("2026-06-01T00:00:00.000Z");
+    expect(out.sourceType).toBe("conversation");
+    expect(out.sourceRef).toBe("standup notes");
+  });
+
+  it("keeps a v0.4 object decoding with all six lifecycle fields absent", () => {
+    const out = Schema.decodeSync(FrontmatterSchema)(valid as never);
+    expect(out.status).toBeUndefined();
+    expect(out.supersedes).toBeUndefined();
+    expect(out.reviewAfter).toBeUndefined();
+    expect(out.expires).toBeUndefined();
+    expect(out.sourceType).toBeUndefined();
+    expect(out.sourceRef).toBeUndefined();
+  });
+
+  it("rejects an unknown status literal", () => {
+    expect(() =>
+      Schema.decodeSync(FrontmatterSchema)({ ...valid, status: "draft" } as never),
+    ).toThrow();
+  });
+
+  it("rejects an unknown source type", () => {
+    expect(() =>
+      Schema.decodeSync(FrontmatterSchema)({ ...valid, sourceType: "chatlog" } as never),
     ).toThrow();
   });
 });
