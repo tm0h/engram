@@ -6,6 +6,7 @@
  *   /engram search <query>
  *   /engram show <id>
  *   /engram add <title> -- <body> [--type X] [--scope Y] [--tags a,b] [--pinned]
+ *   /engram edit <id> [flags] [-- <body>]
  *   /engram init [tracked|untracked]
  *   /engram help
  */
@@ -204,7 +205,25 @@ const LIFECYCLE_FLAG_PAIRS = [
   { value: "--source-ref", clear: "--clear-source-ref", field: "sourceRef" },
 ] as const;
 
-const EDIT_USAGE = "Usage: /engram edit <id> [flags] [-- <body]>";
+const EDIT_USAGE = "Usage: /engram edit <id> [flags] [-- <body>]";
+
+/** Every recognized flag spelling. A bare token with one of these raw forms
+ * can never be a flag's value: the value is simply missing. Quoting is the
+ * way to pass flag-looking text — the tokenizer keeps the quote characters
+ * in a quoted token's `raw`, so a quoted "--clear-status" is still accepted
+ * as a value while a bare one is rejected. The body delimiter (`--`) never
+ * enters the flag walk at all: everything from the first bare `--` token on
+ * is the body, taken verbatim. */
+const FLAG_SPELLINGS = new Set([
+  "--title",
+  "--type",
+  "--tags",
+  "--scope",
+  "--pinned",
+  "--no-pinned",
+  "--author",
+  ...LIFECYCLE_FLAG_PAIRS.flatMap((p) => [p.value, p.clear]),
+]);
 
 /** Parse `/engram edit` arguments: the first token is the id (or unique
  * prefix), then field flags, then an optional ` -- <body>` delimiter. The
@@ -230,8 +249,11 @@ function parseEdit(rest: string): ParsedEdit | { ok: false; error: string } {
   const clearFlags = new Set<string>();
   let fieldCount = 0;
   const nextValue = (): string | null => {
-    const t = flagTokens[++k];
-    return t === undefined ? null : t.value;
+    const t = flagTokens[k + 1];
+    // A bare recognized flag is a missing value, never a literal value.
+    if (t !== undefined && FLAG_SPELLINGS.has(t.raw)) return null;
+    k += 1;
+    return t?.value ?? null;
   };
   const assignLifecycle = (
     field: (typeof LIFECYCLE_FLAG_PAIRS)[number]["field"],
