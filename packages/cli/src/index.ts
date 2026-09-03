@@ -23,6 +23,7 @@ import * as Show from "./commands/show.js";
 import * as Edit from "./commands/edit.js";
 import * as Remove from "./commands/remove.js";
 import * as Context from "./commands/context.js";
+import * as Review from "./commands/review.js";
 import * as Config from "./commands/configCmd.js";
 import * as Inject from "./commands/inject.js";
 import * as Where from "./commands/where.js";
@@ -130,12 +131,14 @@ program
   .option("-s, --scope <scope>", "personal | project | all")
   .option("--type <type>", "Filter by type.")
   .option("--tag <tag>", "Filter by tag.")
+  .option("--all", "Include inactive entries (superseded, archived, expired).")
   .action((opts: Record<string, string | undefined>) =>
     run(
       List.listCommand({
         scope: opts.scope,
         type: opts.type,
         tag: opts.tag,
+        all: Boolean(opts.all),
       }),
     ),
   );
@@ -145,11 +148,13 @@ program
   .description("Search engrams by keyword/tag/type.")
   .option("-s, --scope <scope>", "personal | project | all")
   .option("-n, --limit <n>", "Max results.", (v: string) => parseInt(v, 10))
+  .option("--all", "Include inactive entries (superseded, archived, expired).")
   .action((query: string, opts: Record<string, string | number | undefined>) =>
     run(
       Search.searchCommand(query, {
         scope: opts.scope as string | undefined,
         limit: opts.limit as number | undefined,
+        all: Boolean(opts.all),
       }),
     ),
   );
@@ -237,6 +242,7 @@ program
   .option("-q, --query <query>", "Return full bodies of engrams matching a query.")
   .option("--full", "Include full bodies of every engram.")
   .option("-n, --limit <n>", "Max engrams.", (v: string) => parseInt(v, 10))
+  .option("--all", "Include inactive entries (superseded, archived, expired).")
   .action((opts: Record<string, string | number | boolean | undefined>) =>
     run(
       Context.contextCommand({
@@ -244,6 +250,23 @@ program
         query: opts.query as string | undefined,
         full: Boolean(opts.full),
         limit: opts.limit as number | undefined,
+        all: Boolean(opts.all),
+      }),
+    ),
+  );
+
+program
+  .command("review")
+  .description(
+    "Surface entries needing attention (superseded, archived, expired, review-due, broken lineage). Read-only.",
+  )
+  .option("-s, --scope <scope>", "personal | project | all")
+  .option("--json", "Emit one versioned JSON report document instead of prose.")
+  .action((opts: Record<string, string | boolean | undefined>) =>
+    run(
+      Review.reviewCommand({
+        scope: opts.scope as string | undefined,
+        json: Boolean(opts.json),
       }),
     ),
   );

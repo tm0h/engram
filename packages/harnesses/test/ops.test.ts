@@ -629,6 +629,8 @@ describe("shared ops / addOp", () => {
   });
 
   it("carries all six lifecycle inputs end-to-end through the store", async () => {
+    // ENG-17 R5: supersedes must resolve to an existing active entry
+    seed(tmp, "0001", { type: "note", title: "Predecessor" });
     const res = await run(
       addOp({
         title: "Recorded with lifecycle",
@@ -842,6 +844,10 @@ describe("shared ops / editOp", () => {
 
   it("lifecycle fields replace, preserve on omission, and clear with null", async () => {
     seedLifecycle();
+    // ENG-17 R1: the seed's dangling supersedes "0000" cannot be re-pointed
+    // to "0002" in one step; clear it first, then establish the new link.
+    const clearedSeed = await run(editOp({ id: "0001", supersedes: null }));
+    expect(clearedSeed.isError).toBe(false);
     const replaced = await run(
       editOp({
         id: "0001",
@@ -970,5 +976,63 @@ describe("shared ops / editOp", () => {
     const text = fs.readFileSync(res.details.path as string, "utf8");
     expect(text).toMatch(/^pinned: true$/m);
     expect(text).toMatch(/^author: New Author$/m);
+  });
+});
+
+/* ------------------- ENG-17: lifecycle-aware delivery ------------------- */
+
+describe("shared ops / inactive filtering (ENG-17 R3)", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = mkHome();
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const seedLifecycleSet = (): void => {
+    const future = new Date(Date.now() + 86_400_000).toISOString();
+    const past = new Date(Date.now() - 86_400_000).toISOString();
+    seed(tmp, "0001", { type: "note", title: "Active alpha" });
+    seed(tmp, "0002", { type: "note", title: "Superseded beta", status: "superseded" });
+    seed(tmp, "0003", { type: "note", title: "Archived gamma", status: "archived" });
+    seed(tmp, "0004", { type: "note", title: "Expired delta", expires: past });
+    seed(tmp, "0005", { type: "note", title: "Future epsilon", expires: future });
+  };
+
+  it("contextDigest excludes inactive entries by default", async () => {
+    seedLifecycleSet();
+    const res = await run(contextDigest({ scope: "project" }));
+    expect(res.isError).toBe(false);
+    expect(res.text).toContain("Active alpha");
+    expect(res.text).toContain("Future epsilon");
+    expect(res.text).not.toContain("Superseded beta");
+    expect(res.text).not.toContain("Archived gamma");
+    expect(res.text).not.toContain("Expired delta");
+    expect(res.details).toMatchObject({ total: 2 });
+  });
+
+  it("searchOp inherits the same default via searchEngrams", async () => {
+    seedLifecycleSet();
+    // "body" matches every seeded entry (they share the default body text)
+    const res = await run(searchOp({ query: "body" }));
+    expect(res.isError).toBe(false);
+    expect(res.text).toContain("Active alpha");
+    expect(res.text).toContain("Future epsilon");
+    expect(res.text).not.toContain("Superseded beta");
+    expect(res.text).not.toContain("Archived gamma");
+    expect(res.text).not.toContain("Expired delta");
+    expect(res.details).toMatchObject({ total: 2 });
   });
 });

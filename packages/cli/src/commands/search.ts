@@ -10,6 +10,8 @@ import { out } from "../io.js";
 export interface SearchOptions {
   readonly scope?: string;
   readonly limit?: number;
+  /** ENG-17 R13: re-include inactive entries (superseded, archived, expired). */
+  readonly all?: boolean;
 }
 
 export const searchCommand = (query: string, opts: SearchOptions) =>
@@ -21,7 +23,11 @@ export const searchCommand = (query: string, opts: SearchOptions) =>
     let any = false;
     for (const scope of scopes) {
       const engrams = yield* store.list(scope);
-      const results = searchEngrams(engrams, query, opts.limit);
+      // ENG-17 R13: --all threads through the core options; the default
+      // already excludes inactive entries inside searchEngrams.
+      const results = searchEngrams(engrams, query, opts.limit, {
+        includeInactive: opts.all === true,
+      });
       if (scopes.length > 1) {
         if (!first) yield* out("");
         yield* out(chalk.bold(scope === "personal" ? "Personal" : "Project"));

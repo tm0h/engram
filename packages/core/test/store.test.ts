@@ -1101,9 +1101,10 @@ describe("EngramStore / lifecycle metadata", () => {
       expect(got.expires).toBe("2027-01-01T00:00:00.000Z");
       expect(got.sourceType).toBe("file");
       expect(got.sourceRef).toBe("docs/spec.md");
-      // the predecessor carries no lifecycle fields
+      // the predecessor carries no lifecycle fields of its own; ENG-17 R1
+      // marks it superseded as part of establishing the link
       const old = yield* store.get("project", pred.id);
-      expect(old.status).toBeUndefined();
+      expect(old.status).toBe("superseded");
       expect(old.supersedes).toBeUndefined();
     }).pipe(Effect.provide(StoreLive)),
   );
@@ -1164,12 +1165,14 @@ describe("EngramStore / lifecycle metadata", () => {
   it.live("update: all six lifecycle fields clear in one update", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
+      // a real predecessor: R5 lineage validation rejects missing targets
+      const pred = yield* store.add("project", input({ title: "Clear predecessor" }));
       const m = yield* store.add(
         "project",
         input({
           title: "Full clear",
           status: "archived",
-          supersedes: "0001",
+          supersedes: pred.id,
           reviewAfter: "2026-06-01T00:00:00.000Z",
           expires: "2027-01-01T00:00:00.000Z",
           sourceType: "url",
@@ -1466,34 +1469,37 @@ describe("EngramStore / supersedes scope resolution", () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it.live("a personal claimant does not satisfy a project supersedes", () => {
-    fs.writeFileSync(
-      path.join(globalEngramsDir(), "0001-personal-note.md"),
-      stringifyFrontmatter("Personal body\n", {
-        id: "0001",
-        title: "Personal note",
-        type: "note",
-        tags: [],
-        scope: "personal",
-        created: "2025-08-15T10:00:00.000Z",
-        updated: "2025-08-15T11:00:00.000Z",
-      }),
-    );
-    return Effect.gen(function* () {
-      const store = yield* EngramStore;
-      const m = yield* store.add(
-        "project",
-        input({ title: "Project referrer", supersedes: "0001" }),
+  it.live(
+    "a personal claimant does not satisfy a project supersedes (hard reject, ENG-17 R5)",
+    () => {
+      fs.writeFileSync(
+        path.join(globalEngramsDir(), "0001-personal-note.md"),
+        stringifyFrontmatter("Personal body\n", {
+          id: "0001",
+          title: "Personal note",
+          type: "note",
+          tags: [],
+          scope: "personal",
+          created: "2025-08-15T10:00:00.000Z",
+          updated: "2025-08-15T11:00:00.000Z",
+        }),
       );
-      void m;
-      const projectScan = yield* store.scan("project");
-      expect(projectScan.diagnostics.map((d) => [d.code, d.severity])).toEqual([
-        ["supersedes_not_found", "warning"],
-      ]);
-      const personalScan = yield* store.scan("personal");
-      expect(personalScan.diagnostics).toEqual([]);
-    }).pipe(Effect.provide(StoreLive));
-  });
+      return Effect.gen(function* () {
+        const store = yield* EngramStore;
+        const e = yield* Effect.flip(
+          store.add("project", input({ title: "Project referrer", supersedes: "0001" })),
+        );
+        expect((e as { _tag: string })._tag).toBe("FrontmatterParseError");
+        expect((e as { message: string }).message).toContain("personal");
+        // the rejection wrote nothing into the project store
+        const projectScan = yield* store.scan("project");
+        expect(projectScan.entries).toEqual([]);
+        expect(projectScan.diagnostics).toEqual([]);
+        const personalScan = yield* store.scan("personal");
+        expect(personalScan.diagnostics).toEqual([]);
+      }).pipe(Effect.provide(StoreLive));
+    },
+  );
 });
 
 /** A store layer whose `readFileString` fails for selected paths; simulates
@@ -1674,5 +1680,679 @@ describe("EngramStore / personal scan", () => {
       expect(scanned.diagnostics.map((d) => d.code)).toEqual(["scope_mismatch"]);
       expect(scanned.entries).toHaveLength(1);
     }).pipe(Effect.provide(StoreLive));
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* ENG-17: supersession side effect, lineage validation, atomicity     */
+/* ------------------------------------------------------------------ */
+
+/** A store layer whose `writeFileString` fails for selected paths (ENG-17
+ * R2 failure injection): simulates an IO failure at any single write step
+ * without relying on permissions or full disks. */
+const failWriteStoreLive = (isBroken: (file: string) => boolean) =>
+  EngramStoreLive.pipe(
+    Layer.provide(
+      Layer.effect(
+        FileSystem,
+        Effect.gen(function* () {
+          const real = yield* FileSystem;
+          return {
+            ...real,
+            writeFileString: (...args: Parameters<typeof real.writeFileString>) => {
+              const p = args[0];
+              if (isBroken(p)) {
+                return Effect.fail(
+                  systemError({
+                    _tag: "Unknown",
+                    module: "FileSystem",
+                    method: "writeFileString",
+                    pathOrDescriptor: p,
+                    syscall: "write",
+                    cause: new Error("simulated write failure"),
+                  }),
+                );
+              }
+              return real.writeFileString(...args);
+            },
+          } satisfies FileSystem;
+        }),
+      ).pipe(Layer.provide(NodeServices.layer)),
+    ),
+    Layer.provide(NodeServices.layer),
+  );
+
+/** A store layer whose `writeFileString` fails for a path on selected calls
+ * (1-based count per path): lets a test fail the FIRST write to one file and
+ * a LATER write to another, e.g. the predecessor marking succeeds, the entry
+ * write fails, and the compensating restore fails too. */
+const failWriteCallsStoreLive = (isBroken: (file: string, call: number) => boolean) => {
+  const calls = new Map<string, number>();
+  return EngramStoreLive.pipe(
+    Layer.provide(
+      Layer.effect(
+        FileSystem,
+        Effect.gen(function* () {
+          const real = yield* FileSystem;
+          return {
+            ...real,
+            writeFileString: (...args: Parameters<typeof real.writeFileString>) => {
+              const p = args[0];
+              const n = (calls.get(p) ?? 0) + 1;
+              calls.set(p, n);
+              if (isBroken(p, n)) {
+                return Effect.fail(
+                  systemError({
+                    _tag: "Unknown",
+                    module: "FileSystem",
+                    method: "writeFileString",
+                    pathOrDescriptor: p,
+                    syscall: "write",
+                    cause: new Error("simulated write failure"),
+                  }),
+                );
+              }
+              return real.writeFileString(...args);
+            },
+          } satisfies FileSystem;
+        }),
+      ).pipe(Layer.provide(NodeServices.layer)),
+    ),
+    Layer.provide(NodeServices.layer),
+  );
+};
+
+/** A store layer with selected failing fs ops (ENG-17 review fixes):
+ * - `writeFileString`: fails before delegating (destination never created);
+ * - `createThenFailWriteFile`: creates the destination file first, then
+ *   fails — simulating a write that got as far as creating its target
+ *   before reporting failure, so compensating removal has real work to do;
+ * - `remove`: fails the removal of selected paths. */
+const failIoStoreLive = (opts: {
+  writeFileString?: (file: string) => boolean;
+  createThenFailWriteFile?: (file: string) => boolean;
+  remove?: (file: string) => boolean;
+}) =>
+  EngramStoreLive.pipe(
+    Layer.provide(
+      Layer.effect(
+        FileSystem,
+        Effect.gen(function* () {
+          const real = yield* FileSystem;
+          return {
+            ...real,
+            writeFileString: (...args: Parameters<typeof real.writeFileString>) => {
+              const p = args[0];
+              if (opts.createThenFailWriteFile?.(p)) {
+                fs.writeFileSync(p, "<partial write>\n");
+                return Effect.fail(
+                  systemError({
+                    _tag: "Unknown",
+                    module: "FileSystem",
+                    method: "writeFileString",
+                    pathOrDescriptor: p,
+                    syscall: "write",
+                    cause: new Error("simulated write failure after creating the destination"),
+                  }),
+                );
+              }
+              if (opts.writeFileString?.(p)) {
+                return Effect.fail(
+                  systemError({
+                    _tag: "Unknown",
+                    module: "FileSystem",
+                    method: "writeFileString",
+                    pathOrDescriptor: p,
+                    syscall: "write",
+                    cause: new Error("simulated write failure"),
+                  }),
+                );
+              }
+              return real.writeFileString(...args);
+            },
+            remove: (...args: Parameters<typeof real.remove>) => {
+              const p = args[0];
+              if (opts.remove?.(p)) {
+                return Effect.fail(
+                  systemError({
+                    _tag: "Unknown",
+                    module: "FileSystem",
+                    method: "remove",
+                    pathOrDescriptor: p,
+                    syscall: "unlink",
+                    cause: new Error("simulated removal failure"),
+                  }),
+                );
+              }
+              return real.remove(...args);
+            },
+          } satisfies FileSystem;
+        }),
+      ).pipe(Layer.provide(NodeServices.layer)),
+    ),
+    Layer.provide(NodeServices.layer),
+  );
+
+/** Byte snapshot of every file in a directory, for byte-identical rejection
+ * and rollback assertions. */
+const snapshot = (dir: string): string =>
+  fs
+    .readdirSync(dir)
+    .sort()
+    .map((f) => f + "\n" + fs.readFileSync(path.join(dir, f), "utf8"))
+    .join("\n---\n");
+
+const expectFrontmatterParseError = (e: unknown): void => {
+  expect((e as { _tag: string })._tag).toBe("FrontmatterParseError");
+};
+
+describe("EngramStore / supersession side effect (ENG-17 R1)", () => {
+  let orig = "";
+  let tmp = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    tmp = mkProject();
+    process.chdir(tmp);
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it.live("add with supersedes marks the predecessor superseded in the same operation", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const a = yield* store.add("project", input({ title: "Old decision" }));
+      yield* Effect.sleep("10 millis");
+      const b = yield* store.add("project", input({ title: "New decision", supersedes: a.id }));
+
+      expect(b.supersedes).toBe(a.id);
+      expect(b.status).toBeUndefined();
+      const aAfter = yield* store.get("project", a.id);
+      expect(aAfter.status).toBe("superseded");
+      expect(fs.existsSync(a.path)).toBe(true);
+      expect(fs.existsSync(b.path)).toBe(true);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("the predecessor's updated bumps to the operation time (documented convention)", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const a = yield* store.add("project", input({ title: "Old decision" }));
+      yield* Effect.sleep("10 millis");
+      yield* store.add("project", input({ title: "New decision", supersedes: a.id }));
+      const aAfter = yield* store.get("project", a.id);
+      expect(aAfter.updated > a.updated).toBe(true);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("add without supersedes leaves every other entry untouched", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const a = yield* store.add("project", input({ title: "Old decision" }));
+      yield* store.add("project", input({ title: "Unrelated note" }));
+      const aAfter = yield* store.get("project", a.id);
+      expect(aAfter.status).toBeUndefined();
+      expect(aAfter.updated).toBe(a.updated);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("clearing supersedes does not reactivate the predecessor", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const a = yield* store.add("project", input({ title: "Old decision" }));
+      const b = yield* store.add("project", input({ title: "New decision", supersedes: a.id }));
+      yield* store.update("project", b.id, { supersedes: null });
+      const bAfter = yield* store.get("project", b.id);
+      const aAfter = yield* store.get("project", a.id);
+      expect(bAfter.supersedes).toBeUndefined();
+      expect(aAfter.status).toBe("superseded");
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("get by id stays status-blind after supersession", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const a = yield* store.add("project", input({ title: "Old decision" }));
+      yield* store.add("project", input({ title: "New decision", supersedes: a.id }));
+      const got = yield* store.get("project", a.id);
+      expect(got.id).toBe(a.id);
+      expect(got.body).toBe("libfoo had an engram leak under load");
+    }).pipe(Effect.provide(StoreLive)),
+  );
+});
+
+describe("EngramStore / supersedes update transitions (ENG-17 R1)", () => {
+  let orig = "";
+  let tmp = "";
+  const engramsDir = (): string => projectEngramsDir(tmp);
+  beforeEach(() => {
+    orig = process.cwd();
+    tmp = mkProject();
+    process.chdir(tmp);
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it.live("unset -> X establishes the link and marks the target", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const a = yield* store.add("project", input({ title: "Target" }));
+      const b = yield* store.add("project", input({ title: "Editor" }));
+      const bAfter = yield* store.update("project", b.id, { supersedes: a.id });
+      expect(bAfter.supersedes).toBe(a.id);
+      const aAfter = yield* store.get("project", a.id);
+      expect(aAfter.status).toBe("superseded");
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("X -> X is an idempotent no-op (no self-rejection, other patches apply)", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const a = yield* store.add("project", input({ title: "Target" }));
+      const b = yield* store.add("project", input({ title: "Editor", supersedes: a.id }));
+      const bAfter = yield* store.update("project", b.id, {
+        supersedes: a.id,
+        body: "patched body",
+      });
+      expect(bAfter.supersedes).toBe(a.id);
+      expect(bAfter.body).toBe("patched body");
+      const aAfter = yield* store.get("project", a.id);
+      expect(aAfter.status).toBe("superseded");
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("unset -> null is a no-op", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const b = yield* store.add("project", input({ title: "Plain" }));
+      const bAfter = yield* store.update("project", b.id, { supersedes: null });
+      expect(bAfter.supersedes).toBeUndefined();
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("X -> Y (repoint) is rejected with byte-identical files", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const a = yield* store.add("project", input({ title: "First target" }));
+      const b = yield* store.add("project", input({ title: "Editor", supersedes: a.id }));
+      const c = yield* store.add("project", input({ title: "Second target" }));
+      const before = snapshot(engramsDir());
+      const e = yield* Effect.flip(store.update("project", b.id, { supersedes: c.id }));
+      expectFrontmatterParseError(e);
+      expect((e as { message: string }).message).toContain("clear");
+      expect(snapshot(engramsDir())).toBe(before);
+      expect((yield* store.get("project", b.id)).supersedes).toBe(a.id);
+      expect((yield* store.get("project", c.id)).status).toBeUndefined();
+    }).pipe(Effect.provide(StoreLive)),
+  );
+});
+
+describe("EngramStore / lineage validation (ENG-17 R5)", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  const engramsDir = (): string => projectEngramsDir(tmp);
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "amem-eng17-home-"));
+    process.chdir(tmp);
+    process.env.HOME = home;
+    fs.mkdirSync(globalEngramsDir(), { recursive: true });
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const failMessage = (e: unknown): string => (e as { message: string }).message;
+
+  it.live("add: missing target rejects before any file is written", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const before = snapshot(engramsDir());
+      const e = yield* Effect.flip(
+        store.add("project", input({ title: "Orphan", supersedes: "zzzzzzzzzzzzzzzzzzzzzzzzzz" })),
+      );
+      expectFrontmatterParseError(e);
+      expect(failMessage(e)).toContain("zzzzzzzzzzzzzzzzzzzzzzzzzz");
+      expect(snapshot(engramsDir())).toBe(before);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("update: missing target rejects with byte-identical files", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const b = yield* store.add("project", input({ title: "Editor" }));
+      const before = snapshot(engramsDir());
+      const e = yield* Effect.flip(
+        store.update("project", b.id, { supersedes: "zzzzzzzzzzzzzzzzzzzzzzzzzz" }),
+      );
+      expectFrontmatterParseError(e);
+      expect(snapshot(engramsDir())).toBe(before);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("update: self-reference rejects", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const b = yield* store.add("project", input({ title: "Self ref" }));
+      const before = snapshot(engramsDir());
+      const e = yield* Effect.flip(store.update("project", b.id, { supersedes: b.id }));
+      expectFrontmatterParseError(e);
+      expect(failMessage(e)).toContain("itself");
+      expect(snapshot(engramsDir())).toBe(before);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("add: an already-superseded target rejects", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const a = yield* store.add("project", input({ title: "Target" }));
+      yield* store.add("project", input({ title: "First successor", supersedes: a.id }));
+      const before = snapshot(engramsDir());
+      const e = yield* Effect.flip(
+        store.add("project", input({ title: "Second successor", supersedes: a.id })),
+      );
+      expectFrontmatterParseError(e);
+      expect(failMessage(e)).toContain("already superseded");
+      expect(snapshot(engramsDir())).toBe(before);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("add: an archived target rejects", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const a = yield* store.add("project", input({ title: "Target" }));
+      yield* store.update("project", a.id, { status: "archived" });
+      const before = snapshot(engramsDir());
+      const e = yield* Effect.flip(
+        store.add("project", input({ title: "Successor", supersedes: a.id })),
+      );
+      expectFrontmatterParseError(e);
+      expect(failMessage(e)).toContain("archived");
+      expect(snapshot(engramsDir())).toBe(before);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("add: a duplicate-claimed target rejects", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      fs.writeFileSync(
+        path.join(engramsDir(), "0001-first.md"),
+        scanFm({ id: "0001", title: "First claim" }),
+      );
+      fs.writeFileSync(
+        path.join(engramsDir(), "0001-second.md"),
+        scanFm({ id: "0001", title: "Second claim" }),
+      );
+      const before = snapshot(engramsDir());
+      const e = yield* Effect.flip(
+        store.add("project", input({ title: "Successor", supersedes: "0001" })),
+      );
+      expectFrontmatterParseError(e);
+      expect(failMessage(e)).toContain("multiple files");
+      expect(snapshot(engramsDir())).toBe(before);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("add: an unreadable/invalid target rejects with the target's diagnosis", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      fs.writeFileSync(
+        path.join(engramsDir(), "0001-broken.md"),
+        "---\ntitle: [unclosed\n---\nBody\n",
+      );
+      const before = snapshot(engramsDir());
+      const e = yield* Effect.flip(
+        store.add("project", input({ title: "Successor", supersedes: "0001" })),
+      );
+      expectFrontmatterParseError(e);
+      expect(failMessage(e)).toContain("not a valid readable entry");
+      expect(snapshot(engramsDir())).toBe(before);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("add: a cross-scope target rejects", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      fs.writeFileSync(
+        path.join(globalEngramsDir(), "0001-personal-note.md"),
+        scanFm({ id: "0001", title: "Personal note", scope: "personal" }),
+      );
+      const before = snapshot(engramsDir());
+      const e = yield* Effect.flip(
+        store.add("project", input({ title: "Successor", supersedes: "0001" })),
+      );
+      expectFrontmatterParseError(e);
+      expect(failMessage(e)).toContain("personal");
+      expect(snapshot(engramsDir())).toBe(before);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("add: a prefix id is not an exact target and rejects", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const a = yield* store.add("project", input({ title: "Target" }));
+      const before = snapshot(engramsDir());
+      const e = yield* Effect.flip(
+        store.add("project", input({ title: "Successor", supersedes: a.id.slice(0, 8) })),
+      );
+      expectFrontmatterParseError(e);
+      expect(snapshot(engramsDir())).toBe(before);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("update: closing a transitive cycle rejects with byte-identical files", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const a = yield* store.add("project", input({ title: "A" }));
+      const b = yield* store.add("project", input({ title: "B" }));
+      const c = yield* store.add("project", input({ title: "C" }));
+      yield* store.update("project", c.id, { supersedes: b.id }); // C -> B (B superseded)
+      yield* store.update("project", a.id, { supersedes: c.id }); // A -> C (C superseded)
+      // Editing B (superseded entries stay editable) to supersede A would
+      // close the cycle B -> A -> C -> B.
+      const before = snapshot(engramsDir());
+      const e = yield* Effect.flip(store.update("project", b.id, { supersedes: a.id }));
+      expectFrontmatterParseError(e);
+      expect(failMessage(e)).toContain("cycle");
+      expect(snapshot(engramsDir())).toBe(before);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+});
+
+describe("EngramStore / supersession atomicity (ENG-17 R2)", () => {
+  let orig = "";
+  let tmp = "";
+  const engramsDir = (): string => projectEngramsDir(tmp);
+  const seedEntry = (id: string, title: string): string => {
+    const file = path.join(engramsDir(), `${id}-${slugify(title)}.md`);
+    fs.writeFileSync(file, scanFm({ id, title }));
+    return file;
+  };
+  beforeEach(() => {
+    orig = process.cwd();
+    tmp = mkProject();
+    process.chdir(tmp);
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it.live("add: total entry-write failure writes nothing and leaves the target untouched", () => {
+    seedEntry("0001", "Target");
+    const before = snapshot(engramsDir());
+    // flakyWxStoreLive(6): all 6 attempts of the exclusive entry write fail.
+    // The layer must wrap the whole test body: an inner Effect.provide does
+    // not override the outer service in Effect v4.
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const e = yield* Effect.flip(
+        store.add("project", input({ title: "Successor", supersedes: "0001" })),
+      );
+      expect((e as { _tag: string })._tag).toBe("PlatformError");
+      expect(snapshot(engramsDir())).toBe(before);
+    }).pipe(Effect.provide(flakyWxStoreLive(6).layer));
+  });
+
+  it.live("add: predecessor-mark failure rolls the new entry back (compensating remove)", () => {
+    seedEntry("0001", "Target");
+    const before = snapshot(engramsDir());
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const e = yield* Effect.flip(
+        store.add("project", input({ title: "Successor", supersedes: "0001" })),
+      );
+      expect((e as { _tag: string })._tag).toBe("PlatformError");
+      // every involved file byte-identical: the new file is gone, the target unchanged
+      expect(snapshot(engramsDir())).toBe(before);
+    }).pipe(Effect.provide(failWriteStoreLive((p) => p.includes("0001-"))));
+  });
+
+  it.live("update establish: predecessor-mark failure leaves both files untouched", () => {
+    seedEntry("0001", "Target");
+    seedEntry("0002", "Editor");
+    const before = snapshot(engramsDir());
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const e = yield* Effect.flip(store.update("project", "0002", { supersedes: "0001" }));
+      expect((e as { _tag: string })._tag).toBe("PlatformError");
+      expect(snapshot(engramsDir())).toBe(before);
+    }).pipe(Effect.provide(failWriteStoreLive((p) => p.includes("0001-"))));
+  });
+
+  it.live("update establish: entry-write failure after marking restores the target bytes", () => {
+    seedEntry("0001", "Target");
+    seedEntry("0002", "Editor");
+    const before = snapshot(engramsDir());
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const e = yield* Effect.flip(
+        store.update("project", "0002", { supersedes: "0001", body: "new body" }),
+      );
+      expect((e as { _tag: string })._tag).toBe("PlatformError");
+      // the compensation rewrites 0001's original bytes, so the whole
+      // directory is byte-identical to the pre-operation state
+      expect(snapshot(engramsDir())).toBe(before);
+    }).pipe(
+      // only the entry write itself fails; the later same-path restore of the
+      // pre-operation bytes must go through (see rollbackStep in store.ts)
+      Effect.provide(failWriteCallsStoreLive((p, n) => p.includes("0002-editor.md") && n === 1)),
+    );
+  });
+
+  it.live(
+    "update establish + retitle: failure removing the original file rolls the whole operation back",
+    () => {
+      seedEntry("0001", "Target");
+      seedEntry("0002", "Editor");
+      const before = snapshot(engramsDir());
+      return Effect.gen(function* () {
+        const store = yield* EngramStore;
+        const e = yield* Effect.flip(
+          store.update("project", "0002", { supersedes: "0001", title: "Renamed editor" }),
+        );
+        expect((e as { _tag: string })._tag).toBe("PlatformError");
+        // no half-applied state: predecessor unmarked, renamed successor
+        // gone, original successor still on disk — byte-identical directory
+        expect(snapshot(engramsDir())).toBe(before);
+      }).pipe(Effect.provide(failIoStoreLive({ remove: (p) => p.includes("0002-editor.md") })));
+    },
+  );
+
+  it.live(
+    "update establish + retitle: a destination created before a failed write is cleaned up byte-identically",
+    () => {
+      seedEntry("0001", "Target");
+      seedEntry("0002", "Editor");
+      const before = snapshot(engramsDir());
+      return Effect.gen(function* () {
+        const store = yield* EngramStore;
+        const e = yield* Effect.flip(
+          store.update("project", "0002", { supersedes: "0001", title: "Renamed editor" }),
+        );
+        expect((e as { _tag: string })._tag).toBe("PlatformError");
+        // the write created the destination before reporting failure; the
+        // compensating remove must clean it up anyway
+        expect(snapshot(engramsDir())).toBe(before);
+      }).pipe(
+        Effect.provide(
+          failIoStoreLive({ createThenFailWriteFile: (p) => p.includes("0002-renamed-editor.md") }),
+        ),
+      );
+    },
+  );
+
+  it.live("add: failed cleanup after a failed mark reports an incomplete rollback", () => {
+    seedEntry("0001", "Target");
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const e = yield* Effect.flip(
+        store.add("project", input({ title: "Successor", supersedes: "0001" })),
+      );
+      expect((e as { _tag: string })._tag).toBe("FrontmatterParseError");
+      const message = (e as { message: string }).message;
+      expect(message).toContain("incomplete rollback");
+      expect(message).toContain("Primary failure:");
+      expect(message).toContain("Rollback failure:");
+      // exact resulting state: the predecessor is byte-identical, and the new
+      // entry file could NOT be removed, so it is still on disk
+      expect(fs.readFileSync(path.join(engramsDir(), "0001-target.md"), "utf8")).toBe(
+        scanFm({ id: "0001", title: "Target" }),
+      );
+      const files = fs.readdirSync(engramsDir());
+      expect(files).toHaveLength(2);
+      const leftover = files.find((f) => f.endsWith("-successor.md"));
+      expect(leftover).toBeDefined();
+      const leftoverRaw = fs.readFileSync(path.join(engramsDir(), leftover!), "utf8");
+      expect(leftoverRaw).toContain('supersedes: "0001"');
+      expect(leftoverRaw).not.toContain("status:");
+    }).pipe(
+      Effect.provide(
+        failIoStoreLive({
+          writeFileString: (p) => p.includes("0001-target.md"),
+          remove: (p) => p.endsWith("-successor.md"),
+        }),
+      ),
+    );
+  });
+
+  it.live("update establish: failed predecessor restoration reports an incomplete rollback", () => {
+    seedEntry("0001", "Target");
+    seedEntry("0002", "Editor");
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const e = yield* Effect.flip(
+        store.update("project", "0002", { supersedes: "0001", body: "new body" }),
+      );
+      expect((e as { _tag: string })._tag).toBe("FrontmatterParseError");
+      const message = (e as { message: string }).message;
+      expect(message).toContain("incomplete rollback");
+      expect(message).toContain("Primary failure:");
+      expect(message).toContain("Rollback failure:");
+      // exact resulting state: the predecessor stays marked (half-applied);
+      // the editor file is byte-identical to before
+      const aRaw = fs.readFileSync(path.join(engramsDir(), "0001-target.md"), "utf8");
+      expect(aRaw).toContain("status: superseded");
+      expect(fs.readFileSync(path.join(engramsDir(), "0002-editor.md"), "utf8")).toBe(
+        scanFm({ id: "0002", title: "Editor" }),
+      );
+    }).pipe(
+      Effect.provide(
+        failWriteCallsStoreLive(
+          (p, n) => p.includes("0002-editor.md") || (p.includes("0001-target.md") && n >= 2),
+        ),
+      ),
+    );
   });
 });
