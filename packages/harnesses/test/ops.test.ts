@@ -8,7 +8,9 @@ import { EngramStore, ConfigRepo } from "@engram/core";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
 import type { EngramInput } from "@engram/core";
-import { contextDigest, searchOp, showOp, addOp, initOp } from "../src/shared/ops.js";
+import type { OpResult } from "../src/shared/types.js";
+import { contextDigest, searchOp, showOp, addOp, editOp, initOp } from "../src/shared/ops.js";
+import type { EditOptions } from "../src/shared/types.js";
 
 /* ------------------------------ helpers ------------------------------ */
 
@@ -749,5 +751,224 @@ describe("shared ops / initOp", () => {
     } finally {
       fs.rmSync(ready, { recursive: true, force: true });
     }
+  });
+});
+
+/* ------------------------------- edit ------------------------------- */
+
+/** Just the serialized lifecycle lines of one engram file (order kept). */
+const lifecycleLines = (file: string): string =>
+  fs
+    .readFileSync(file, "utf8")
+    .split("\n")
+    .filter((l) => /^(status|supersedes|reviewAfter|expires|sourceType|sourceRef):/.test(l))
+    .join("\n");
+
+describe("shared ops / editOp", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = mkHome();
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  /** Entry with every lifecycle field set, plus a plain sibling for supersedes. */
+  const seedLifecycle = (id = "0001"): void => {
+    seed(tmp, "0002", { title: "Predecessor" });
+    seed(tmp, id, {
+      status: "active",
+      supersedes: "0000",
+      reviewAfter: "2027-01-01T00:00:00.000Z",
+      expires: "2027-06-01T00:00:00.000Z",
+      sourceType: "file",
+      sourceRef: "docs/a.md",
+    });
+  };
+
+  /** Run a doomed editOp and prove the target file kept its exact bytes. */
+  const expectByteIdenticalRejection = async (
+    file: string,
+    opts: EditOptions,
+  ): Promise<OpResult> => {
+    const before = fs.readFileSync(file, "utf8");
+    const res = await run(editOp(opts));
+    expect(res.isError).toBe(true);
+    expect(typeof res.details.error).toBe("string");
+    expect(fs.readFileSync(file, "utf8")).toBe(before);
+    return res;
+  };
+
+  it("replaces title, type, tags, and body; normalizes tags", async () => {
+    const file = seed(tmp, "0001", { type: "note", tags: ["old"], body: "Old body" });
+    const res = await run(
+      editOp({
+        id: "0001",
+        title: "  Renamed entry  ",
+        type: "decision",
+        tags: [" Auth ", "auth", "DEPS", ""],
+        body: "  Fresh body  ",
+      }),
+    );
+    expect(res.isError).toBe(false);
+    expect(res.text).not.toMatch(ANSI);
+    expect(res.details).toMatchObject({ id: "0001", scope: "project", type: "decision" });
+    expect(res.text).toBe(
+      `Updated [0001] Renamed entry\n  ${res.details.path as string}\n  scope: project`,
+    );
+    // title edit renames the file and removes the old one
+    expect(fs.existsSync(res.details.path as string)).toBe(true);
+    expect(fs.existsSync(file)).toBe(false);
+    const text = fs.readFileSync(res.details.path as string, "utf8");
+    expect(text).toContain("Renamed entry");
+    expect(text).toMatch(/^type: decision$/m);
+    expect(text).toContain("Fresh body");
+    expect(text).toContain("auth");
+    expect(text).toContain("deps");
+    expect(text).not.toContain("Old body");
+    expect(text).not.toContain("old");
+  });
+
+  it("lifecycle fields replace, preserve on omission, and clear with null", async () => {
+    seedLifecycle();
+    const replaced = await run(
+      editOp({
+        id: "0001",
+        status: "superseded",
+        supersedes: "0002",
+        reviewAfter: "2028-01-01T00:00:00.000Z",
+        expires: "2028-06-01T00:00:00.000Z",
+        sourceType: "url",
+        sourceRef: "https://example.com/a",
+      }),
+    );
+    expect(replaced.isError).toBe(false);
+    const after = fs.readFileSync(replaced.details.path as string, "utf8");
+    expect(after).toMatch(/^status: superseded$/m);
+    expect(after).toMatch(/^supersedes: "0002"$/m);
+    expect(after).toMatch(/^reviewAfter: 2028-01-01T00:00:00\.000Z$/m);
+    expect(after).toMatch(/^expires: 2028-06-01T00:00:00\.000Z$/m);
+    expect(after).toMatch(/^sourceType: url$/m);
+    expect(after).toMatch(/^sourceRef: https:\/\/example\.com\/a$/m);
+
+    // Omission preserves: an edit without lifecycle fields leaves every
+    // serialized lifecycle line byte-for-byte identical.
+    const before = lifecycleLines(replaced.details.path as string);
+    expect(before.split("\n")).toHaveLength(6);
+    const preserved = await run(editOp({ id: "0001", title: "Retitled with lifecycle" }));
+    expect(preserved.isError).toBe(false);
+    expect(lifecycleLines(preserved.details.path as string)).toBe(before);
+
+    // null clears: the six YAML keys disappear entirely.
+    const cleared = await run(
+      editOp({
+        id: "0001",
+        status: null,
+        supersedes: null,
+        reviewAfter: null,
+        expires: null,
+        sourceType: null,
+        sourceRef: null,
+      }),
+    );
+    expect(cleared.isError).toBe(false);
+    expect(lifecycleLines(cleared.details.path as string)).toBe("");
+  });
+
+  it("scope: explicit wins; default is project inside a project, personal outside", async () => {
+    seed(tmp, "0001", {});
+    seedPersonal(home, "0007", {});
+
+    const explicitProject = await run(editOp({ id: "0001", scope: "project", body: "p" }));
+    expect(explicitProject.details).toMatchObject({ scope: "project" });
+    const explicitPersonal = await run(editOp({ id: "0007", scope: "personal", body: "p" }));
+    expect(explicitPersonal.details).toMatchObject({ scope: "personal" });
+    const defaultProject = await run(editOp({ id: "0001", body: "p" }));
+    expect(defaultProject.details).toMatchObject({ scope: "project" });
+
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "engram-edit-out-"));
+    process.chdir(outside);
+    try {
+      const defaultPersonal = await run(editOp({ id: "0007", body: "h" }));
+      expect(defaultPersonal.details).toMatchObject({ scope: "personal" });
+      const noProject = await run(editOp({ id: "0007", scope: "project", body: "h" }));
+      expect(noProject.isError).toBe(true);
+      expect(noProject.details.error).toContain("No .engram/ project found");
+      expect(noProject.details.error).toContain("engram init");
+    } finally {
+      process.chdir(tmp);
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves unique prefixes; reports not-found and ambiguous ids", async () => {
+    seed(tmp, "0001", {});
+    seed(tmp, "0002", {});
+    seed(tmp, "0003", {});
+    seed(tmp, "aaaaaaaaaaaaaaaaaaaaaaaa01", {});
+
+    const prefix = await run(editOp({ id: "aaaaaaaaaaaaaaaaaaaaaaaa", body: "x" }));
+    expect(prefix.isError).toBe(false);
+    expect(prefix.details).toMatchObject({ id: "aaaaaaaaaaaaaaaaaaaaaaaa01" });
+
+    const notFound = await run(editOp({ id: "9999", body: "x" }));
+    expect(notFound.isError).toBe(true);
+    expect(notFound.details.error).toContain("9999");
+
+    const ambiguous = await run(editOp({ id: "000", body: "x" }));
+    expect(ambiguous.isError).toBe(true);
+    expect(ambiguous.details.error).toMatch(/ambiguous/i);
+  });
+
+  it("op-level rejections leave the file byte-identical", async () => {
+    seedLifecycle();
+    const target = path.join(
+      projectEngramsDir(tmp),
+      fs.readdirSync(projectEngramsDir(tmp)).find((f) => f.startsWith("0001"))!,
+    );
+
+    await expectByteIdenticalRejection(target, {
+      id: "0001",
+      title: "   ",
+    });
+    await expectByteIdenticalRejection(target, { id: "0001", type: "bogus" as never });
+    await expectByteIdenticalRejection(target, { id: "0001", status: "bogus" as never });
+    await expectByteIdenticalRejection(target, { id: "0001", sourceType: "website" as never });
+  });
+
+  it("store-boundary rejections leave the file byte-identical", async () => {
+    seedLifecycle();
+    const target = path.join(
+      projectEngramsDir(tmp),
+      fs.readdirSync(projectEngramsDir(tmp)).find((f) => f.startsWith("0001"))!,
+    );
+
+    await expectByteIdenticalRejection(target, {
+      id: "0001",
+      reviewAfter: "2026-01-01",
+    });
+    await expectByteIdenticalRejection(target, { id: "0001", supersedes: "nope" });
+    await expectByteIdenticalRejection(target, { id: "0001", supersedes: "0001" });
+    await expectByteIdenticalRejection(target, { id: "0001", sourceRef: "   " });
+  });
+
+  it("pinned and author replace without touching unrelated fields", async () => {
+    seed(tmp, "0001", { author: "Tester" });
+    const res = await run(editOp({ id: "0001", pinned: true, author: "New Author" }));
+    expect(res.isError).toBe(false);
+    const text = fs.readFileSync(res.details.path as string, "utf8");
+    expect(text).toMatch(/^pinned: true$/m);
+    expect(text).toMatch(/^author: New Author$/m);
   });
 });

@@ -66,6 +66,31 @@ export interface AddOptions {
   readonly sourceRef?: string;
 }
 
+/** Edit an existing engram (see EngramPatch for the exact contract).
+ *
+ * Ordinary fields (title, type, tags, body, pinned, author): omitted means
+ * unchanged. The six lifecycle fields are three-state: omitted/undefined
+ * preserves, `null` clears (the YAML key disappears), a concrete value
+ * replaces. Only the closed enums (type, status, sourceType) are checked
+ * here; timestamp, id, and sourceRef semantics stay at the store write
+ * boundary. */
+export interface EditOptions {
+  readonly id: string;
+  readonly scope?: Scope;
+  readonly title?: string;
+  readonly type?: EngramType;
+  readonly tags?: ReadonlyArray<string>;
+  readonly body?: string;
+  readonly pinned?: boolean;
+  readonly author?: string;
+  readonly status?: Status | null;
+  readonly supersedes?: string | null;
+  readonly reviewAfter?: string | null;
+  readonly expires?: string | null;
+  readonly sourceType?: SourceType | null;
+  readonly sourceRef?: string | null;
+}
+
 export interface InitOptions {
   readonly tracked: boolean;
 }

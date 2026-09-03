@@ -4,7 +4,7 @@
 export const PERSONAL_ONLY_NOTE = "No project engram here - personal scope only.";
 
 /** Why-style hints for a missing project root, per operation. */
-export function projectUninitialized(kind: "read" | "add"): string {
+export function projectUninitialized(kind: "read" | "add" | "edit"): string {
   if (kind === "add") {
     return (
       "No .engram/ project found in this directory.\n" +
