@@ -24,8 +24,8 @@
  */
 import { Result } from "effect";
 import yaml from "js-yaml";
-import { ENGRAM_TYPES } from "./domain.js";
-import type { EngramType, Frontmatter, Scope } from "./domain.js";
+import { ENGRAM_STATUSES, ENGRAM_TYPES, SOURCE_TYPES } from "./domain.js";
+import type { EngramType, Frontmatter, Scope, SourceType, Status } from "./domain.js";
 import { isValidId, parseTimestamp } from "./util.js";
 
 export interface ParsedFrontmatter {
@@ -106,7 +106,16 @@ export type EntryIssueCode =
   | "title_invalid"
   | "created_invalid"
   | "updated_invalid"
-  | "updated_before_created";
+  | "updated_before_created"
+  /* ENG-13 lifecycle metadata; all entry-preventing except
+   * updated_before_created (unchanged). */
+  | "status_invalid"
+  | "supersedes_invalid"
+  | "self_supersession"
+  | "review_after_invalid"
+  | "expires_invalid"
+  | "source_type_invalid"
+  | "source_ref_invalid";
 
 /** One entry defect without file/scope context (added by the store). */
 export interface EntryIssue {
@@ -116,7 +125,8 @@ export interface EntryIssue {
 }
 
 /** Safely decoded fragments, kept even when the entry as a whole is invalid,
- * for cross-file checks (duplicate ids, filename consistency, scope). */
+ * for cross-file checks (duplicate ids, filename consistency, scope,
+ * dangling-supersedes warnings). */
 export interface PartialFrontmatter {
   /** the id when it decoded as a string, even when malformed */
   readonly id: string | undefined;
@@ -124,6 +134,9 @@ export interface PartialFrontmatter {
   readonly title: string | undefined;
   /** the scope when it is a valid scope literal */
   readonly scope: Scope | undefined;
+  /** the supersedes id when it decoded as a valid id, even when another
+   * field makes the entry invalid */
+  readonly supersedes: string | undefined;
 }
 
 export interface ValidatedEntry {
@@ -174,13 +187,28 @@ const fieldTypeIssue = (name: string, expected: string, got: unknown): EntryIssu
   hint: FIELD_TYPE_HINTS[name] ?? `Fix or remove the "${name}" field.`,
 });
 
-const timestampIssue = (name: "created" | "updated", value: unknown): EntryIssue => ({
-  code: name === "created" ? "created_invalid" : "updated_invalid",
+const timestampIssue = (
+  name: "created" | "updated" | "reviewAfter" | "expires",
+  value: unknown,
+): EntryIssue => ({
+  code:
+    name === "created"
+      ? "created_invalid"
+      : name === "updated"
+        ? "updated_invalid"
+        : name === "reviewAfter"
+          ? "review_after_invalid"
+          : "expires_invalid",
   message: `"${name}" is not an ISO 8601 timestamp with zone: ${quote(value)}`,
-  hint: `Use the UTC form engram writes, e.g. \`${name}: 2025-08-15T10:00:00.000Z\`.`,
+  hint: `Use the UTC form engram writes, e.g. \`${name}: 2026-01-01T00:00:00.000Z\`.`,
 });
 
-const NO_PARTIAL: PartialFrontmatter = { id: undefined, title: undefined, scope: undefined };
+const NO_PARTIAL: PartialFrontmatter = {
+  id: undefined,
+  title: undefined,
+  scope: undefined,
+  supersedes: undefined,
+};
 
 /**
  * Validate one raw entry file: syntax, required fields, field semantics, and
@@ -327,6 +355,78 @@ export const validateEntry = (raw: string): ValidatedEntry => {
     issues.push(fieldTypeIssue("pinned", "true or false", pinned));
   }
 
+  /* ENG-13 lifecycle metadata. All defects here are entry-preventing: a
+   * value that fails its contract must not silently become an Engram. */
+  const status = field("status");
+  if (status !== undefined && !ENGRAM_STATUSES.includes(status as Status)) {
+    issues.push({
+      code: "status_invalid",
+      message: `unknown status ${quote(status)}`,
+      hint: `Use one of: ${ENGRAM_STATUSES.join(", ")}.`,
+    });
+  }
+
+  const supersedes = field("supersedes");
+  let partialSupersedes: string | undefined;
+  if (supersedes !== undefined) {
+    if (typeof supersedes === "string" && isValidId(supersedes)) {
+      partialSupersedes = supersedes;
+      if (typeof id === "string" && supersedes === id) {
+        issues.push({
+          code: "self_supersession",
+          message: `supersedes ${quote(supersedes)} points at this entry itself`,
+          hint: 'Point "supersedes" at the older entry this one replaces.',
+        });
+      }
+    } else {
+      issues.push({
+        code: "supersedes_invalid",
+        message: `supersedes ${quote(supersedes)} is not a valid engram id`,
+        hint: "Ids are four digits (legacy, e.g. 0001) or 26 lowercase base32 characters, as written by `engram add`.",
+      });
+    }
+  }
+
+  const reviewAfter = field("reviewAfter");
+  if (reviewAfter !== undefined) {
+    if (typeof reviewAfter === "string") {
+      if (parseTimestamp(reviewAfter) === undefined) {
+        issues.push(timestampIssue("reviewAfter", reviewAfter));
+      }
+    } else {
+      issues.push(timestampIssue("reviewAfter", reviewAfter));
+    }
+  }
+
+  const expires = field("expires");
+  if (expires !== undefined) {
+    if (typeof expires === "string") {
+      if (parseTimestamp(expires) === undefined) {
+        issues.push(timestampIssue("expires", expires));
+      }
+    } else {
+      issues.push(timestampIssue("expires", expires));
+    }
+  }
+
+  const sourceType = field("sourceType");
+  if (sourceType !== undefined && !SOURCE_TYPES.includes(sourceType as SourceType)) {
+    issues.push({
+      code: "source_type_invalid",
+      message: `unknown source type ${quote(sourceType)}`,
+      hint: `Use one of: ${SOURCE_TYPES.join(", ")}.`,
+    });
+  }
+
+  const sourceRef = field("sourceRef");
+  if (sourceRef !== undefined && (typeof sourceRef !== "string" || sourceRef.trim() === "")) {
+    issues.push({
+      code: "source_ref_invalid",
+      message: `"sourceRef" is empty`,
+      hint: 'Set "sourceRef" to a non-empty string, or remove the line.',
+    });
+  }
+
   const created = field("created");
   let createdMs: number | undefined;
   if (created !== undefined) {
@@ -373,12 +473,23 @@ export const validateEntry = (raw: string): ValidatedEntry => {
         updated: updated as string,
         author: author as string | undefined,
         pinned: pinned as boolean | undefined,
+        status: status as Status | undefined,
+        supersedes: supersedes as string | undefined,
+        reviewAfter: reviewAfter as string | undefined,
+        expires: expires as string | undefined,
+        sourceType: sourceType as SourceType | undefined,
+        sourceRef: sourceRef as string | undefined,
       };
 
   return {
     frontmatter,
     content: block.content,
     issues,
-    partial: { id: partialId, title: partialTitle, scope: partialScope },
+    partial: {
+      id: partialId,
+      title: partialTitle,
+      scope: partialScope,
+      supersedes: partialSupersedes,
+    },
   };
 };

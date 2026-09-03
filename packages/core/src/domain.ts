@@ -27,6 +27,36 @@ export const ENGRAM_TYPES: ReadonlyArray<EngramType> = [
 export const ScopeSchema = Schema.Literals(["personal", "project"]);
 export type Scope = Schema.Schema.Type<typeof ScopeSchema>;
 
+/** Lifecycle status of an entry. Absence is not serialized (old files have
+ * no `status` key); consumers may treat absence as `active` when they need
+ * an effective status. `expired` is deliberately not a status: expiry is
+ * time-derived from `expires`. */
+export const StatusSchema = Schema.Literals(["active", "superseded", "archived"]);
+export type Status = Schema.Schema.Type<typeof StatusSchema>;
+
+/** Valid `status` values (mirrors the ENGRAM_TYPES pattern). */
+export const ENGRAM_STATUSES: ReadonlyArray<Status> = ["active", "superseded", "archived"];
+
+/** Shape of the evidence a memory came from. Describes evidence shape only;
+ * it never establishes truth or authority. */
+export const SourceTypeSchema = Schema.Literals([
+  "conversation",
+  "file",
+  "url",
+  "command",
+  "other",
+]);
+export type SourceType = Schema.Schema.Type<typeof SourceTypeSchema>;
+
+/** Valid `sourceType` values (mirrors the ENGRAM_TYPES pattern). */
+export const SOURCE_TYPES: ReadonlyArray<SourceType> = [
+  "conversation",
+  "file",
+  "url",
+  "command",
+  "other",
+];
+
 /** Raw frontmatter as read from an engram Markdown file.
  *
  * `id`: ULID-style (26 lowercase base32 chars — see `newId`) for new
@@ -43,6 +73,18 @@ export const FrontmatterSchema = Schema.Struct({
   updated: Schema.String,
   author: Schema.optional(Schema.String),
   pinned: Schema.optional(Schema.Boolean),
+  /* ENG-13 lifecycle metadata: all optional, no serialized defaults. Old
+   * v0.4 files keep decoding without these keys. */
+  status: Schema.optional(StatusSchema),
+  /** id of the older entry this one replaces. */
+  supersedes: Schema.optional(Schema.String),
+  /** ISO 8601 timestamp with explicit zone (same contract as created/updated). */
+  reviewAfter: Schema.optional(Schema.String),
+  /** ISO 8601 timestamp with explicit zone (same contract as created/updated). */
+  expires: Schema.optional(Schema.String),
+  sourceType: Schema.optional(SourceTypeSchema),
+  /** Non-empty reference for the source (path, URL, command, conversation). */
+  sourceRef: Schema.optional(Schema.String),
 });
 export type Frontmatter = Schema.Schema.Type<typeof FrontmatterSchema>;
 
@@ -57,6 +99,14 @@ export interface Engram {
   readonly updated: string;
   readonly author: string | undefined;
   readonly pinned: boolean;
+  /* ENG-13 lifecycle metadata. Absence (undefined) stays undefined; no
+   * default is ever serialized. */
+  readonly status?: Status | undefined;
+  readonly supersedes?: string | undefined;
+  readonly reviewAfter?: string | undefined;
+  readonly expires?: string | undefined;
+  readonly sourceType?: SourceType | undefined;
+  readonly sourceRef?: string | undefined;
   readonly body: string;
   /** absolute path to the source file */
   readonly path: string;
@@ -69,10 +119,21 @@ export interface EngramInput {
   readonly body: string;
   readonly pinned: boolean;
   readonly author: string | undefined;
+  /* ENG-13 lifecycle metadata (optional; absent means "not set"). */
+  readonly status?: Status | undefined;
+  readonly supersedes?: string | undefined;
+  readonly reviewAfter?: string | undefined;
+  readonly expires?: string | undefined;
+  readonly sourceType?: SourceType | undefined;
+  readonly sourceRef?: string | undefined;
 }
 
 /** Partial changes to an existing engram (see EngramStore.update).
- * Undefined fields keep their current value. */
+ * For lifecycle fields there are three states: undefined keeps the current
+ * value, null clears the field (it becomes absent, never serialized), and
+ * a concrete value replaces it. Non-lifecycle fields keep the simpler
+ * undefined-means-unchanged rule; there is no clearing representation for
+ * them. */
 export interface EngramPatch {
   readonly title?: string;
   readonly type?: EngramType;
@@ -80,6 +141,12 @@ export interface EngramPatch {
   readonly body?: string;
   readonly pinned?: boolean;
   readonly author?: string;
+  readonly status?: Status | null | undefined;
+  readonly supersedes?: string | null | undefined;
+  readonly reviewAfter?: string | null | undefined;
+  readonly expires?: string | null | undefined;
+  readonly sourceType?: SourceType | null | undefined;
+  readonly sourceRef?: string | null | undefined;
 }
 
 /* ------------------------------------------------------------------ */

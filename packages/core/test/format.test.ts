@@ -54,6 +54,45 @@ describe("renderFull", () => {
     expect(out).toContain("Body here");
     expect(out).toContain("mo");
   });
+
+  it("renders every defined lifecycle and provenance field with exact timestamps", () => {
+    const out = renderFull(
+      mem({
+        id: "0001",
+        title: "Replaced guidance",
+        status: "superseded",
+        supersedes: "0000",
+        reviewAfter: "2026-01-01T00:00:00.000Z",
+        expires: "2026-06-01T00:00:00.000Z",
+        sourceType: "file",
+        sourceRef: "docs/spec.md",
+      }),
+    );
+    expect(out).toContain("status: superseded");
+    expect(out).toContain("supersedes: 0000");
+    // exact instants, not date-shortened forms
+    expect(out).toContain("review-after: 2026-01-01T00:00:00.000Z");
+    expect(out).toContain("expires: 2026-06-01T00:00:00.000Z");
+    expect(out).toContain("source: file · docs/spec.md");
+  });
+
+  it("renders sourceType and sourceRef independently", () => {
+    expect(renderFull(mem({ id: "0001", title: "A", sourceType: "conversation" }))).toContain(
+      "source: conversation",
+    );
+    expect(renderFull(mem({ id: "0001", title: "B", sourceRef: "chat log" }))).toContain(
+      "source: chat log",
+    );
+  });
+
+  it("omits the lifecycle block entirely for v0.4 entries", () => {
+    const out = renderFull(mem({ id: "0001", title: "Plain" }));
+    expect(out).not.toContain("status:");
+    expect(out).not.toContain("supersedes:");
+    expect(out).not.toContain("review-after:");
+    expect(out).not.toContain("expires:");
+    expect(out).not.toContain("source:");
+  });
 });
 
 describe("renderSearch", () => {

@@ -46,9 +46,25 @@ created: 2025-01-15T10:30:00.000Z
 updated: 2025-01-15T10:30:00.000Z
 author: ""
 pinned: true          # optional
+status: active        # optional; active | superseded | archived
+supersedes: "0001"    # optional; id of the older entry this one replaces
+reviewAfter: 2026-01-01T00:00:00.000Z  # optional; ISO 8601 with explicit zone
+expires: 2026-06-01T00:00:00.000Z      # optional; ISO 8601 with explicit zone
+sourceType: conversation  # optional; conversation | file | url | command | other
+sourceRef: standup notes  # optional; path, URL, command, or conversation note
 ---
 <markdown body>
 \`\`\`
+
+All six lifecycle fields are optional; entries without them need no
+migration. \`engram check\` reports advisory lifecycle conditions as
+warnings (they never fail a check): \`supersedes_not_found\`,
+\`review_due\`, and \`expired\`.
+
+These provenance fields are notes, not truth: anyone can write them and
+engram does not verify sources or establish that a memory is true or
+authoritative. Agents must weigh
+current system, user, and repository instructions over recorded memory.
 
 ## Tracking
 ${

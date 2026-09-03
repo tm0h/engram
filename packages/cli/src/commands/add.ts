@@ -10,8 +10,10 @@ import { InvalidTypeError, ValidationError } from "@engram/core";
 import { isInteractive, openEditor } from "../interactive.js";
 import { parseTags, detectAuthor } from "@engram/core";
 import { readStdin, out } from "../io.js";
+import { checkLifecycleValues } from "../lifecycle.js";
+import type { LifecycleValueFlags } from "../lifecycle.js";
 
-export interface AddOptions {
+export interface AddOptions extends LifecycleValueFlags {
   readonly title?: string;
   readonly type?: string;
   readonly tags?: string;
@@ -41,6 +43,9 @@ export const addCommand = (opts: AddOptions) =>
     let type = yield* checkType(opts.type);
     let tags = parseTags(opts.tags);
     let body = "";
+    // Enum flags fail fast here, before anything is created. Timestamp, id,
+    // and sourceRef value errors surface from the store write boundary.
+    let lifecycle = yield* checkLifecycleValues(opts);
 
     if (opts.stdin) {
       body = (yield* readStdin()).trim();
@@ -51,11 +56,19 @@ export const addCommand = (opts: AddOptions) =>
       if (!tty) {
         body = (yield* readStdin()).trim();
       } else {
+        // flags prefill the editor and survive an unchanged save; blank or
+        // removed lifecycle lines mean unset
         const edited = yield* openEditor({
           title,
           type: type ?? "note",
           tags,
           body,
+          status: opts.status,
+          supersedes: opts.supersedes,
+          reviewAfter: opts.reviewAfter,
+          expires: opts.expires,
+          sourceType: opts.sourceType,
+          sourceRef: opts.sourceRef,
         });
         if (!edited || !edited.title) {
           yield* out(chalk.gray("Aborted: a title is required."));
@@ -65,6 +78,7 @@ export const addCommand = (opts: AddOptions) =>
         type = yield* checkType(edited.type);
         tags = edited.tags;
         body = edited.body;
+        lifecycle = yield* checkLifecycleValues(edited);
       }
     }
 
@@ -95,6 +109,12 @@ export const addCommand = (opts: AddOptions) =>
       body,
       pinned: Boolean(opts.pinned),
       author,
+      status: lifecycle.status,
+      supersedes: lifecycle.supersedes,
+      reviewAfter: lifecycle.reviewAfter,
+      expires: lifecycle.expires,
+      sourceType: lifecycle.sourceType,
+      sourceRef: lifecycle.sourceRef,
     });
 
     yield* out(chalk.green("✓ Added ") + chalk.bold(`[${mem.id}]`) + ` ${mem.title}`);

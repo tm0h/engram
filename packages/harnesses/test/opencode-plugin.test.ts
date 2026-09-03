@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vite-plus/test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { z } from "zod";
 import { projectConfigPath, projectEngramsDir } from "@engram/core";
 import engramPlugin from "../src/opencode/index.js";
 
@@ -115,6 +116,12 @@ describe("engram opencode plugin / registration", () => {
       "scope",
       "tags",
       "pinned",
+      "status",
+      "supersedes",
+      "reviewAfter",
+      "expires",
+      "sourceType",
+      "sourceRef",
     ]);
   });
 });
@@ -177,6 +184,24 @@ describe("engram opencode plugin / tool execution", () => {
     expect(digest.output).toContain("Chose Vitest over Jest");
   });
 
+  it("engram_add passes lifecycle params through to the store", async () => {
+    const tools = await loadTools();
+
+    const res = await execute(tools.engram_add, {
+      title: "Recorded with lifecycle",
+      body: "b",
+      status: "superseded",
+      reviewAfter: "2026-01-01T00:00:00.000Z",
+      sourceType: "file",
+      sourceRef: "docs/a.md",
+    });
+    expect(res.metadata?.isError).toBe(false);
+    const content = fs.readFileSync(res.metadata?.path as string, "utf8");
+    expect(content).toContain("status: superseded");
+    expect(content).toContain("reviewAfter: 2026-01-01T00:00:00.000Z");
+    expect(content).toContain("sourceType: file");
+  });
+
   it("engram_show slices long bodies and names the next call", async () => {
     const tools = await loadTools();
 
@@ -207,6 +232,40 @@ describe("engram opencode plugin / tool execution", () => {
       expect(res.metadata?.personalOnly).toBe(true);
     } finally {
       fs.rmSync(empty, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("engram opencode plugin / lifecycle schema contract", () => {
+  it("engram_add args enforce the lifecycle enums (zod safeParse)", async () => {
+    const tools = await loadTools();
+    const args = tools.engram_add.args as Record<string, z.ZodType>;
+
+    for (const status of ["active", "superseded", "archived"]) {
+      expect(args.status.safeParse(status).success, status).toBe(true);
+    }
+    expect(args.status.safeParse("bogus").success).toBe(false);
+
+    for (const sourceType of ["conversation", "file", "url", "command", "other"]) {
+      expect(args.sourceType.safeParse(sourceType).success, sourceType).toBe(true);
+    }
+    expect(args.sourceType.safeParse("website").success).toBe(false);
+
+    expect(args.reviewAfter.safeParse("2026-01-01T00:00:00.000Z").success).toBe(true);
+    expect(args.expires.safeParse("2026-06-01T00:00:00.000Z").success).toBe(true);
+    expect(args.supersedes.safeParse("0001").success).toBe(true);
+    expect(args.sourceRef.safeParse("docs/a.md").success).toBe(true);
+  });
+
+  it("lifecycle param descriptions state the real contract without overclaims", async () => {
+    const tools = await loadTools();
+    const args = tools.engram_add.args as Record<string, z.ZodType & { description?: string }>;
+
+    expect(args.status.description).toContain("active | superseded | archived");
+    expect(args.sourceType.description).toContain("conversation | file | url | command | other");
+    for (const field of ["supersedes", "reviewAfter", "expires", "sourceRef"] as const) {
+      expect(args[field]?.description, field).toMatch(/when saved/);
+      expect(args[field]?.description, field).not.toMatch(/schema|type:|must be a valid/);
     }
   });
 });

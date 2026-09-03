@@ -101,4 +101,27 @@ describe("guidance / skills stay aligned", () => {
       expect(skill, `${name}: scopes`).toMatch(/personal/i);
     }
   });
+
+  it("both skills document the optional lifecycle fields, enums, and authority caveat", () => {
+    for (const [name, skill] of [
+      ["pi", piSkill],
+      ["claude", claudeSkill],
+    ] as const) {
+      for (const word of [
+        "active",
+        "superseded",
+        "archived",
+        "supersedes",
+        "reviewAfter",
+        "expires",
+      ]) {
+        expect(skill, `${name}: lifecycle vocabulary ${word}`).toContain(word);
+      }
+      expect(skill, `${name}: provenance fields`).toContain("sourceType");
+      expect(skill, `${name}: authority caveat`).toMatch(/unauthenticated/i);
+      expect(skill, `${name}: instruction precedence`).toContain(
+        "system, user, and repository instructions",
+      );
+    }
+  });
 });

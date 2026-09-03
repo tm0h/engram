@@ -38,7 +38,7 @@ import { compareDiagnostics } from "./integrity.js";
 import type { DuplicateIdClaim, StoreDiagnostic, StoreScan } from "./integrity.js";
 import { globalEngramsDir, projectEngramsDir } from "./paths.js";
 import { findProjectRoot } from "./location.js";
-import { nowISO, slugify, newId, parseEntryFilename } from "./util.js";
+import { nowISO, slugify, newId, parseEntryFilename, parseTimestamp } from "./util.js";
 import { validateEntry, stringifyFrontmatter } from "./frontmatter.js";
 import type { PartialFrontmatter } from "./frontmatter.js";
 
@@ -110,6 +110,12 @@ const toEngram = (fm: Frontmatter, body: string, file: string): Engram => ({
   updated: fm.updated,
   author: fm.author,
   pinned: fm.pinned ?? false,
+  status: fm.status,
+  supersedes: fm.supersedes,
+  reviewAfter: fm.reviewAfter,
+  expires: fm.expires,
+  sourceType: fm.sourceType,
+  sourceRef: fm.sourceRef,
   body,
   path: file,
 });
@@ -126,8 +132,99 @@ function serialize(m: Engram): string {
   };
   if (m.author) data.author = m.author;
   if (m.pinned) data.pinned = true;
+  /* Lifecycle fields emit on `!== undefined`, never on truthiness: an
+   * unusual-but-valid value must not be silently discarded here. */
+  if (m.status !== undefined) data.status = m.status;
+  if (m.supersedes !== undefined) data.supersedes = m.supersedes;
+  if (m.reviewAfter !== undefined) data.reviewAfter = m.reviewAfter;
+  if (m.expires !== undefined) data.expires = m.expires;
+  if (m.sourceType !== undefined) data.sourceType = m.sourceType;
+  if (m.sourceRef !== undefined) data.sourceRef = m.sourceRef;
   return stringifyFrontmatter(m.body ? m.body + "\n" : "", data);
 }
+
+/** Three-state lifecycle patch merge: `undefined` preserves the current
+ * value, `null` clears it (becomes absent, never serialized), and a
+ * concrete value replaces it. Explicit branches keep null and preserve
+ * distinct; defaulting operators like `??` would collapse them. */
+const applyLifecyclePatch = <T>(
+  current: T | undefined,
+  instruction: T | null | undefined,
+): T | undefined => {
+  if (instruction === undefined) return current;
+  if (instruction === null) return undefined;
+  return instruction;
+};
+
+/** ENG-13 write boundary: the complete candidate is validated with the same
+ * entry validation `scan` uses, before any file is written, so neither
+ * `add` nor `update` can create a file the next scan would reject (invalid
+ * lifecycle values, `supersedes` pointing at the entry itself, a title
+ * trimmed to empty, ...). Reuses `FrontmatterParseError`, the store's
+ * existing validation error. `updated_before_created` stays out: it is the
+ * one non-entry-preventing relation and cannot occur for fresh candidates. */
+const validateCandidate = (
+  candidate: Engram,
+  file: string,
+): Effect.Effect<void, FrontmatterParseError> => {
+  const defects = validateEntry(serialize(candidate)).issues.filter(
+    (i) => i.code !== "updated_before_created",
+  );
+  return defects.length === 0
+    ? Effect.void
+    : Effect.fail(
+        new FrontmatterParseError({
+          file,
+          message: defects.map((d) => d.message).join("; "),
+        }),
+      );
+};
+
+/** Advisory lifecycle diagnostics for one valid entry, computed purely from
+ * the entry, the check time, and the same-scope id set. "At or before the
+ * check time" counts as due/expired (equality included). Warnings never
+ * omit the entry. The live scan passes `Date.now()`; tests pass a fixed
+ * `nowMs` for deterministic boundaries. */
+export const lifecycleDiagnostics = (
+  m: Engram,
+  context: {
+    readonly scope: Scope;
+    readonly file: string;
+    readonly nowMs: number;
+    /** every id claimable in this scan's scope (partial ids included) */
+    readonly knownIds: ReadonlySet<string>;
+  },
+): ReadonlyArray<StoreDiagnostic> => {
+  const out: Array<StoreDiagnostic> = [];
+  const base = { severity: "warning" as const, scope: context.scope, file: context.file };
+  if (m.supersedes !== undefined && !context.knownIds.has(m.supersedes)) {
+    out.push({
+      ...base,
+      code: "supersedes_not_found",
+      message: `supersedes "${m.supersedes}" does not match any entry in the ${context.scope} store`,
+      hint: 'Check the id, add the older entry it replaces, or remove "supersedes" if the predecessor no longer applies.',
+    });
+  }
+  const reviewMs = m.reviewAfter === undefined ? undefined : parseTimestamp(m.reviewAfter);
+  if (reviewMs !== undefined && reviewMs <= context.nowMs) {
+    out.push({
+      ...base,
+      code: "review_due",
+      message: `"reviewAfter" (${m.reviewAfter}) is due for review`,
+      hint: "Review whether this entry still holds, then update it, remove the timestamp, or delete the entry.",
+    });
+  }
+  const expiresMs = m.expires === undefined ? undefined : parseTimestamp(m.expires);
+  if (expiresMs !== undefined && expiresMs <= context.nowMs) {
+    out.push({
+      ...base,
+      code: "expired",
+      message: `"expires" (${m.expires}) has passed`,
+      hint: "Confirm the entry still applies, then update it, remove the timestamp, or delete the entry.",
+    });
+  }
+  return out;
+};
 
 /* ----------------------------- live layer ----------------------------- */
 
@@ -219,6 +316,7 @@ const makeEngramStoreLive = (
                     id: v.partial.id,
                     title: v.partial.title,
                     scope: v.partial.scope,
+                    supersedes: v.partial.supersedes,
                     diagnostics: v.issues.map((issue): StoreDiagnostic => ({
                       code: issue.code,
                       severity: "error",
@@ -236,6 +334,7 @@ const makeEngramStoreLive = (
                     id: undefined,
                     title: undefined,
                     scope: undefined,
+                    supersedes: undefined,
                     diagnostics: [
                       {
                         code: "file_unreadable",
@@ -325,12 +424,27 @@ const makeEngramStoreLive = (
             }
           }
 
+          // ENG-13 advisory lifecycle diagnostics for valid entries. The
+          // claimant set uses partial ids so an otherwise-invalid claimant
+          // still counts as present (mirroring duplicate detection).
+          const nowMs = Date.now();
+          const knownIds = new Set(
+            candidates.flatMap((c) => (c.id !== undefined && c.id !== "" ? [c.id] : [])),
+          );
+          const lifecycle: Array<StoreDiagnostic> = [];
+          for (const c of candidates) {
+            if (c.engram === undefined) continue;
+            lifecycle.push(
+              ...lifecycleDiagnostics(c.engram, { scope, file: c.file, nowMs, knownIds }),
+            );
+          }
+
           return {
             scope,
             directory: dir,
             filesChecked: files.length,
             entries: candidates.flatMap((c) => (c.engram ? [c.engram] : [])).sort(chronological),
-            diagnostics: [...candidates.flatMap((c) => c.diagnostics), ...cross].sort(
+            diagnostics: [...candidates.flatMap((c) => c.diagnostics), ...cross, ...lifecycle].sort(
               compareDiagnostics,
             ),
             duplicateIds,
@@ -426,10 +540,18 @@ const makeEngramStoreLive = (
               updated: now,
               author: input.author,
               pinned: input.pinned,
+              status: input.status,
+              supersedes: input.supersedes,
+              reviewAfter: input.reviewAfter,
+              expires: input.expires,
+              sourceType: input.sourceType,
+              sourceRef: input.sourceRef,
               body: input.body.trim(),
               path: file,
             };
-            return Effect.as(fs.writeFileString(file, serialize(engram), { flag: "wx" }), engram);
+            return Effect.flatMap(validateCandidate(engram, file), () =>
+              Effect.as(fs.writeFileString(file, serialize(engram), { flag: "wx" }), engram),
+            );
           };
 
           const attempt = (tries: number): Effect.Effect<Engram, StoreError> =>
@@ -455,10 +577,17 @@ const makeEngramStoreLive = (
             body: patch.body !== undefined ? patch.body.trim() : mem.body,
             pinned: patch.pinned ?? mem.pinned,
             author: patch.author !== undefined ? patch.author : mem.author,
+            status: applyLifecyclePatch(mem.status, patch.status),
+            supersedes: applyLifecyclePatch(mem.supersedes, patch.supersedes),
+            reviewAfter: applyLifecyclePatch(mem.reviewAfter, patch.reviewAfter),
+            expires: applyLifecyclePatch(mem.expires, patch.expires),
+            sourceType: applyLifecyclePatch(mem.sourceType, patch.sourceType),
+            sourceRef: applyLifecyclePatch(mem.sourceRef, patch.sourceRef),
             updated: nowISO(),
           };
           const dir = yield* dirForScope(scope);
           const file = path.join(dir, `${next.id}-${slugify(next.title)}.md`);
+          yield* validateCandidate(next, file);
           yield* fs.writeFileString(file, serialize(next));
           if (file !== mem.path) yield* fs.remove(mem.path);
           return { ...next, path: file };
@@ -476,9 +605,13 @@ const makeEngramStoreLive = (
           const dir = yield* dirForScope(scope);
           const scanned = yield* scan(scope);
           // A partially readable store must not be rewritten, and repairs
-          // need a complete integrity view: duplicate ids are the only
-          // defect `dedupe` knows how to repair safely.
-          const otherDefects = scanned.diagnostics.filter((d) => d.code !== "duplicate_id");
+          // need a complete integrity view: error-severity diagnostics other
+          // than the duplicate ids `dedupe` itself repairs block the rewrite.
+          // Advisory lifecycle warnings (supersedes_not_found, review_due,
+          // expired) never block, matching `engram check`.
+          const otherDefects = scanned.diagnostics.filter(
+            (d) => d.severity === "error" && d.code !== "duplicate_id",
+          );
           if (scanned.omittedFiles > 0 || otherDefects.length > 0) {
             // Omitted candidates are exactly the diagnosed files that did not
             // become entries (soft defects like duplicate ids stay listed).

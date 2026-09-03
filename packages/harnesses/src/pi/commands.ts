@@ -10,8 +10,8 @@
  *   /engram help
  */
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import type { EngramType, Scope } from "@engram/core";
-import { ENGRAM_TYPES } from "@engram/core";
+import type { EngramType, Scope, SourceType, Status } from "@engram/core";
+import { ENGRAM_STATUSES, ENGRAM_TYPES, SOURCE_TYPES } from "@engram/core";
 import { addOp, contextDigest, initOp, searchOp, showOp } from "../shared/ops.js";
 import { runOp } from "./run.js";
 
@@ -25,6 +25,10 @@ const HELP = [
   "  /engram add <title> -- <body>   record an entry",
   "      flags: --type decision|fact|preference|note|issue|context",
   "             --scope project|personal   --tags a,b   --pinned",
+  "             --status active|superseded|archived   --supersedes <id>",
+  "             --review-after <ts>   --expires <ts>",
+  "             --source-type conversation|file|url|command|other",
+  "             --source-ref <ref>   quote it if it contains spaces",
   "  /engram init [tracked|untracked]  initialize .engram/ here",
   "",
   "Agents: prefer the engram_context / engram_search / engram_show / engram_add tools.",
@@ -37,6 +41,12 @@ interface ParsedAdd {
   scope?: Scope;
   tags?: string[];
   pinned?: boolean;
+  status?: Status;
+  supersedes?: string;
+  reviewAfter?: string;
+  expires?: string;
+  sourceType?: SourceType;
+  sourceRef?: string;
 }
 
 const parseAddError = (error: string): { ok: false; error: string } => ({ ok: false, error });
@@ -63,6 +73,35 @@ function parseAdd(rest: string): ParsedAdd | { ok: false; error: string } {
       return parseAddError(`Invalid --scope "${scope}". Valid: project | personal`);
     }
     parsed.scope = scope;
+  }
+  const status = flag("--status");
+  if (status !== null) {
+    if (!(ENGRAM_STATUSES as readonly string[]).includes(status)) {
+      return parseAddError(`Invalid --status "${status}". Valid: ${ENGRAM_STATUSES.join(" | ")}`);
+    }
+    parsed.status = status as Status;
+  }
+  const sourceType = flag("--source-type");
+  if (sourceType !== null) {
+    if (!(SOURCE_TYPES as readonly string[]).includes(sourceType)) {
+      return parseAddError(
+        `Invalid --source-type "${sourceType}". Valid: ${SOURCE_TYPES.join(" | ")}`,
+      );
+    }
+    parsed.sourceType = sourceType as SourceType;
+  }
+  const supersedes = flag("--supersedes");
+  if (supersedes !== null) parsed.supersedes = supersedes;
+  const reviewAfter = flag("--review-after");
+  if (reviewAfter !== null) parsed.reviewAfter = reviewAfter;
+  const expires = flag("--expires");
+  if (expires !== null) parsed.expires = expires;
+  // Explicit grammar: a quoted reference (any content) or a single token.
+  // Anything else would silently truncate, so quoting is the disclosed rule.
+  const sourceRef = work.match(/\s--source-ref\s+(?:"([^"]*)"|'([^']*)'|([^\s]+))/);
+  if (sourceRef) {
+    work = work.replace(sourceRef[0], " ");
+    parsed.sourceRef = sourceRef[1] ?? sourceRef[2] ?? sourceRef[3];
   }
   const tags = flag("--tags");
   if (tags)
