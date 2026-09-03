@@ -19,6 +19,7 @@ import {
   DEFAULT_SEARCH_LIMIT,
   addOp,
   contextDigest,
+  editOp,
   searchOp,
   showOp,
 } from "../shared/ops.js";
@@ -197,5 +198,92 @@ export const engramAddTool = {
     context: OpenCodeToolContext,
   ) {
     return toOpencodeResult("Engram Add", await runOpAtDirectory(context.directory, addOp(args)));
+  },
+};
+
+export const engramEditTool = {
+  description:
+    `Update an existing engram by id (unique prefixes work). Ordinary fields (title, type, tags, body, ` +
+    `pinned, author) are replaced when passed and preserved when omitted. The six lifecycle fields ` +
+    `(status, supersedes, reviewAfter, expires, sourceType, sourceRef) are three-state: a concrete ` +
+    `value replaces, null clears, omission preserves. Use this to correct a title or tags, change a ` +
+    `type, pin or unpin, or clear a lifecycle field after acting on it. Scope defaults to project ` +
+    `inside a project and personal outside one.`,
+  args: {
+    id: z.string().describe('Engram id or unique prefix, e.g. "0012" or "12". Required.'),
+    scope: z
+      .enum(["project", "personal"])
+      .optional()
+      .describe("Where to edit. Default: project inside a project, personal otherwise."),
+    title: z.string().optional().describe("New title. Omit to preserve."),
+    type: z.enum(engramTypes).optional().describe("Replace entry kind. Omit to preserve."),
+    tags: z
+      .array(z.string())
+      .optional()
+      .describe('Replace the whole tag set, e.g. ["auth", "deps"]. Omit to preserve.'),
+    body: z.string().optional().describe("New body content. Omit to preserve."),
+    pinned: z.boolean().optional().describe("True pins, false unpins. Omit to preserve."),
+    author: z.string().optional().describe("Replace author. Omit to preserve."),
+    status: z
+      .enum(engramStatuses)
+      .nullable()
+      .optional()
+      .describe("Lifecycle status: active | superseded | archived. Null clears; omit to preserve."),
+    supersedes: z
+      .string()
+      .nullable()
+      .optional()
+      .describe(
+        "Id of the older entry this one replaces. Null clears; omit to preserve. Validated when saved.",
+      ),
+    reviewAfter: z
+      .string()
+      .nullable()
+      .optional()
+      .describe(
+        "ISO 8601 timestamp with an explicit zone, e.g. 2027-01-01T00:00:00.000Z. Null clears; omit to preserve. Validated when saved.",
+      ),
+    expires: z
+      .string()
+      .nullable()
+      .optional()
+      .describe(
+        "ISO 8601 timestamp with an explicit zone, e.g. 2027-06-01T00:00:00.000Z. Null clears; omit to preserve. Validated when saved.",
+      ),
+    sourceType: z
+      .enum(sourceTypes)
+      .nullable()
+      .optional()
+      .describe(
+        "Provenance shape: conversation | file | url | command | other. Null clears; omit to preserve.",
+      ),
+    sourceRef: z
+      .string()
+      .nullable()
+      .optional()
+      .describe(
+        "Source reference: path, URL, command, or conversation note. Null clears; omit to preserve. Validated when saved.",
+      ),
+  },
+  async execute(
+    args: {
+      id: string;
+      scope?: "project" | "personal";
+      title?: string;
+      type?: EngramType;
+      tags?: string[];
+      body?: string;
+      pinned?: boolean;
+      author?: string;
+      status?: Status | null;
+      supersedes?: string | null;
+      reviewAfter?: string | null;
+      expires?: string | null;
+      sourceType?: SourceType | null;
+      sourceRef?: string | null;
+    },
+    context: OpenCodeToolContext,
+  ) {
+    return toOpencodeResult("Engram Edit", await runOpAtDirectory(context.directory, editOp(args)));
   },
 };

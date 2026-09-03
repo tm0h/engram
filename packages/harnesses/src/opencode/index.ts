@@ -11,12 +11,21 @@
  */
 import type { Hooks, Plugin } from "@opencode-ai/plugin";
 import { createAutoContextTransform } from "./context-transform.js";
-import { engramAddTool, engramContextTool, engramSearchTool, engramShowTool } from "./tools.js";
+import {
+  engramAddTool,
+  engramContextTool,
+  engramEditTool,
+  engramSearchTool,
+  engramShowTool,
+} from "./tools.js";
 
 /** Base tool execute parameters; keeps the wrapper in sync with the adapter. */
 type AddArgs = Parameters<typeof engramAddTool.execute>[0];
 type AddContext = Parameters<typeof engramAddTool.execute>[1] & { sessionID: string };
 type AddResult = Awaited<ReturnType<typeof engramAddTool.execute>>;
+type EditArgs = Parameters<typeof engramEditTool.execute>[0];
+type EditContext = Parameters<typeof engramEditTool.execute>[1] & { sessionID: string };
+type EditResult = Awaited<ReturnType<typeof engramEditTool.execute>>;
 
 const engramPlugin: Plugin = async (input) => {
   // Deliberately capture the init-time directory for the automatic digest:
@@ -25,15 +34,28 @@ const engramPlugin: Plugin = async (input) => {
   // workspace.
   const autoContext = createAutoContextTransform(input.directory);
 
-  const addToolWithRefresh = {
-    ...engramAddTool,
-    async execute(args: AddArgs, context: AddContext): Promise<AddResult> {
-      const result = await engramAddTool.execute(args, context);
+  const writeToolWithRefresh = <
+    Args,
+    Ctx extends { sessionID: string },
+    Result extends {
+      metadata?: Record<string, unknown>;
+    },
+  >(base: {
+    execute: (args: Args, context: Ctx) => Promise<Result>;
+  }) => ({
+    ...base,
+    async execute(args: Args, context: Ctx): Promise<Result> {
+      const result = await base.execute(args, context);
       // Refresh only this session's cached digest after a successful write.
       if (!result.metadata?.isError) autoContext.invalidate(context.sessionID);
       return result;
     },
-  };
+  });
+
+  const addToolWithRefresh = writeToolWithRefresh<AddArgs, AddContext, AddResult>(engramAddTool);
+  const editToolWithRefresh = writeToolWithRefresh<EditArgs, EditContext, EditResult>(
+    engramEditTool,
+  );
 
   // Pre-existing narrow type boundary: the shared tool adapters expose zod
   // raw shapes for `args` while the SDK's ToolDefinition expects a
@@ -44,6 +66,7 @@ const engramPlugin: Plugin = async (input) => {
     engram_search: engramSearchTool,
     engram_show: engramShowTool,
     engram_add: addToolWithRefresh,
+    engram_edit: editToolWithRefresh,
   } as unknown as NonNullable<Hooks["tool"]>;
 
   const hooks: Hooks = {

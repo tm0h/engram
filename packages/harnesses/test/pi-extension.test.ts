@@ -9,7 +9,7 @@ import { z } from "zod";
 import engramExtension from "../src/pi/index.js";
 import { registerEngramCommand } from "../src/pi/commands.js";
 import { registerEngramTools } from "../src/pi/tools.js";
-import { engramAddTool as ocAddTool } from "../src/opencode/tools.js";
+import { engramAddTool as ocAddTool, engramEditTool as ocEditTool } from "../src/opencode/tools.js";
 
 /* --------------------------- fake pi harness --------------------------- */
 
@@ -739,6 +739,56 @@ describe("engram extension / lifecycle schema contract", () => {
       { ...baseParams, supersedes: "0001" },
       { ...baseParams, sourceRef: "docs/a.md" },
       { ...baseParams, sourceRef: "" },
+    ];
+    for (const params of cases) {
+      const piOk = Value.Check(parameters, params);
+      const ocOk = ocSchema.safeParse(params).success;
+      expect(piOk, JSON.stringify(params)).toBe(ocOk);
+    }
+  });
+
+  it("edit schemas agree on the three-state lifecycle contract across pi and opencode", () => {
+    const parameters = piEditTool().parameters;
+    const ocSchema = z.object(ocEditTool.args as z.ZodRawShape);
+    const base = { id: "0001" };
+    const cases: Array<Record<string, unknown>> = [
+      base,
+      { ...base, title: "New" },
+      { ...base, title: null },
+      { ...base, type: "decision" },
+      { ...base, type: "bogus" },
+      { ...base, type: null },
+      { ...base, tags: ["a"] },
+      { ...base, tags: "a,b" },
+      { ...base, tags: null },
+      { ...base, body: null },
+      { ...base, pinned: false },
+      { ...base, pinned: null },
+      { ...base, author: "A" },
+      { ...base, author: null },
+      { ...base, scope: "personal" },
+      { ...base, scope: "bogus" },
+      { ...base, id: 5 },
+      ...["active", "superseded", "archived", null, "bogus"].map((status) => ({
+        ...base,
+        status,
+      })),
+      ...["conversation", "file", "url", "command", "other", null, "website"].map((sourceType) => ({
+        ...base,
+        sourceType,
+      })),
+      { ...base, supersedes: "0001" },
+      { ...base, supersedes: null },
+      { ...base, supersedes: 5 },
+      { ...base, reviewAfter: "2026-01-01T00:00:00.000Z" },
+      { ...base, reviewAfter: "2026-01-01" },
+      { ...base, reviewAfter: null },
+      { ...base, expires: "2026-06-01T00:00:00.000Z" },
+      { ...base, expires: null },
+      { ...base, sourceRef: "docs/a.md" },
+      { ...base, sourceRef: "" },
+      { ...base, sourceRef: null },
+      {},
     ];
     for (const params of cases) {
       const piOk = Value.Check(parameters, params);
