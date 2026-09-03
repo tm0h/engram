@@ -468,7 +468,7 @@ describe("engram extension / /engram command", () => {
     expect(fs.readFileSync(entryFile(), "utf8")).toContain("First");
 
     const byFullId = fakeCtx();
-    await handler("edit 0001 --body Changed body", byFullId);
+    await handler("edit 0001 -- Changed body", byFullId);
     expect(notified(byFullId)[0].level).toBe("info");
     expect(fs.readFileSync(entryFile(), "utf8")).toContain("Changed body");
   });
@@ -517,7 +517,14 @@ describe("engram extension / /engram command", () => {
       fakeCtx(),
     );
     content = fs.readFileSync(entryFile(), "utf8");
-    for (const key of ["status", "supersedes", "reviewAfter", "expires", "sourceType", "sourceRef"]) {
+    for (const key of [
+      "status",
+      "supersedes",
+      "reviewAfter",
+      "expires",
+      "sourceType",
+      "sourceRef",
+    ]) {
       expect(content, key).not.toMatch(new RegExp(`^${key}:`, "m"));
     }
   });
@@ -618,7 +625,7 @@ describe("engram extension / /engram command", () => {
     await handler("edit 0001 --status bogus", fakeCtx());
     expect(refreshes()).toBe(0);
 
-    await handler("edit 0001 --title Renamed once", fakeCtx());
+    await handler('edit 0001 --title "Renamed once"', fakeCtx());
     expect(refreshes()).toBe(1);
 
     await handler("edit 0001 --pinned --no-pinned", fakeCtx());
