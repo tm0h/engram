@@ -198,7 +198,13 @@ describe("engram-cli packaging (pi extension)", () => {
         registerCommand: (name) => commands.push(name),
         on: (name) => handlers.set(name, true),
       });
-      const expectedTools = ["engram_context", "engram_search", "engram_show", "engram_add"];
+      const expectedTools = [
+        "engram_context",
+        "engram_search",
+        "engram_show",
+        "engram_add",
+        "engram_edit",
+      ];
       if (JSON.stringify(tools) !== JSON.stringify(expectedTools))
         throw new Error("unexpected tools: " + tools.join(","));
       if (JSON.stringify(commands) !== JSON.stringify(["engram"]))

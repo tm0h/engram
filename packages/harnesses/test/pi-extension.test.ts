@@ -91,7 +91,7 @@ const mkProject = (): string => {
 };
 
 describe("engram extension / registration", () => {
-  it("registers the four engram tools and the /engram command", () => {
+  it("registers the five engram tools and the /engram command", () => {
     const { pi, tools, commands } = fakePi();
     engramExtension(pi);
 
@@ -100,6 +100,7 @@ describe("engram extension / registration", () => {
       "engram_search",
       "engram_show",
       "engram_add",
+      "engram_edit",
     ]);
     for (const tool of tools) {
       expect(tool.description?.length).toBeGreaterThan(40);
@@ -127,6 +128,22 @@ describe("engram extension / registration", () => {
       "scope",
       "tags",
       "pinned",
+      "status",
+      "supersedes",
+      "reviewAfter",
+      "expires",
+      "sourceType",
+      "sourceRef",
+    ]);
+    expect(Object.keys(byName.get("engram_edit")!.parameters.properties!)).toEqual([
+      "id",
+      "scope",
+      "title",
+      "type",
+      "tags",
+      "body",
+      "pinned",
+      "author",
       "status",
       "supersedes",
       "reviewAfter",
@@ -215,6 +232,132 @@ describe("engram extension / tool execution", () => {
     expect(content).toContain("status: superseded");
     expect(content).toContain("reviewAfter: 2026-01-01T00:00:00.000Z");
     expect(content).toContain("sourceType: file");
+  });
+
+  it("engram_edit replaces ordinary fields including pinned and author", async () => {
+    seedEntry(tmp, "0001", "Original title");
+    const { pi, tools } = fakePi();
+    engramExtension(pi);
+    const edit = tools.find((t) => t.name === "engram_edit")!;
+
+    const res = (await edit.execute("call-1", {
+      id: "0001",
+      title: "Edited title",
+      type: "decision",
+      tags: ["edited"],
+      body: "Edited body",
+      pinned: true,
+      author: "New Author",
+    })) as {
+      isError: boolean;
+      content: Array<{ text: string }>;
+      details: Record<string, unknown>;
+    };
+    expect(res.isError).toBe(false);
+    expect(res.content[0].text).toContain("Edited title");
+    expect(res.details).toMatchObject({ id: "0001", scope: "project", type: "decision" });
+    const content = fs.readFileSync(res.details.path as string, "utf8");
+    expect(content).toContain("Edited body");
+    expect(content).toMatch(/^type: decision$/m);
+    expect(content).toMatch(/^pinned: true$/m);
+    expect(content).toMatch(/^author: New Author$/m);
+    expect(fs.existsSync(path.join(projectEngramsDir(tmp), "0001-entry.md"))).toBe(false);
+  });
+
+  it("engram_edit sets, changes, and clears all six lifecycle fields", async () => {
+    seedEntry(tmp, "0001", "Lifecycle target");
+    const { pi, tools } = fakePi();
+    engramExtension(pi);
+    const edit = tools.find((t) => t.name === "engram_edit")!;
+
+    type EditResult = { isError: boolean; details: Record<string, unknown> };
+    const keys = ["status", "supersedes", "reviewAfter", "expires", "sourceType", "sourceRef"];
+    const fileOf = async (params: Record<string, unknown>): Promise<string> => {
+      const res = (await edit.execute("call", params)) as EditResult;
+      expect(res.isError).toBe(false);
+      return res.details.path as string;
+    };
+
+    const setFile = await fileOf({
+      id: "0001",
+      status: "active",
+      supersedes: "0002",
+      reviewAfter: "2027-01-01T00:00:00.000Z",
+      expires: "2027-06-01T00:00:00.000Z",
+      sourceType: "file",
+      sourceRef: "docs/a.md",
+    });
+    let content = fs.readFileSync(setFile, "utf8");
+    expect(content).toMatch(/^status: active$/m);
+    expect(content).toMatch(/^supersedes: "0002"$/m);
+    expect(content).toMatch(/^reviewAfter: 2027-01-01T00:00:00\.000Z$/m);
+    expect(content).toMatch(/^expires: 2027-06-01T00:00:00\.000Z$/m);
+    expect(content).toMatch(/^sourceType: file$/m);
+    expect(content).toMatch(/^sourceRef: docs\/a\.md$/m);
+
+    const changeFile = await fileOf({
+      id: "0001",
+      status: "archived",
+      supersedes: "0003",
+      reviewAfter: "2028-01-01T00:00:00.000Z",
+      expires: "2028-06-01T00:00:00.000Z",
+      sourceType: "url",
+      sourceRef: "https://example.com/a",
+    });
+    content = fs.readFileSync(changeFile, "utf8");
+    expect(content).toMatch(/^status: archived$/m);
+    expect(content).toMatch(/^supersedes: "0003"$/m);
+    expect(content).toMatch(/^reviewAfter: 2028-01-01T00:00:00\.000Z$/m);
+    expect(content).toMatch(/^expires: 2028-06-01T00:00:00\.000Z$/m);
+    expect(content).toMatch(/^sourceType: url$/m);
+    expect(content).toMatch(/^sourceRef: https:\/\/example\.com\/a$/m);
+
+    const clearFile = await fileOf({
+      id: "0001",
+      status: null,
+      supersedes: null,
+      reviewAfter: null,
+      expires: null,
+      sourceType: null,
+      sourceRef: null,
+    });
+    content = fs.readFileSync(clearFile, "utf8");
+    for (const key of keys) {
+      expect(content, key).not.toMatch(new RegExp(`^${key}:`, "m"));
+    }
+  });
+
+  it("engram_edit unpinning with pinned: false works", async () => {
+    seedEntry(tmp, "0001", "Pinned once");
+    const { pi, tools } = fakePi();
+    engramExtension(pi);
+    const edit = tools.find((t) => t.name === "engram_edit")!;
+
+    const pin = (await edit.execute("call-1", {
+      id: "0001",
+      pinned: true,
+    })) as { isError: boolean; details: Record<string, unknown> };
+    expect(pin.isError).toBe(false);
+    expect(fs.readFileSync(pin.details.path as string, "utf8")).toMatch(/^pinned: true$/m);
+
+    const unpin = (await edit.execute("call-2", {
+      id: "0001",
+      pinned: false,
+    })) as { isError: boolean; details: Record<string, unknown> };
+    expect(unpin.isError).toBe(false);
+    expect(fs.readFileSync(unpin.details.path as string, "utf8")).not.toMatch(/^pinned:/m);
+  });
+
+  it("engram_edit on an unknown id is an isError result", async () => {
+    const { pi, tools } = fakePi();
+    engramExtension(pi);
+    const edit = tools.find((t) => t.name === "engram_edit")!;
+    const res = (await edit.execute("call-1", { id: "9999", title: "X" })) as {
+      isError: boolean;
+      content: Array<{ text: string }>;
+    };
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain("9999");
   });
 
   it("engram_show on an unknown id is an isError result", async () => {
@@ -438,7 +581,7 @@ describe("engram extension / /engram command", () => {
   it("command adds refresh the cache on success only", async () => {
     let refreshes = 0;
     const fake = fakePi();
-    registerEngramCommand(fake.pi, { onAddSuccess: () => refreshes++ });
+    registerEngramCommand(fake.pi, { onWriteSuccess: () => refreshes++ });
     const handler = fake.commands.get("engram")!.handler;
 
     const bad = fakeCtx();
@@ -458,6 +601,12 @@ describe("engram extension / lifecycle schema contract", () => {
     const { pi, tools } = fakePi();
     engramExtension(pi);
     return tools.find((t) => t.name === "engram_add")!;
+  };
+
+  const piEditTool = () => {
+    const { pi, tools } = fakePi();
+    engramExtension(pi);
+    return tools.find((t) => t.name === "engram_edit")!;
   };
 
   it("engram_add schema enforces the lifecycle enums (TypeBox Value.Check)", () => {
@@ -497,6 +646,81 @@ describe("engram extension / lifecycle schema contract", () => {
     }
   });
 
+  it("engram_edit schema accepts the three-state lifecycle and rejects bad shapes (TypeBox Value.Check)", () => {
+    const parameters = piEditTool().parameters;
+    const base = { id: "0001" };
+    // omission-only edits are schema-valid; id is the only required field
+    expect(Value.Check(parameters, base)).toBe(true);
+    expect(Value.Check(parameters, {})).toBe(false);
+
+    for (const type of ["decision", "fact", "preference", "note", "issue", "context"]) {
+      expect(Value.Check(parameters, { ...base, type }), type).toBe(true);
+    }
+    expect(Value.Check(parameters, { ...base, type: "bogus" })).toBe(false);
+    expect(Value.Check(parameters, { ...base, type: null })).toBe(false);
+
+    for (const status of ["active", "superseded", "archived", null]) {
+      expect(Value.Check(parameters, { ...base, status }), String(status)).toBe(true);
+    }
+    expect(Value.Check(parameters, { ...base, status: "bogus" })).toBe(false);
+
+    for (const sourceType of ["conversation", "file", "url", "command", "other", null]) {
+      expect(Value.Check(parameters, { ...base, sourceType }), String(sourceType)).toBe(true);
+    }
+    expect(Value.Check(parameters, { ...base, sourceType: "website" })).toBe(false);
+
+    // nullable lifecycle strings: value or null accepted, wrong type rejected
+    expect(Value.Check(parameters, { ...base, supersedes: "0001" })).toBe(true);
+    expect(Value.Check(parameters, { ...base, supersedes: null })).toBe(true);
+    expect(Value.Check(parameters, { ...base, supersedes: 5 })).toBe(false);
+    expect(Value.Check(parameters, { ...base, reviewAfter: "2026-01-01" })).toBe(true);
+    expect(Value.Check(parameters, { ...base, reviewAfter: null })).toBe(true);
+    expect(Value.Check(parameters, { ...base, expires: null })).toBe(true);
+    expect(Value.Check(parameters, { ...base, sourceRef: null })).toBe(true);
+
+    // ordinary fields accept values and reject null
+    expect(Value.Check(parameters, { ...base, title: "New" })).toBe(true);
+    expect(Value.Check(parameters, { ...base, title: null })).toBe(false);
+    expect(Value.Check(parameters, { ...base, tags: ["a"] })).toBe(true);
+    expect(Value.Check(parameters, { ...base, tags: "a,b" })).toBe(false);
+    expect(Value.Check(parameters, { ...base, tags: null })).toBe(false);
+    expect(Value.Check(parameters, { ...base, body: null })).toBe(false);
+    expect(Value.Check(parameters, { ...base, pinned: false })).toBe(true);
+    expect(Value.Check(parameters, { ...base, pinned: null })).toBe(false);
+    expect(Value.Check(parameters, { ...base, author: null })).toBe(false);
+    expect(Value.Check(parameters, { ...base, scope: "bogus" })).toBe(false);
+    expect(Value.Check(parameters, { ...base, id: 5 })).toBe(false);
+  });
+
+  it("engram_edit param descriptions state the real contract without overclaims", () => {
+    const props = piEditTool().parameters.properties as Record<
+      string,
+      { description?: string } | undefined
+    >;
+    // every nullable field must disclose the three-state contract
+    for (const field of [
+      "status",
+      "supersedes",
+      "reviewAfter",
+      "expires",
+      "sourceType",
+      "sourceRef",
+    ] as const) {
+      expect(props[field]?.description, field).toMatch(/null clears/i);
+      expect(props[field]?.description, field).toMatch(/omit to preserve/i);
+    }
+    // save-time semantic validation is disclosed, never claimed as schema-level
+    for (const field of ["supersedes", "reviewAfter", "expires", "sourceRef"] as const) {
+      expect(props[field]?.description, field).toMatch(/when saved/);
+      expect(props[field]?.description, field).not.toMatch(/schema|type:|must be a valid/);
+    }
+    // ordinary and replacement-only fields disclose the two-state contract
+    for (const field of ["title", "type", "tags", "body", "pinned", "author"] as const) {
+      expect(props[field]?.description, field).toMatch(/omit to preserve/i);
+      expect(props[field]?.description, field).not.toMatch(/null clears/i);
+    }
+  });
+
   it("add schemas agree on the lifecycle contract across pi and opencode", () => {
     const parameters = piAddTool().parameters;
     const ocSchema = z.object(ocAddTool.args as z.ZodRawShape);
@@ -524,7 +748,7 @@ describe("engram extension / lifecycle schema contract", () => {
   });
 });
 
-describe("engram extension / add refresh hook", () => {
+describe("engram extension / write refresh hook", () => {
   let orig = "";
   let origHome: string | undefined;
   let tmp = "";
@@ -544,16 +768,28 @@ describe("engram extension / add refresh hook", () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it("refreshes the cache on successful adds only", async () => {
+  it("refreshes the cache on successful add or edit only", async () => {
     let refreshes = 0;
     const fake = fakePi();
-    registerEngramTools(fake.pi, { onAddSuccess: () => refreshes++ });
+    registerEngramTools(fake.pi, { onWriteSuccess: () => refreshes++ });
     const add = fake.tools.find((t) => t.name === "engram_add")!;
+    const edit = fake.tools.find((t) => t.name === "engram_edit")!;
 
     await add.execute("c1", { title: "T", body: "b", status: "bogus" });
     expect(refreshes).toBe(0);
 
     await add.execute("c2", { title: "T", body: "b", status: "active" });
     expect(refreshes).toBe(1);
+
+    const seeded = (await add.execute("c3", { title: "Edit target", body: "b" })) as {
+      details: { id: string };
+    };
+    expect(refreshes).toBe(2);
+
+    await edit.execute("c4", { id: seeded.details.id, status: "bogus" });
+    expect(refreshes).toBe(2);
+
+    await edit.execute("c5", { id: seeded.details.id, title: "Edited target" });
+    expect(refreshes).toBe(3);
   });
 });
