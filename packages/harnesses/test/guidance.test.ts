@@ -102,6 +102,37 @@ describe("guidance / skills stay aligned", () => {
     }
   });
 
+  it("both skills document engram_edit with the three-state lifecycle contract", () => {
+    for (const [name, skill] of [
+      ["pi", piSkill],
+      ["claude", claudeSkill],
+    ] as const) {
+      // the edit surface itself, named per harness
+      expect(skill, `${name}: edit guidance`).toMatch(/engram[._]edit/);
+      // all six lifecycle names
+      for (const word of [
+        "status",
+        "supersedes",
+        "reviewAfter",
+        "expires",
+        "sourceType",
+        "sourceRef",
+      ]) {
+        expect(skill, `${name}: edit lifecycle name ${word}`).toContain(word);
+      }
+      // replace semantics and preserve-on-omission
+      expect(skill, `${name}: replace semantics`).toMatch(/replace/i);
+      expect(skill, `${name}: preserve on omission`).toMatch(/omit/i);
+      expect(skill, `${name}: preserve wording`).toMatch(/preserve/i);
+    }
+    // clear semantics, spelled per harness: null in the tool variant,
+    // paired --clear-* flags in the CLI variant
+    expect(piSkill, "pi: null clears").toMatch(/null\s+clears?/i);
+    expect(claudeSkill, "claude: --clear- flags").toContain("--clear-");
+    expect(claudeSkill, "claude: edit command").toContain("engram edit");
+    expect(piSkill, "pi: edit tool").toContain("engram_edit");
+  });
+
   it("both skills document the optional lifecycle fields, enums, and authority caveat", () => {
     for (const [name, skill] of [
       ["pi", piSkill],
