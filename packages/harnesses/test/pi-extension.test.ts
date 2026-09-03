@@ -599,6 +599,40 @@ describe("engram extension / /engram command", () => {
     expect(refreshes()).toBe(0);
   });
 
+  it("edit value flags reject a following bare flag instead of consuming it", async () => {
+    const { handler, refreshes } = editFixture();
+    const before = fs.readFileSync(entryFile(), "utf8");
+
+    // A value flag followed by its own clear flag must be a missing-value
+    // error, not a literal "--clear-source-ref" value that mutates and fires
+    // the success hook.
+    const ctx1 = fakeCtx();
+    await handler("edit 0001 --source-ref --clear-source-ref", ctx1);
+    expect(notified(ctx1)).toHaveLength(1);
+    expect(notified(ctx1)[0].level).toBe("error");
+    expect(fs.readFileSync(entryFile(), "utf8")).toBe(before);
+    expect(refreshes()).toBe(0);
+
+    const ctx2 = fakeCtx();
+    await handler("edit 0001 --title --clear-status", ctx2);
+    expect(notified(ctx2)).toHaveLength(1);
+    expect(notified(ctx2)[0].level).toBe("error");
+    expect(fs.readFileSync(entryFile(), "utf8")).toBe(before);
+    expect(refreshes()).toBe(0);
+  });
+
+  it("edit accepts quoted flag-looking strings as values", async () => {
+    const { handler, refreshes } = editFixture();
+
+    await handler("edit 0001 --source-ref '--clear-source-ref'", fakeCtx());
+    expect(refreshes()).toBe(1);
+    expect(fs.readFileSync(entryFile(), "utf8")).toMatch(/^sourceRef: "--clear-source-ref"$/m);
+
+    await handler('edit 0001 --title "--clear-status"', fakeCtx());
+    expect(refreshes()).toBe(2);
+    expect(fs.readFileSync(entryFile(), "utf8")).toMatch(/^title: "--clear-status"$/m);
+  });
+
   it("edit subcommand surfaces store-boundary rejections with byte identity and no refresh", async () => {
     const { handler, refreshes } = editFixture();
     const before = fs.readFileSync(entryFile(), "utf8");
