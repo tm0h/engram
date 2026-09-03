@@ -138,7 +138,14 @@ describe("engram-cli packaging (pi extension)", () => {
       if (typeof mod.default !== "function") throw new Error("default export is not a function");
       const hooks = await mod.default({ directory: process.cwd() });
       const tools = Object.keys(hooks.tool ?? {}).sort();
-      if (JSON.stringify(tools) !== JSON.stringify(["engram_add", "engram_context", "engram_search", "engram_show"]))
+      const expected = [
+        "engram_add",
+        "engram_context",
+        "engram_edit",
+        "engram_search",
+        "engram_show",
+      ];
+      if (JSON.stringify(tools) !== JSON.stringify(expected))
         throw new Error("unexpected tool map: " + tools.join(","));
       if (typeof hooks["experimental.chat.system.transform"] !== "function")
         throw new Error("system transform missing");
@@ -198,7 +205,13 @@ describe("engram-cli packaging (pi extension)", () => {
         registerCommand: (name) => commands.push(name),
         on: (name) => handlers.set(name, true),
       });
-      const expectedTools = ["engram_context", "engram_search", "engram_show", "engram_add"];
+      const expectedTools = [
+        "engram_context",
+        "engram_search",
+        "engram_show",
+        "engram_add",
+        "engram_edit",
+      ];
       if (JSON.stringify(tools) !== JSON.stringify(expectedTools))
         throw new Error("unexpected tools: " + tools.join(","));
       if (JSON.stringify(commands) !== JSON.stringify(["engram"]))

@@ -12,6 +12,6 @@ import { registerEngramTools } from "./tools.js";
 
 export default function engramExtension(pi: ExtensionAPI): void {
   const autoContext = registerAutoContext(pi);
-  registerEngramTools(pi, { onAddSuccess: autoContext.invalidate });
-  registerEngramCommand(pi, { onAddSuccess: autoContext.invalidate });
+  registerEngramTools(pi, { onWriteSuccess: autoContext.invalidate });
+  registerEngramCommand(pi, { onWriteSuccess: autoContext.invalidate });
 }

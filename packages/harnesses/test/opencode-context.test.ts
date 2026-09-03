@@ -329,6 +329,7 @@ describe("opencode plugin / auto-context integration", () => {
       "engram_search",
       "engram_show",
       "engram_add",
+      "engram_edit",
     ]);
     expect(typeof hooks["experimental.chat.system.transform"]).toBe("function");
     expect(typeof hooks.event).toBe("function");
@@ -423,6 +424,43 @@ describe("opencode plugin / auto-context integration", () => {
     const outOther = output(["base"]);
     await transform(inputFor("s2"), outOther);
     expect(outOther.system[0]).not.toContain("Fresh from add");
+  });
+
+  it("a successful engram_edit invalidates only that session; failed edits do not", async () => {
+    seedEntry(tmp, "0001", "Stable entry");
+    const { hooks, transform } = await loadHooks(tmp);
+    const out1 = output(["base"]);
+    await transform(inputFor("s1"), out1);
+    expect(out1.system[0]).not.toContain("Fresh from edit");
+    // Prime s2's cache before any edit so its stale digest is observable.
+    await transform(inputFor("s2"), output(["base"]));
+
+    // failed edit: no invalidation (out-of-band write stays invisible)
+    const failed = await hooks.tool.engram_edit.execute(
+      { id: "0001", title: "   " },
+      { sessionID: "s1", directory: tmp },
+    );
+    expect(failed.metadata?.isError).toBe(true);
+    seedEntry(tmp, "0002", "Out of band entry");
+    const out2 = output(["base"]);
+    await transform(inputFor("s1"), out2);
+    expect(out2.system[0]).not.toContain("Out of band entry");
+
+    // successful edit: that session reloads and sees the edited title
+    const edited = await hooks.tool.engram_edit.execute(
+      { id: "0001", title: "Fresh from edit" },
+      { sessionID: "s1", directory: tmp },
+    );
+    expect(edited.metadata?.isError).toBe(false);
+    const out3 = output(["base"]);
+    await transform(inputFor("s1"), out3);
+    expect(out3.system[0]).toContain("Fresh from edit");
+    expect(countOf(out3.system, MARKER)).toBe(1);
+
+    // other sessions keep their cached digest
+    const outOther = output(["base"]);
+    await transform(inputFor("s2"), outOther);
+    expect(outOther.system[0]).not.toContain("Fresh from edit");
   });
 
   it("the event hook drops cache entries on session.deleted", async () => {

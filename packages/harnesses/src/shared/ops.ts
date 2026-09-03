@@ -15,6 +15,7 @@ import {
   DEFAULT_AUTO_CONTEXT_LIMIT,
   DEFAULT_AUTO_CONTEXT_SCOPE,
   ENGRAM_STATUSES,
+  ENGRAM_TYPES,
   SOURCE_TYPES,
   detectAuthor,
   ensureGitignoreLine,
@@ -28,6 +29,7 @@ import {
   removeGitignoreLine,
   searchEngrams,
   type Engram,
+  type EngramPatch,
   type Scope,
 } from "@engram/core";
 import { PERSONAL_ONLY_NOTE, projectUninitialized } from "./degraded.js";
@@ -35,6 +37,7 @@ import { MAX_RESULT_CHARS, capText, pageFooter, paginate, type Page } from "./pa
 import type {
   AddOptions,
   ContextOptions,
+  EditOptions,
   InitOptions,
   OpResult,
   ScopeFilter,
@@ -471,6 +474,77 @@ export const addOp = (opts: AddOptions): Effect.Effect<OpResult, never, EngramSt
           ? "  scope: project (git-tracked - commit .engram/ to share with the team)"
           : `  scope: ${m.scope}`,
       ];
+      return ok(lines.join("\n"), { id: m.id, path: m.path, scope: m.scope, type: m.type });
+    }),
+  );
+
+/** A writable view of EngramPatch for constructing patch objects. */
+type PatchDraft = { -readonly [K in keyof EngramPatch]?: EngramPatch[K] };
+
+/** Edit an existing engram. Scope follows the show/edit lookup default:
+ * explicit value wins, else project when the store has a project root, else
+ * personal. One EngramPatch goes to the store; ordinary fields are
+ * unchanged when omitted, lifecycle fields are three-state (undefined
+ * preserves, null clears, a concrete value replaces). Only closed enums
+ * fail fast here: timestamp, id, and sourceRef semantics stay at the store
+ * write boundary. No config, author discovery, or defaults on edit. */
+export const editOp = (opts: EditOptions): Effect.Effect<OpResult, never, EngramStore> =>
+  capture(
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const root = yield* store.projectRoot();
+      if (opts.scope === "project" && Option.isNone(root)) {
+        return err(projectUninitialized("edit"));
+      }
+      const scope: Scope = opts.scope ?? (Option.isSome(root) ? "project" : "personal");
+
+      // Closed enums fail fast before anything is written (undefined means
+      // preserve and null means clear; only concrete values are checked).
+      // Every other lifecycle value is validated by the store boundary below.
+      const statusError =
+        opts.status === undefined || opts.status === null
+          ? null
+          : lifecycleEnumError("status", opts.status, ENGRAM_STATUSES);
+      if (statusError !== null) return err(statusError);
+      const sourceTypeError =
+        opts.sourceType === undefined || opts.sourceType === null
+          ? null
+          : lifecycleEnumError("sourceType", opts.sourceType, SOURCE_TYPES);
+      if (sourceTypeError !== null) return err(sourceTypeError);
+      const typeError =
+        opts.type === undefined ? null : lifecycleEnumError("type", opts.type, ENGRAM_TYPES);
+      if (typeError !== null) return err(typeError);
+
+      // Ordinary fields: omitted means unchanged. Title is trimmed and an
+      // explicitly empty one is rejected before the store sees it; tags are
+      // normalized like every other write surface; body trimming stays in
+      // EngramStore.update.
+      const patch: PatchDraft = {};
+      if (opts.title !== undefined) {
+        const title = opts.title.trim();
+        if (!title) return err("Title cannot be empty.");
+        patch.title = title;
+      }
+      if (opts.type !== undefined) patch.type = opts.type;
+      if (opts.tags !== undefined) {
+        patch.tags = Array.from(
+          new Set(opts.tags.map((t) => t.trim().toLowerCase()).filter(Boolean)),
+        );
+      }
+      if (opts.body !== undefined) patch.body = opts.body;
+      if (opts.pinned !== undefined) patch.pinned = opts.pinned;
+      if (opts.author !== undefined) patch.author = opts.author;
+      // Lifecycle fields: pass the three-state instruction through unchanged
+      // (undefined preserves, null clears, a value replaces).
+      patch.status = opts.status;
+      patch.supersedes = opts.supersedes;
+      patch.reviewAfter = opts.reviewAfter;
+      patch.expires = opts.expires;
+      patch.sourceType = opts.sourceType;
+      patch.sourceRef = opts.sourceRef;
+
+      const m = yield* store.update(scope, opts.id, patch);
+      const lines = [`Updated [${m.id}] ${m.title}`, `  ${m.path}`, `  scope: ${m.scope}`];
       return ok(lines.join("\n"), { id: m.id, path: m.path, scope: m.scope, type: m.type });
     }),
   );

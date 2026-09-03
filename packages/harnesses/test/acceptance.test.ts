@@ -296,4 +296,56 @@ describe("PR1 acceptance / first-request delivery", () => {
     expect(out2.system[0]).toContain("Fresh acceptance entry 2");
     expect(occurrences(out2.system[0])).toBe(1);
   });
+
+  it("both adapters reflect a successful edit on the next request", async () => {
+    seed(tmp, "0001", { type: "decision", title: "Editable decision" });
+
+    // Pi: the cached prompt shows the old title; a successful engram_edit
+    // invalidates; the next prompt shows the edited title exactly once.
+    const { pi, handlers, tools } = fakePi();
+    engramExtension(pi);
+    handlers.get("session_start")({ type: "session_start", reason: "startup" }, evtCtx(tmp));
+    const piFirst = await handlers.get("before_agent_start")(
+      { type: "before_agent_start", prompt: "go", systemPrompt: "BASE" },
+      evtCtx(tmp),
+    );
+    expect(piFirst.systemPrompt).toContain("Editable decision");
+    expect(piFirst.systemPrompt).not.toContain("Edited decision");
+
+    const piEdited = await tools.get("engram_edit").execute("call-1", {
+      id: "0001",
+      title: "Edited decision",
+      status: null,
+    });
+    expect(piEdited.isError).toBe(false);
+
+    const piSecond = await handlers.get("before_agent_start")(
+      { type: "before_agent_start", prompt: "go", systemPrompt: "BASE" },
+      evtCtx(tmp),
+    );
+    expect(piSecond.systemPrompt).toContain("Edited decision");
+    expect(piSecond.systemPrompt).not.toContain("Editable decision");
+    expect(occurrences(piSecond.systemPrompt)).toBe(1);
+
+    // OpenCode: same flow through the transform + tool map, session-local.
+    const hooks = (await engramPlugin({
+      directory: tmp,
+      worktree: tmp,
+    } as never)) as Record<string, any>;
+    const transform = hooks["experimental.chat.system.transform"];
+    const out1 = { system: ["BASE"] };
+    await transform({ sessionID: "acc-edit", model: {} }, out1);
+    expect(out1.system[0]).not.toContain("Edited decision 2");
+
+    const edited = await hooks.tool.engram_edit.execute(
+      { id: "0001", title: "Edited decision 2" },
+      { sessionID: "acc-edit", directory: tmp },
+    );
+    expect(edited.metadata.isError).toBe(false);
+
+    const out2 = { system: ["BASE"] };
+    await transform({ sessionID: "acc-edit", model: {} }, out2);
+    expect(out2.system[0]).toContain("Edited decision 2");
+    expect(occurrences(out2.system[0])).toBe(1);
+  });
 });

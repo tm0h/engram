@@ -492,6 +492,61 @@ describe("pi extension / auto-context integration", () => {
     expect(second.systemPrompt).not.toContain("Out of band entry");
   });
 
+  it("a successful engram_edit invalidates the cache; the next prompt sees the edited title", async () => {
+    seedEntry(tmp, "0001", "Seeded decision");
+    const { pi, handlers, tools } = fullFakePi();
+    engramExtension(pi);
+    const edit = tools.find((t) => t.name === "engram_edit")!;
+
+    const { ctx } = evtCtx({ cwd: tmp });
+    handlers.get("session_start")!(sessionStart("startup"), ctx);
+    const first = (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as {
+      systemPrompt?: string;
+    };
+    expect(first.systemPrompt).toContain("Seeded decision");
+
+    const edited = (await edit.execute("call-1", {
+      id: "0001",
+      title: "Edited decision",
+    })) as { isError: boolean };
+    expect(edited.isError).toBe(false);
+
+    const second = (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as {
+      systemPrompt?: string;
+    };
+    expect(second.systemPrompt).toContain("Edited decision");
+    expect(second.systemPrompt).not.toContain("Seeded decision");
+    expect(countOf(second.systemPrompt!, "<engram-memory>")).toBe(1);
+  });
+
+  it("a failed engram_edit does not invalidate the cache", async () => {
+    seedEntry(tmp, "0001", "Seeded decision");
+    const { pi, handlers, tools } = fullFakePi();
+    engramExtension(pi);
+    const edit = tools.find((t) => t.name === "engram_edit")!;
+
+    const { ctx } = evtCtx({ cwd: tmp });
+    handlers.get("session_start")!(sessionStart("startup"), ctx);
+    await handlers.get("before_agent_start")!(agentStart(BASE), ctx);
+
+    const failed = (await edit.execute("call-1", {
+      id: "0001",
+      title: "   ",
+    })) as { isError: boolean };
+    expect(failed.isError).toBe(true);
+
+    // Out-of-band store change: if the failed edit had invalidated the cache,
+    // the next prompt would pick this up. A surviving cache must not.
+    seedEntry(tmp, "0002", "Out of band entry");
+
+    const second = (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as {
+      systemPrompt?: string;
+    };
+    expect(countOf(second.systemPrompt!, "<engram-memory>")).toBe(1);
+    expect(second.systemPrompt).toContain("Seeded decision");
+    expect(second.systemPrompt).not.toContain("Out of band entry");
+  });
+
   it("autoContext=off leaves the system prompt untouched end-to-end", async () => {
     seedEntry(tmp, "0001", "Seeded decision");
     fs.writeFileSync(
@@ -537,7 +592,7 @@ describe("pi extension / auto-context integration", () => {
     expect(countOf(res.systemPrompt!, "<engram-memory>")).toBe(1);
   });
 
-  it("still registers the four tools and keeps their results unchanged", async () => {
+  it("still registers the five tools and keeps their results unchanged", async () => {
     seedEntry(tmp, "0001", "Seeded decision");
     const { pi, tools } = fullFakePi();
     engramExtension(pi);
@@ -546,6 +601,7 @@ describe("pi extension / auto-context integration", () => {
       "engram_search",
       "engram_show",
       "engram_add",
+      "engram_edit",
     ]);
     const context = tools.find((t) => t.name === "engram_context")!;
     const digest = (await context.execute("call-1", {})) as {

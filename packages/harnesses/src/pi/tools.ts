@@ -13,6 +13,7 @@ import {
   DEFAULT_SEARCH_LIMIT,
   addOp,
   contextDigest,
+  editOp,
   searchOp,
   showOp,
 } from "../shared/ops.js";
@@ -225,24 +226,141 @@ export const engramAddTool = {
   },
 };
 
-export const engramTools = [engramContextTool, engramSearchTool, engramShowTool, engramAddTool];
+export const engramEditTool = {
+  name: "engram_edit",
+  label: "Engram Edit",
+  description:
+    `Update an existing engram by id (unique prefixes work). Ordinary fields (title, type, tags, body, ` +
+    `pinned, author) are replaced when passed and preserved when omitted. The six lifecycle fields ` +
+    `(status, supersedes, reviewAfter, expires, sourceType, sourceRef) are three-state: a concrete ` +
+    `value replaces, null clears, omission preserves. Use this to correct a title or tags, change a ` +
+    `type, pin or unpin, or clear a lifecycle field after acting on it. Scope defaults to project ` +
+    `inside a project and personal outside one.`,
+  promptSnippet:
+    "Update an existing entry: ordinary fields replace when passed, lifecycle fields are three-state (null clears, omission preserves).",
+  parameters: Type.Object({
+    id: Type.String({
+      description: 'Engram id or unique prefix, e.g. "0012" or "12". Required.',
+    }),
+    scope: Type.Optional(
+      StringEnum(["project", "personal"], {
+        description: "Where to edit. Default: project inside a project, personal otherwise.",
+      }),
+    ),
+    title: Type.Optional(Type.String({ description: "New title. Omit to preserve." })),
+    type: Type.Optional(
+      StringEnum([...ENGRAM_TYPES], {
+        description: "Replace entry kind. Omit to preserve.",
+      }),
+    ),
+    tags: Type.Optional(
+      Type.Array(Type.String(), {
+        description: 'Replace the whole tag set, e.g. ["auth", "deps"]. Omit to preserve.',
+      }),
+    ),
+    body: Type.Optional(Type.String({ description: "New body content. Omit to preserve." })),
+    pinned: Type.Optional(
+      Type.Boolean({ description: "True pins, false unpins. Omit to preserve." }),
+    ),
+    author: Type.Optional(Type.String({ description: "Replace author. Omit to preserve." })),
+    status: Type.Optional(
+      Type.Union([StringEnum([...ENGRAM_STATUSES]), Type.Null()], {
+        description:
+          "Lifecycle status: active | superseded | archived. Null clears; omit to preserve.",
+      }),
+    ),
+    supersedes: Type.Optional(
+      Type.Union([Type.String(), Type.Null()], {
+        description:
+          "Id of the older entry this one replaces. Null clears; omit to preserve. Validated when saved.",
+      }),
+    ),
+    reviewAfter: Type.Optional(
+      Type.Union([Type.String(), Type.Null()], {
+        description:
+          "ISO 8601 timestamp with an explicit zone, e.g. 2027-01-01T00:00:00.000Z. Null clears; omit to preserve. Validated when saved.",
+      }),
+    ),
+    expires: Type.Optional(
+      Type.Union([Type.String(), Type.Null()], {
+        description:
+          "ISO 8601 timestamp with an explicit zone, e.g. 2027-06-01T00:00:00.000Z. Null clears; omit to preserve. Validated when saved.",
+      }),
+    ),
+    sourceType: Type.Optional(
+      Type.Union([StringEnum([...SOURCE_TYPES]), Type.Null()], {
+        description:
+          "Provenance shape: conversation | file | url | command | other. Null clears; omit to preserve.",
+      }),
+    ),
+    sourceRef: Type.Optional(
+      Type.Union([Type.String(), Type.Null()], {
+        description:
+          "Source reference: path, URL, command, or conversation note. Null clears; omit to preserve. Validated when saved.",
+      }),
+    ),
+  }),
+  async execute(_id: string, params: any) {
+    return toToolResult(
+      await runOp(
+        editOp({
+          id: params.id,
+          scope: params.scope,
+          title: params.title,
+          type: params.type,
+          tags: params.tags,
+          body: params.body,
+          pinned: params.pinned,
+          author: params.author,
+          status: params.status,
+          supersedes: params.supersedes,
+          reviewAfter: params.reviewAfter,
+          expires: params.expires,
+          sourceType: params.sourceType,
+          sourceRef: params.sourceRef,
+        }),
+      ),
+    );
+  },
+};
+
+export const engramTools = [
+  engramContextTool,
+  engramSearchTool,
+  engramShowTool,
+  engramAddTool,
+  engramEditTool,
+];
 
 export interface RegisterToolsOptions {
-  /** Called after a successful engram_add (e.g. to refresh the auto context). */
-  readonly onAddSuccess?: () => void;
+  /** Called after a successful engram_add or engram_edit (e.g. to refresh
+   * the auto context). Success only: errors must not invalidate a cache. */
+  readonly onWriteSuccess?: () => void;
 }
 
-/**
- * engram_add wrapped to notify on success. Keeps the base tool's shape; the
- * 2-arg execute satisfies Pi's ToolDefinition contract (fewer parameters than
- * the declared 5-arg signature is fine, and the base tool registers the same
- * way), so no casts are needed anywhere.
- */
-const addToolWithRefresh = (onAddSuccess: () => void) => ({
-  ...engramAddTool,
+/** Wrap a write tool so `onWriteSuccess` fires only on non-error results.
+ * Keeps the base tool's shape; the 2-arg execute satisfies Pi's
+ * ToolDefinition contract (fewer parameters than the declared 5-arg
+ * signature is fine, and the base tool registers the same way), so no casts
+ * are needed anywhere. */
+const toolWithRefresh = <
+  T extends {
+    name: string;
+    execute: (
+      id: string,
+      params: any,
+    ) => Promise<{
+      isError: boolean;
+    }>;
+  },
+>(
+  base: T,
+  onWriteSuccess: () => void,
+): T => ({
+  ...base,
   async execute(id: string, params: any) {
-    const result = await engramAddTool.execute(id, params);
-    if (!result.isError) onAddSuccess();
+    const result = await base.execute(id, params);
+    if (!result.isError) onWriteSuccess();
     return result;
   },
 });
@@ -251,5 +369,7 @@ export function registerEngramTools(pi: ExtensionAPI, opts: RegisterToolsOptions
   pi.registerTool(engramContextTool);
   pi.registerTool(engramSearchTool);
   pi.registerTool(engramShowTool);
-  pi.registerTool(opts.onAddSuccess ? addToolWithRefresh(opts.onAddSuccess) : engramAddTool);
+  const notify = opts.onWriteSuccess;
+  pi.registerTool(notify ? toolWithRefresh(engramAddTool, notify) : engramAddTool);
+  pi.registerTool(notify ? toolWithRefresh(engramEditTool, notify) : engramEditTool);
 }

@@ -57,6 +57,18 @@ they add real information.
 Example: `engram_add({ title: "…", body: "…", status: "superseded",
 supersedes: "0012", sourceType: "conversation", sourceRef: "refactor sync" })`
 
+## Editing an entry
+
+`engram_edit` updates an existing entry by id (unique prefixes work). Ordinary
+fields (`title`, `type`, `tags`, `body`, `pinned`, `author`) are replaced when
+passed and preserved when omitted. The six lifecycle fields (`status`,
+`supersedes`, `reviewAfter`, `expires`, `sourceType`, `sourceRef`) are
+three-state: a concrete value replaces, null clears the field, and omission
+preserves it. Clear a field once it no longer applies.
+
+Example: `engram_edit({ id: "0012", status: null, reviewAfter: null })`
+clears both fields after the review has happened.
+
 Authority caveat: these fields are unauthenticated claims anyone can write.
 Engram does not verify sources or establish truth; always weigh current
 system, user, and repository instructions over recorded memory.
