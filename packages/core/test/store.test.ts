@@ -859,6 +859,98 @@ describe("EngramStore / scan", () => {
     );
   });
 
+  /* --------- dedupe vs advisory lifecycle warnings (ENG-13) --------- */
+
+  it.live("dedupe repairs duplicates past an expired entry (advisory)", () => {
+    writeConsistent("0001", "Duplicate a", { expires: "2020-01-01T00:00:00.000Z" });
+    writeConsistent("0001", "Duplicate b");
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const { renumbered } = yield* store.dedupe("project");
+      expect(renumbered).toHaveLength(1);
+      const scanned = yield* store.scan("project");
+      // duplicates are repaired; the advisory expiry warning remains
+      expect(scanned.diagnostics.map((d) => [d.code, d.severity])).toEqual([
+        ["expired", "warning"],
+      ]);
+      expect(scanned.entries).toHaveLength(2);
+    }).pipe(Effect.provide(StoreLive));
+  });
+
+  it.live("dedupe repairs duplicates past a due review (advisory)", () => {
+    writeConsistent("0001", "Duplicate a");
+    writeConsistent("0001", "Duplicate b", { reviewAfter: "2020-01-01T00:00:00.000Z" });
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const { renumbered } = yield* store.dedupe("project");
+      expect(renumbered).toHaveLength(1);
+      const scanned = yield* store.scan("project");
+      // the renumbered copy keeps its reviewAfter; the warning stays advisory
+      expect(scanned.diagnostics.map((d) => [d.code, d.severity])).toEqual([
+        ["review_due", "warning"],
+      ]);
+      expect(scanned.entries).toHaveLength(2);
+    }).pipe(Effect.provide(StoreLive));
+  });
+
+  it.live("dedupe repairs duplicates past a dangling supersedes (advisory)", () => {
+    writeConsistent("0001", "Duplicate a");
+    writeConsistent("0001", "Duplicate b", { supersedes: "0099" });
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const { renumbered } = yield* store.dedupe("project");
+      expect(renumbered).toHaveLength(1);
+      const scanned = yield* store.scan("project");
+      expect(scanned.diagnostics.map((d) => [d.code, d.severity])).toEqual([
+        ["supersedes_not_found", "warning"],
+      ]);
+      expect(scanned.entries).toHaveLength(2);
+    }).pipe(Effect.provide(StoreLive));
+  });
+
+  it.live("dedupe preserves lifecycle metadata on the surviving file", () => {
+    const kept = writeConsistent("0001", "Duplicate a", {
+      status: "archived",
+      reviewAfter: "2030-01-01T00:00:00.000Z",
+      expires: "2031-01-01T00:00:00.000Z",
+    });
+    writeConsistent("0001", "Duplicate b");
+    const before = fs.readFileSync(kept, "utf8");
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const { renumbered } = yield* store.dedupe("project");
+      expect(renumbered).toHaveLength(1);
+      // the winner is untouched: byte-identical file, lifecycle fields intact
+      expect(fs.readFileSync(kept, "utf8")).toBe(before);
+      const m = yield* store.get("project", "0001");
+      expect(m.status).toBe("archived");
+      expect(m.reviewAfter).toBe("2030-01-01T00:00:00.000Z");
+      expect(m.expires).toBe("2031-01-01T00:00:00.000Z");
+      // future timestamps parse cleanly: no diagnostics left at all
+      const scanned = yield* store.scan("project");
+      expect(scanned.diagnostics).toEqual([]);
+    }).pipe(Effect.provide(StoreLive));
+  });
+
+  it.live("dedupe still refuses on an error-severity defect (invalid expires)", () => {
+    writeConsistent("0001", "Duplicate a");
+    writeConsistent("0001", "Duplicate b");
+    writeConsistent("0009", "Broken expiry", { expires: "soon" }); // expires_invalid
+    const before = fs.readdirSync(engramsDir()).sort();
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      return yield* store.dedupe("project");
+    }).pipe(
+      Effect.provide(StoreLive),
+      Effect.flip,
+      Effect.map((e) => {
+        expect((e as { _tag: string })._tag).toBe("IntegrityCheckFailedError");
+        expect((e as unknown as { message: string }).message).toContain("0009-broken-expiry.md");
+        expect(fs.readdirSync(engramsDir()).sort()).toEqual(before);
+      }),
+    );
+  });
+
   /* ------------------ ENG-13 lifecycle diagnostics ------------------ */
 
   it.live("a dangling supersedes is a warning and the entry is retained", () => {
