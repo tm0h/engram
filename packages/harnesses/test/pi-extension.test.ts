@@ -438,6 +438,233 @@ describe("engram extension / /engram command", () => {
     expect(content).toContain("ci");
   });
 
+  /** The single 0001 entry's current file (title edits rename it). */
+  const entryFile = (): string =>
+    path.join(
+      projectEngramsDir(tmp),
+      fs.readdirSync(projectEngramsDir(tmp)).find((f) => f.startsWith("0001"))!,
+    );
+
+  const editFixture = (): {
+    handler: (args: string, ctx: ExtensionCommandContext) => Promise<void>;
+    refreshes: () => number;
+  } => {
+    seedEntry(tmp, "0001", "Editable");
+    let count = 0;
+    const fake = fakePi();
+    registerEngramCommand(fake.pi, { onWriteSuccess: () => (count += 1) });
+    return {
+      handler: fake.commands.get("engram")!.handler,
+      refreshes: () => count,
+    };
+  };
+
+  it("edit subcommand edits by unique prefix and by full id", async () => {
+    const { handler } = editFixture();
+
+    const byPrefix = fakeCtx();
+    await handler("edit 000 --title First", byPrefix);
+    expect(notified(byPrefix)[0].level).toBe("info");
+    expect(fs.readFileSync(entryFile(), "utf8")).toContain("First");
+
+    const byFullId = fakeCtx();
+    await handler("edit 0001 --body Changed body", byFullId);
+    expect(notified(byFullId)[0].level).toBe("info");
+    expect(fs.readFileSync(entryFile(), "utf8")).toContain("Changed body");
+  });
+
+  it("edit subcommand replaces title, type, tags, body, pinned, author, and lifecycle values", async () => {
+    const { handler } = editFixture();
+
+    await handler(
+      "edit 0001 --title Renamed --type decision --tags a,b --pinned --author Ada " +
+        "--status archived --supersedes 0002 --review-after 2027-01-01T00:00:00.000Z " +
+        "--expires 2027-06-01T00:00:00.000Z --source-type url " +
+        "--source-ref https://example.com/a -- the new body",
+      fakeCtx(),
+    );
+    const content = fs.readFileSync(entryFile(), "utf8");
+    expect(content).toContain("Renamed");
+    expect(content).toMatch(/^type: decision$/m);
+    expect(content).toContain("a");
+    expect(content).toContain("b");
+    expect(content).toMatch(/^pinned: true$/m);
+    expect(content).toMatch(/^author: Ada$/m);
+    expect(content).toMatch(/^status: archived$/m);
+    expect(content).toMatch(/^supersedes: "0002"$/m);
+    expect(content).toMatch(/^reviewAfter: 2027-01-01T00:00:00\.000Z$/m);
+    expect(content).toMatch(/^expires: 2027-06-01T00:00:00\.000Z$/m);
+    expect(content).toMatch(/^sourceType: url$/m);
+    expect(content).toMatch(/^sourceRef: https:\/\/example\.com\/a$/m);
+    expect(content).toContain("the new body");
+  });
+
+  it("edit subcommand clears each lifecycle field with its paired clear flag", async () => {
+    const { handler } = editFixture();
+
+    await handler(
+      "edit 0001 --status active --supersedes 0002 --review-after 2027-01-01T00:00:00.000Z " +
+        "--expires 2027-06-01T00:00:00.000Z --source-type file --source-ref docs/a.md",
+      fakeCtx(),
+    );
+    let content = fs.readFileSync(entryFile(), "utf8");
+    expect(content).toMatch(/^status: active$/m);
+    expect(content).toMatch(/^sourceRef: docs\/a\.md$/m);
+
+    await handler(
+      "edit 0001 --clear-status --clear-supersedes --clear-review-after " +
+        "--clear-expires --clear-source-type --clear-source-ref",
+      fakeCtx(),
+    );
+    content = fs.readFileSync(entryFile(), "utf8");
+    for (const key of ["status", "supersedes", "reviewAfter", "expires", "sourceType", "sourceRef"]) {
+      expect(content, key).not.toMatch(new RegExp(`^${key}:`, "m"));
+    }
+  });
+
+  it("edit subcommand supports quoted multiword title, author, and source reference", async () => {
+    const { handler } = editFixture();
+
+    await handler(
+      `edit 0001 --title "Two words" --author 'Ada Lovelace' --source-ref "docs/a b.md"`,
+      fakeCtx(),
+    );
+    const content = fs.readFileSync(entryFile(), "utf8");
+    expect(content).toContain("Two words");
+    expect(content).toMatch(/^author: Ada Lovelace$/m);
+    expect(content).toMatch(/^sourceRef: docs\/a b\.md$/m);
+  });
+
+  it("edit body after -- consumes flag-looking text without parsing it as flags", async () => {
+    const { handler } = editFixture();
+
+    await handler("edit 0001 -- --title not a flag --status bogus", fakeCtx());
+    const content = fs.readFileSync(entryFile(), "utf8");
+    expect(content).toContain("--title not a flag --status bogus");
+    expect(content).not.toMatch(/^title: not/m);
+    expect(content).not.toMatch(/^status:/m);
+  });
+
+  it("conflicting value and clear flags error before mutation with no refresh", async () => {
+    const { handler, refreshes } = editFixture();
+    const before = fs.readFileSync(entryFile(), "utf8");
+    const conflicts = [
+      "edit 0001 --status active --clear-status",
+      "edit 0001 --supersedes 0002 --clear-supersedes",
+      "edit 0001 --review-after 2027-01-01T00:00:00.000Z --clear-review-after",
+      "edit 0001 --expires 2027-06-01T00:00:00.000Z --clear-expires",
+      "edit 0001 --source-type file --clear-source-type",
+      "edit 0001 --source-ref docs/a.md --clear-source-ref",
+      "edit 0001 --pinned --no-pinned",
+    ];
+    for (const cmd of conflicts) {
+      const ctx = fakeCtx();
+      await handler(cmd, ctx);
+      const notes = notified(ctx);
+      expect(notes, cmd).toHaveLength(1);
+      expect(notes[0].level, cmd).toBe("error");
+      expect(fs.readFileSync(entryFile(), "utf8"), cmd).toBe(before);
+    }
+    expect(refreshes()).toBe(0);
+  });
+
+  it("edit subcommand rejects unknown enums, bad scope, unknown flags, missing id, and empty edits", async () => {
+    const { handler, refreshes } = editFixture();
+    const before = fs.readFileSync(entryFile(), "utf8");
+    const badCommands = [
+      "edit 0001 --type bogus",
+      "edit 0001 --status bogus",
+      "edit 0001 --source-type bogus",
+      "edit 0001 --scope bogus",
+      "edit 0001 --bogus-flag x",
+      "edit 0001 unexpected-argument",
+      "edit",
+      "edit 0001",
+    ];
+    for (const cmd of badCommands) {
+      const ctx = fakeCtx();
+      await handler(cmd, ctx);
+      const notes = notified(ctx);
+      expect(notes, cmd).toHaveLength(1);
+      expect(notes[0].level, cmd).toBe("error");
+      expect(fs.readFileSync(entryFile(), "utf8"), cmd).toBe(before);
+    }
+    expect(refreshes()).toBe(0);
+  });
+
+  it("edit subcommand surfaces store-boundary rejections with byte identity and no refresh", async () => {
+    const { handler, refreshes } = editFixture();
+    const before = fs.readFileSync(entryFile(), "utf8");
+    const badCommands = [
+      "edit 0001 --review-after 2027-01-01",
+      "edit 0001 --supersedes nope",
+      "edit 0001 --supersedes 0001",
+      "edit 0001 --source-ref ''",
+    ];
+    for (const cmd of badCommands) {
+      const ctx = fakeCtx();
+      await handler(cmd, ctx);
+      const notes = notified(ctx);
+      expect(notes, cmd).toHaveLength(1);
+      expect(notes[0].level, cmd).toBe("error");
+      expect(fs.readFileSync(entryFile(), "utf8"), cmd).toBe(before);
+    }
+    expect(refreshes()).toBe(0);
+  });
+
+  it("successful slash edits fire onWriteSuccess; failures never do", async () => {
+    const { handler, refreshes } = editFixture();
+
+    await handler("edit 0001 --status bogus", fakeCtx());
+    expect(refreshes()).toBe(0);
+
+    await handler("edit 0001 --title Renamed once", fakeCtx());
+    expect(refreshes()).toBe(1);
+
+    await handler("edit 0001 --pinned --no-pinned", fakeCtx());
+    expect(refreshes()).toBe(1);
+
+    await handler("edit 0001 --no-pinned", fakeCtx());
+    expect(refreshes()).toBe(2);
+  });
+
+  it("help documents the edit grammar", async () => {
+    const { pi, commands } = fakePi();
+    engramExtension(pi);
+    const ctx = fakeCtx();
+    await commands.get("engram")!.handler("help", ctx);
+    const text = notified(ctx)[0].text;
+    expect(text).toContain("/engram edit");
+    for (const flag of [
+      "--title",
+      "--type",
+      "--tags",
+      "--scope",
+      "--pinned",
+      "--no-pinned",
+      "--author",
+      "--status",
+      "--supersedes",
+      "--review-after",
+      "--expires",
+      "--source-type",
+      "--source-ref",
+      "--clear-status",
+      "--clear-supersedes",
+      "--clear-review-after",
+      "--clear-expires",
+      "--clear-source-type",
+      "--clear-source-ref",
+    ]) {
+      expect(text, flag).toContain(flag);
+    }
+    expect(text).toContain("decision|fact|preference|note|issue|context");
+    expect(text).toContain("active|superseded|archived");
+    expect(text).toContain("conversation|file|url|command|other");
+    expect(text).toMatch(/-- <body>/);
+    expect(text).toMatch(/quote/i);
+  });
+
   it("init subcommand initializes .engram after confirm", async () => {
     const empty = fs.mkdtempSync(path.join(os.tmpdir(), "engram-empty-"));
     process.chdir(empty);
