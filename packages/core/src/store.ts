@@ -605,9 +605,13 @@ const makeEngramStoreLive = (
           const dir = yield* dirForScope(scope);
           const scanned = yield* scan(scope);
           // A partially readable store must not be rewritten, and repairs
-          // need a complete integrity view: duplicate ids are the only
-          // defect `dedupe` knows how to repair safely.
-          const otherDefects = scanned.diagnostics.filter((d) => d.code !== "duplicate_id");
+          // need a complete integrity view: error-severity diagnostics other
+          // than the duplicate ids `dedupe` itself repairs block the rewrite.
+          // Advisory lifecycle warnings (supersedes_not_found, review_due,
+          // expired) never block, matching `engram check`.
+          const otherDefects = scanned.diagnostics.filter(
+            (d) => d.severity === "error" && d.code !== "duplicate_id",
+          );
           if (scanned.omittedFiles > 0 || otherDefects.length > 0) {
             // Omitted candidates are exactly the diagnosed files that did not
             // become entries (soft defects like duplicate ids stay listed).
