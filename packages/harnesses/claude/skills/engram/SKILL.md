@@ -66,9 +66,18 @@ Do **not** record:
 `--review-after` / `--expires` (ISO 8601 timestamps with an explicit zone),
 `--source-type conversation|file|url|command|other`, and `--source-ref <ref>`
 (quote it if it contains spaces). The YAML keys are `status`, `supersedes`,
-`reviewAfter`, `expires`, `sourceType`, `sourceRef`; `engram edit` clears
-them with the paired `--clear-*` flags. Omit them unless they add real
-information.
+`reviewAfter`, `expires`, `sourceType`, `sourceRef`. Omit them unless they
+add real information.
+
+`engram edit <id>` changes an existing entry: title, type, tags, body,
+pinned, author, and every lifecycle field. A passed value replaces the
+current one; omitting a flag preserves it; each of the six lifecycle fields
+clears through its paired `--clear-*` flag. Quote multiword values
+(`--title "Two words"`).
+
+```bash
+engram edit 0012 --clear-status --clear-review-after
+```
 
 ```bash
 engram add --title "Replaced moment with date-fns" --type decision \

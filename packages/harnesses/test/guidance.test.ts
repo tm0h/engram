@@ -107,8 +107,8 @@ describe("guidance / skills stay aligned", () => {
       ["pi", piSkill],
       ["claude", claudeSkill],
     ] as const) {
-      // the edit surface itself, named per harness
-      expect(skill, `${name}: edit guidance`).toMatch(/engram[._]edit/);
+      // the edit surface itself, named per harness (tool underscore vs CLI space)
+      expect(skill, `${name}: edit guidance`).toMatch(/engram[._ ]edit/);
       // all six lifecycle names
       for (const word of [
         "status",
