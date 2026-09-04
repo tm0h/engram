@@ -28,6 +28,14 @@ import * as Inject from "./commands/inject.js";
 import * as Where from "./commands/where.js";
 import * as Dedupe from "./commands/dedupe.js";
 import * as Check from "./commands/check.js";
+import { installEpipeGuard } from "./io.js";
+
+// ENG-39: a piped consumer closing stdout/stderr early (e.g. `| head`) must
+// end the CLI with conventional SIGPIPE semantics (exit 141), not an
+// unhandled "error" event. Installed here, before any command output; see
+// installEpipeGuard for the mutation-before-output invariant this relies on.
+installEpipeGuard(process.stdout);
+installEpipeGuard(process.stderr);
 
 const DOMAIN_TAGS = new Set([
   "ProjectNotInitializedError",
