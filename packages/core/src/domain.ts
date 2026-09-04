@@ -2,6 +2,7 @@
  * Domain model for engram, defined with `effect/Schema`.
  */
 import { Schema } from "effect";
+import { parseTimestamp } from "./util.js";
 
 /** The kind of thing an engram records. */
 export const EngramTypeSchema = Schema.Literals([
@@ -148,6 +149,27 @@ export interface EngramPatch {
   readonly sourceType?: SourceType | null | undefined;
   readonly sourceRef?: string | null | undefined;
 }
+
+/* ------------------------------------------------------------------ */
+/* Effective lifecycle status                                          */
+/* ------------------------------------------------------------------ */
+
+/** ENG-17: time-derived activity of one engram. Inactive iff an explicit
+ * status says so (`superseded`/`archived`) OR `expires` is set and has
+ * passed. The boundary is inclusive (`expires <= nowMs`), matching
+ * `lifecycleDiagnostics`. `reviewAfter` is attention-only and never affects
+ * activity; a missing or unparseable `expires` never deactivates (entry
+ * validation reports bad values). Time-expiry does not change status
+ * metadata — `expired` is deliberately not a status. Pure function. */
+export const effectiveStatus = (
+  engram: Engram,
+  nowMs: number = Date.now(),
+): "active" | "inactive" => {
+  if (engram.status === "superseded" || engram.status === "archived") return "inactive";
+  const expiresMs = engram.expires === undefined ? undefined : parseTimestamp(engram.expires);
+  if (expiresMs !== undefined && expiresMs <= nowMs) return "inactive";
+  return "active";
+};
 
 /* ------------------------------------------------------------------ */
 /* Configuration schemas                                               */

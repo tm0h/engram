@@ -18,6 +18,7 @@ import {
   ENGRAM_TYPES,
   SOURCE_TYPES,
   detectAuthor,
+  effectiveStatus,
   ensureGitignoreLine,
   findGitRoot,
   findProjectRoot,
@@ -228,7 +229,15 @@ export const contextDigest = (
         const scanned = yield* store.scan(scope);
         omittedFiles += scanned.omittedFiles;
         diagnosticCount += scanned.diagnostics.length;
-        sections.push({ scope, items: ordered(scanned.entries) });
+        sections.push({
+          scope,
+          /* ENG-17 R3: the tool-facing digest excludes inactive entries by
+           * default (explicit superseded/archived status or a passed
+           * `expires`), via the core helper. ordered() semantics apply to
+           * what remains; warnings and caps are unchanged. showOp/get by id
+           * stay status-blind. */
+          items: ordered(scanned.entries.filter((m) => effectiveStatus(m) === "active")),
+        });
       }
       const flat = sections.flatMap((s) => s.items);
       const page = paginate(flat, opts.offset ?? 0, opts.limit ?? DEFAULT_CONTEXT_LIMIT);
@@ -712,7 +721,14 @@ const autoContextImpl = (): Effect.Effect<OpResult, unknown, EngramStore | Confi
       const scanned = yield* store.scan(scope);
       omittedFiles += scanned.omittedFiles;
       diagnosticCount += scanned.diagnostics.length;
-      sections.push({ scope, items: ordered(scanned.entries) });
+      sections.push({
+        scope,
+        /* ENG-17 R3 (leader ruling): the startup injection excludes inactive
+         * entries by default, same as contextDigest, via the core helper.
+         * ordered() semantics apply to what remains; warnings, caps, and
+         * pagination are unchanged. */
+        items: ordered(scanned.entries.filter((m) => effectiveStatus(m) === "active")),
+      });
     }
     const flat = sections.flatMap((s) => s.items);
     const page = paginate(flat, 0, limit);

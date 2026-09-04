@@ -17,6 +17,8 @@ import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
 import { listCommand } from "../src/commands/list.js";
 import { contextCommand } from "../src/commands/context.js";
+import { searchCommand } from "../src/commands/search.js";
+import { showCommand } from "../src/commands/show.js";
 
 /* ------------------------------ helpers ------------------------------ */
 
@@ -205,6 +207,45 @@ describe("list and context integrity warnings", () => {
     expect(output()).toContain("Healthy note");
   });
 
+  it("context excludes inactive entries on the no-query/no-limit path (ENG-17 R3)", async () => {
+    const past = new Date(Date.now() - 86_400_000).toISOString();
+    const future = new Date(Date.now() + 86_400_000).toISOString();
+    const fm = (id: string, title: string, status?: string, expires?: string): string =>
+      [
+        "---",
+        `id: "${id}"`,
+        `title: ${JSON.stringify(title)}`,
+        "type: note",
+        "tags: []",
+        "scope: project",
+        "created: 2026-01-01T00:00:00.000Z",
+        "updated: 2026-01-01T00:00:00.000Z",
+        ...(status !== undefined ? [`status: ${status}`] : []),
+        ...(expires !== undefined ? [`expires: ${expires}`] : []),
+        "---",
+        "Body\n",
+      ].join("\n");
+    const dir = projectEngramsDir(tmp);
+    fs.writeFileSync(path.join(dir, "0001-active-note.md"), fm("0001", "Active note"));
+    fs.writeFileSync(
+      path.join(dir, "0002-superseded-note.md"),
+      fm("0002", "Superseded note", "superseded"),
+    );
+    fs.writeFileSync(
+      path.join(dir, "0003-expired-note.md"),
+      fm("0003", "Expired note", undefined, past),
+    );
+    fs.writeFileSync(
+      path.join(dir, "0004-future-note.md"),
+      fm("0004", "Future note", undefined, future),
+    );
+    await run(contextCommand({}));
+    expect(output()).toContain("Active note");
+    expect(output()).toContain("Future note");
+    expect(output()).not.toContain("Superseded note");
+    expect(output()).not.toContain("Expired note");
+  });
+
   it("context with only malformed entries still warns and never claims empty", async () => {
     seedBroken(projectEngramsDir(tmp), "0001-broken.md");
     await run(contextCommand({}));
@@ -261,5 +302,153 @@ describe("list and context integrity warnings", () => {
     };
     const normalize = (s: string): string => s.replace(/\d+/g, "#");
     expect(normalize(dupBlock(three))).toBe(normalize(dupBlock(two)));
+  });
+});
+
+/* ------------------- ENG-17 R13: --all opt-in ------------------- */
+
+describe("engram --all opt-in (ENG-17 R13)", () => {
+  let origCwd = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  let outLines: string[] = [];
+  let spies: Array<ReturnType<typeof vi.spyOn>> = [];
+
+  beforeEach(() => {
+    origCwd = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = mkHome();
+    process.chdir(tmp);
+    process.env.HOME = home;
+    outLines = [];
+    spies = [
+      vi.spyOn(console, "log").mockImplementation(((...args: unknown[]) => {
+        outLines.push(args.map(String).join(" "));
+        return undefined;
+      }) as typeof console.log),
+      vi.spyOn(console, "error").mockImplementation(() => undefined),
+    ];
+  });
+  afterEach(() => {
+    for (const s of spies) s.mockRestore();
+    process.chdir(origCwd);
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const output = (): string => outLines.join("\n");
+  const run = (
+    eff: Effect.Effect<unknown, unknown, EngramStore | ConfigRepo | FileSystem | Path>,
+  ): Promise<unknown> =>
+    Effect.runPromise(Effect.provide(eff as never, MainLive)) as Promise<unknown>;
+
+  const fm = (id: string, title: string, over: Record<string, unknown> = {}): string => {
+    const data: Record<string, unknown> = {
+      id,
+      title,
+      type: "note",
+      tags: [],
+      scope: "project",
+      created: "2026-01-01T00:00:00.000Z",
+      updated: "2026-01-01T00:00:00.000Z",
+      ...over,
+    };
+    return [
+      "---",
+      ...Object.entries(data).map(([k, v]) => `${k}: ${JSON.stringify(v)}`),
+      "---",
+      "Body\n",
+    ].join("\n");
+  };
+
+  const seedFixtures = (): void => {
+    const dir = projectEngramsDir(tmp);
+    fs.writeFileSync(path.join(dir, "0001-active-note.md"), fm("0001", "Active note"));
+    fs.writeFileSync(
+      path.join(dir, "0002-superseded-note.md"),
+      fm("0002", "Superseded note", { status: "superseded", tags: ["body"] }),
+    );
+    fs.writeFileSync(
+      path.join(dir, "0003-archived-note.md"),
+      fm("0003", "Archived note", { status: "archived" }),
+    );
+    fs.writeFileSync(
+      path.join(dir, "0004-expired-note.md"),
+      fm("0004", "Expired note", { expires: "2020-01-01T00:00:00.000Z", type: "decision" }),
+    );
+  };
+
+  it("list hides inactive entries by default and --all re-includes them", async () => {
+    seedFixtures();
+    await run(listCommand({}));
+    expect(output()).toContain("Active note");
+    expect(output()).not.toContain("Superseded note");
+    expect(output()).not.toContain("Archived note");
+    expect(output()).not.toContain("Expired note");
+    outLines = [];
+    await run(listCommand({ all: true }));
+    expect(output()).toContain("Active note");
+    expect(output()).toContain("Superseded note");
+    expect(output()).toContain("Archived note");
+    expect(output()).toContain("Expired note");
+  });
+
+  it("list applies the lifecycle filter before type/tag filters", async () => {
+    seedFixtures();
+    await run(listCommand({ type: "decision" }));
+    expect(output()).toContain("No matching engrams.");
+    outLines = [];
+    await run(listCommand({ type: "decision", all: true }));
+    expect(output()).toContain("Expired note");
+  });
+
+  it("an all-inactive store says so instead of claiming it is unreadable", async () => {
+    const dir = projectEngramsDir(tmp);
+    fs.writeFileSync(
+      path.join(dir, "0002-superseded-note.md"),
+      fm("0002", "Superseded note", { status: "superseded" }),
+    );
+    await run(listCommand({}));
+    expect(output()).toContain("hidden by lifecycle filters");
+    expect(output()).not.toContain("(no readable engrams)");
+  });
+
+  it("search hides inactive entries by default and --all re-includes them", async () => {
+    seedFixtures();
+    await run(searchCommand("body", {}));
+    expect(output()).toContain("Active note");
+    expect(output()).not.toContain("Superseded note");
+    outLines = [];
+    await run(searchCommand("body", { all: true }));
+    expect(output()).toContain("Active note");
+    expect(output()).toContain("Superseded note");
+    expect(output()).toContain("Archived note");
+    expect(output()).toContain("Expired note");
+  });
+
+  it("context hides inactive entries by default and --all re-includes them", async () => {
+    seedFixtures();
+    await run(contextCommand({}));
+    expect(output()).toContain("Active note");
+    expect(output()).not.toContain("Superseded note");
+    expect(output()).not.toContain("Archived note");
+    expect(output()).not.toContain("Expired note");
+    outLines = [];
+    await run(contextCommand({ all: true }));
+    expect(output()).toContain("Active note");
+    expect(output()).toContain("Superseded note");
+    expect(output()).toContain("Archived note");
+    expect(output()).toContain("Expired note");
+  });
+
+  it("show resolves an inactive entry regardless of mode", async () => {
+    seedFixtures();
+    await run(showCommand("0002", {}));
+    expect(output()).toContain("Superseded note");
+    expect(output()).toContain("status: superseded");
   });
 });

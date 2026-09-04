@@ -322,6 +322,11 @@ describe("engram add/edit lifecycle flags (process level)", () => {
       join(proj, ".engram", "engrams", "0001-edit-me.md"),
       '---\nid: "0001"\ntitle: Edit me\ntype: note\ntags: []\nscope: project\ncreated: 2025-08-15T10:00:00.000Z\nupdated: 2025-08-15T11:00:00.000Z\n---\nB\n',
     );
+    // ENG-17 R5: the supersedes target must exist and be active
+    writeFileSync(
+      join(proj, ".engram", "engrams", "0002-target.md"),
+      '---\nid: "0002"\ntitle: Target\ntype: note\ntags: []\nscope: project\ncreated: 2025-08-15T10:00:00.000Z\nupdated: 2025-08-15T11:00:00.000Z\n---\nB\n',
+    );
     // set all six via kebab-case flags
     const set = runCli(
       [

@@ -102,13 +102,16 @@ describe("engram add/edit lifecycle flags", () => {
       .map((f) => fs.readFileSync(path.join(engramsDir(), f), "utf8"))
       .join("\n%%%\n");
 
-  /** A deterministic legacy-id entry to supersede. */
+  /** A deterministic legacy-id entry to supersede (any unique legacy id). */
   const seedLegacy = (): void => {
+    seedLegacyId("0001", "Legacy note", "legacy-note");
+  };
+  const seedLegacyId = (id: string, title: string, slug: string): void => {
     fs.writeFileSync(
-      path.join(engramsDir(), "0001-legacy-note.md"),
+      path.join(engramsDir(), `${id}-${slug}.md`),
       stringifyFrontmatter("Legacy body\n", {
-        id: "0001",
-        title: "Legacy note",
+        id,
+        title,
         type: "note",
         tags: [],
         scope: "project",
@@ -180,13 +183,19 @@ describe("engram add/edit lifecycle flags", () => {
       ["sourceType", "clearSourceType", "sourceType"],
       ["sourceRef", "clearSourceRef", "sourceRef"],
     ];
+    let n = 0;
     for (const [flag, clear, key] of cases) {
+      // ENG-17 R1/R5: each add needs its own active predecessor; a target
+      // already marked superseded by the previous iteration would reject.
+      n += 1;
+      const predId = String(1000 + n);
+      seedLegacyId(predId, `Pred ${predId}`, `pred-${predId}`);
       await run(
         addCommand({
           title: `Clear ${flag}`,
           content: "b",
           ...LIFECYCLE_VALUES,
-          supersedes: "0001",
+          supersedes: predId,
         }),
       );
       const id = idOf(`Clear ${flag}`);
@@ -210,6 +219,8 @@ describe("engram add/edit lifecycle flags", () => {
       [{ sourceType: "file", clearSourceType: true }, "--clear-source-type"],
       [{ sourceRef: "docs/spec.md", clearSourceRef: true }, "--clear-source-ref"],
     ];
+    // ENG-17 R5: the supersedes target must exist and be active
+    seedLegacy();
     await run(
       addCommand({
         title: "Conflict target",

@@ -10,6 +10,7 @@ import {
   ENGRAM_STATUSES,
   SourceTypeSchema,
   SOURCE_TYPES,
+  effectiveStatus,
 } from "../src/domain.js";
 
 describe("EngramTypeSchema", () => {
@@ -164,5 +165,76 @@ describe("config schemas", () => {
       author: "mohammad",
     });
     expect(out.author).toBe("mohammad");
+  });
+});
+
+describe("effectiveStatus (ENG-17)", () => {
+  const base = {
+    id: "0001",
+    title: "t",
+    type: "note" as const,
+    tags: [],
+    scope: "project" as const,
+    created: "2026-01-01T00:00:00.000Z",
+    updated: "2026-01-01T00:00:00.000Z",
+    author: undefined,
+    pinned: false,
+    body: "",
+    path: "",
+  };
+  const now = Date.parse("2026-01-15T12:00:00.000Z");
+  const iso = (ms: number): string => new Date(ms).toISOString();
+
+  it("treats absent status as active", () => {
+    expect(effectiveStatus(base, now)).toBe("active");
+  });
+
+  it("treats explicit active as active", () => {
+    expect(effectiveStatus({ ...base, status: "active" }, now)).toBe("active");
+  });
+
+  it("treats superseded and archived as inactive regardless of expiry", () => {
+    expect(effectiveStatus({ ...base, status: "superseded" }, now)).toBe("inactive");
+    expect(effectiveStatus({ ...base, status: "archived" }, now)).toBe("inactive");
+    expect(effectiveStatus({ ...base, status: "superseded", expires: iso(now + 1) }, now)).toBe(
+      "inactive",
+    );
+  });
+
+  it("inactive when expires < now (boundary now-1ms)", () => {
+    expect(effectiveStatus({ ...base, expires: iso(now - 1) }, now)).toBe("inactive");
+  });
+
+  it("inactive when expires == now (inclusive boundary)", () => {
+    expect(effectiveStatus({ ...base, expires: iso(now) }, now)).toBe("inactive");
+  });
+
+  it("active when expires > now (boundary now+1ms)", () => {
+    expect(effectiveStatus({ ...base, expires: iso(now + 1) }, now)).toBe("active");
+  });
+
+  it("expiry beats explicit active status", () => {
+    expect(effectiveStatus({ ...base, status: "active", expires: iso(now - 1) }, now)).toBe(
+      "inactive",
+    );
+  });
+
+  it("reviewAfter does not affect active status (attention-only)", () => {
+    expect(effectiveStatus({ ...base, reviewAfter: iso(now - 1) }, now)).toBe("active");
+  });
+
+  it("supersedes alone does not make an entry inactive", () => {
+    expect(effectiveStatus({ ...base, supersedes: "0000" }, now)).toBe("active");
+  });
+
+  it("an unparseable expires value never deactivates (validation reports it)", () => {
+    expect(effectiveStatus({ ...base, expires: "not-a-timestamp" }, now)).toBe("active");
+  });
+
+  it("defaults now to Date.now()", () => {
+    const past = new Date(Date.now() - 60_000).toISOString();
+    const future = new Date(Date.now() + 60_000).toISOString();
+    expect(effectiveStatus({ ...base, expires: past })).toBe("inactive");
+    expect(effectiveStatus({ ...base, expires: future })).toBe("active");
   });
 });

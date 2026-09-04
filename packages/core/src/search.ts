@@ -12,10 +12,20 @@
  * layered behind the same interface later.
  */
 import type { Engram } from "./domain.js";
+import { effectiveStatus } from "./domain.js";
 
 export interface SearchResult {
   readonly engram: Engram;
   readonly score: number;
+}
+
+/** ENG-17 options (4th, optional parameter — fully backward compatible).
+ * `includeInactive`: re-include superseded/archived/expired entries (the
+ * default excludes them). `now`: check time for expiry, for deterministic
+ * tests; defaults to `Date.now()`. */
+export interface SearchOptions {
+  readonly includeInactive?: boolean;
+  readonly now?: number;
 }
 
 function tokenize(query: string): string[] {
@@ -41,16 +51,25 @@ function scoreEngram(m: Engram, tokens: ReadonlyArray<string>): number {
   return score;
 }
 
-/** Search engrams. With no query, returns all sorted by recency. */
+/** Search engrams. With no query, returns all sorted by recency.
+ *
+ * ENG-17: inactive entries (explicit superseded/archived status, or `expires`
+ * at or before `now`) are excluded by default; pass `{ includeInactive: true }`
+ * to re-include them. Filtering runs before scoring and before limit slicing. */
 export function searchEngrams(
   list: ReadonlyArray<Engram>,
   query: string | undefined,
   limit?: number,
+  options: SearchOptions = {},
 ): SearchResult[] {
+  const nowMs = options.now ?? Date.now();
+  const candidates = options.includeInactive
+    ? list
+    : list.filter((m) => effectiveStatus(m, nowMs) === "active");
   const tokens = query ? tokenize(query) : [];
   let results: SearchResult[];
   if (tokens.length === 0) {
-    results = list
+    results = candidates
       .map((engram) => ({ engram, score: 0 }))
       .sort(
         (a, b) =>
@@ -58,7 +77,7 @@ export function searchEngrams(
           a.engram.id.localeCompare(b.engram.id),
       );
   } else {
-    results = list
+    results = candidates
       .map((engram) => ({ engram, score: scoreEngram(engram, tokens) }))
       .filter((r) => r.score > 0)
       .sort((a, b) => b.score - a.score || a.engram.id.localeCompare(b.engram.id));

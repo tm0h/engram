@@ -81,3 +81,55 @@ describe("searchEngrams", () => {
     expect(r[0].engram.id).toBe("0002");
   });
 });
+
+describe("searchEngrams / inactive filtering (ENG-17)", () => {
+  const now = Date.parse("2026-01-15T12:00:00.000Z");
+  const iso = (ms: number): string => new Date(ms).toISOString();
+
+  const lifecycle: Engram[] = [
+    mem({ id: "0001", title: "active note", body: "config" }),
+    // the tag makes 0002 the top scorer among "config" matches, so a limit
+    // applied before filtering would keep the superseded entry
+    mem({ id: "0002", title: "superseded note", tags: ["config"], status: "superseded" }),
+    mem({ id: "0003", title: "archived note", body: "config", status: "archived" }),
+    mem({ id: "0004", title: "expired note", body: "config", expires: iso(now - 1) }),
+    mem({ id: "0005", title: "future-expiry note", body: "config", expires: iso(now + 1) }),
+  ];
+
+  it("excludes inactive entries from query results by default", () => {
+    const r = searchEngrams(lifecycle, "config", undefined, { now });
+    expect(r.map((x) => x.engram.id)).toEqual(["0001", "0005"]);
+  });
+
+  it("excludes inactive entries when no query is given", () => {
+    const r = searchEngrams(lifecycle, undefined, undefined, { now });
+    expect(r.map((x) => x.engram.id)).toEqual(["0001", "0005"]);
+  });
+
+  it("expiry boundary is inclusive: expires == now counts as inactive", () => {
+    const list = [mem({ id: "0001", title: "edge", expires: iso(now) })];
+    expect(searchEngrams(list, undefined, undefined, { now })).toEqual([]);
+  });
+
+  it("explicit active status stays active", () => {
+    const list = [mem({ id: "0001", title: "explicit", status: "active" })];
+    expect(searchEngrams(list, "explicit", undefined, { now })).toHaveLength(1);
+  });
+
+  it("includeInactive re-includes inactive entries", () => {
+    const r = searchEngrams(lifecycle, "config", undefined, { now, includeInactive: true });
+    expect(r.map((x) => x.engram.id)).toEqual(["0002", "0001", "0003", "0004", "0005"]);
+  });
+
+  it("filters before limit slicing", () => {
+    // Without default filtering, limit 1 would keep the top-scoring entry,
+    // the superseded 0002 (tag boost). Filtering first leaves 0001.
+    const r = searchEngrams(lifecycle, "config", 1, { now });
+    expect(r.map((x) => x.engram.id)).toEqual(["0001"]);
+  });
+
+  it("entries without lifecycle fields are unaffected (backward compatible)", () => {
+    const r = searchEngrams(sample, "auth");
+    expect(r.map((x) => x.engram.id)).toEqual(["0003", "0001"]);
+  });
+});

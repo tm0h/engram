@@ -216,6 +216,8 @@ describe("engram extension / tool execution", () => {
     const { pi, tools } = fakePi();
     engramExtension(pi);
     const add = tools.find((t) => t.name === "engram_add")!;
+    // ENG-17 R5: supersedes must resolve to an existing active entry
+    seedEntry(tmp, "0001", "Predecessor");
 
     const res = (await add.execute("call-1", {
       title: "Recorded with lifecycle",
@@ -266,6 +268,10 @@ describe("engram extension / tool execution", () => {
 
   it("engram_edit sets, changes, and clears all six lifecycle fields", async () => {
     seedEntry(tmp, "0001", "Lifecycle target");
+    // ENG-17 R5: supersedes targets must exist; R1: re-pointing is rejected,
+    // so the change step clears the link before setting the new target.
+    seedEntry(tmp, "0002", "First target");
+    seedEntry(tmp, "0003", "Second target");
     const { pi, tools } = fakePi();
     engramExtension(pi);
     const edit = tools.find((t) => t.name === "engram_edit")!;
@@ -295,6 +301,8 @@ describe("engram extension / tool execution", () => {
     expect(content).toMatch(/^sourceType: file$/m);
     expect(content).toMatch(/^sourceRef: docs\/a\.md$/m);
 
+    // clear only the link, then establish the new target (R1: no repointing)
+    await fileOf({ id: "0001", supersedes: null });
     const changeFile = await fileOf({
       id: "0001",
       status: "archived",
@@ -475,6 +483,8 @@ describe("engram extension / /engram command", () => {
 
   it("edit subcommand replaces title, type, tags, body, pinned, author, and lifecycle values", async () => {
     const { handler } = editFixture();
+    // ENG-17 R5: the supersedes target must exist and be active
+    seedEntry(tmp, "0002", "Newer target");
 
     await handler(
       "edit 0001 --title Renamed --type decision --tags a,b --pinned --author Ada " +
@@ -501,6 +511,8 @@ describe("engram extension / /engram command", () => {
 
   it("edit subcommand clears each lifecycle field with its paired clear flag", async () => {
     const { handler } = editFixture();
+    // ENG-17 R5: the supersedes target must exist and be active
+    seedEntry(tmp, "0002", "Clear target");
 
     await handler(
       "edit 0001 --status active --supersedes 0002 --review-after 2027-01-01T00:00:00.000Z " +
@@ -765,6 +777,8 @@ describe("engram extension / /engram command", () => {
   it("add subcommand accepts the six lifecycle value flags", async () => {
     const { pi, commands } = fakePi();
     engramExtension(pi);
+    // ENG-17 R5: supersedes must resolve to an existing active entry
+    seedEntry(tmp, "0001", "Add predecessor");
     const ctx = fakeCtx();
     await commands
       .get("engram")!

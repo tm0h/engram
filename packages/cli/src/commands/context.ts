@@ -14,6 +14,8 @@ export interface ContextOptions {
   readonly query?: string;
   readonly full?: boolean;
   readonly limit?: number;
+  /** ENG-17 R13: re-include inactive entries (superseded, archived, expired). */
+  readonly all?: boolean;
 }
 
 export const contextCommand = (opts: ContextOptions) =>
@@ -42,9 +44,16 @@ export const contextCommand = (opts: ContextOptions) =>
       // Ids must be unique; surface duplicates loudly but bounded (this
       // digest is what agents read at session start).
       if (opts.query) {
-        engrams = searchEngrams(engrams, opts.query, opts.limit).map((r) => r.engram);
-      } else if (typeof opts.limit === "number") {
-        engrams = searchEngrams(engrams, undefined, opts.limit).map((r) => r.engram);
+        engrams = searchEngrams(engrams, opts.query, opts.limit, {
+          includeInactive: opts.all === true,
+        }).map((r) => r.engram);
+      } else {
+        // ENG-17 R3: the no-query path routes through searchEngrams too, so
+        // the digest excludes inactive entries by default (previously it
+        // kept the raw scan entries when no numeric limit was given).
+        engrams = searchEngrams(engrams, undefined, opts.limit, {
+          includeInactive: opts.all === true,
+        }).map((r) => r.engram);
       }
       if (!engrams.length) continue;
       const rendered = renderContext(engrams, {

@@ -245,6 +245,10 @@ describe("engram opencode plugin / tool execution", () => {
 
   it("engram_edit sets, changes, and clears all six lifecycle fields", async () => {
     seedEntry(env.tmp, "0001", "Lifecycle target");
+    // ENG-17 R5: supersedes targets must exist; R1: re-pointing is rejected,
+    // so the change step clears the link before setting the new target.
+    seedEntry(env.tmp, "0002", "First target");
+    seedEntry(env.tmp, "0003", "Second target");
     const tools = await loadTools();
     const keys = ["status", "supersedes", "reviewAfter", "expires", "sourceType", "sourceRef"];
     const fileOf = async (params: Record<string, unknown>): Promise<string> => {
@@ -270,6 +274,8 @@ describe("engram opencode plugin / tool execution", () => {
     expect(content).toMatch(/^sourceType: file$/m);
     expect(content).toMatch(/^sourceRef: docs\/a\.md$/m);
 
+    // clear only the link, then establish the new target (R1: no repointing)
+    await fileOf({ id: "0001", supersedes: null });
     const changeFile = await fileOf({
       id: "0001",
       status: "archived",

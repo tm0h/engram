@@ -57,6 +57,12 @@ const seed = (root: string, id: string, over: Partial<EngramInput>): void => {
     "updated: 2026-08-16T10:00:00.000Z",
     `author: ${JSON.stringify(i.author ?? "Tester")}`,
     ...(i.pinned ? ["pinned: true"] : []),
+    ...(i.status !== undefined ? [`status: ${i.status}`] : []),
+    ...(i.supersedes !== undefined ? [`supersedes: ${JSON.stringify(i.supersedes)}`] : []),
+    ...(i.reviewAfter !== undefined ? [`reviewAfter: ${i.reviewAfter}`] : []),
+    ...(i.expires !== undefined ? [`expires: ${i.expires}`] : []),
+    ...(i.sourceType !== undefined ? [`sourceType: ${i.sourceType}`] : []),
+    ...(i.sourceRef !== undefined ? [`sourceRef: ${JSON.stringify(i.sourceRef)}`] : []),
   ].join("\n");
   fs.writeFileSync(file, `---\n${fm}\n---\n${i.body}\n`);
 };
@@ -135,6 +141,25 @@ describe("shared ops / autoContextOp", () => {
       truncated: false,
     });
     expect(res.details.chars).toBe(res.text.length);
+  });
+
+  it("excludes inactive entries from the startup digest (ENG-17 R3 ruling)", async () => {
+    const future = new Date(Date.now() + 86_400_000).toISOString();
+    const past = new Date(Date.now() - 86_400_000).toISOString();
+    seed(tmp, "0001", { type: "note", title: "Active alpha" });
+    seed(tmp, "0002", { type: "note", title: "Superseded beta", status: "superseded" });
+    seed(tmp, "0003", { type: "note", title: "Archived gamma", status: "archived" });
+    seed(tmp, "0004", { type: "note", title: "Expired delta", expires: past });
+    seed(tmp, "0005", { type: "note", title: "Future epsilon", expires: future });
+
+    const res = await run(autoContextOp());
+    expect(res.isError).toBe(false);
+    expect(res.text).toContain("Active alpha");
+    expect(res.text).toContain("Future epsilon");
+    expect(res.text).not.toContain("Superseded beta");
+    expect(res.text).not.toContain("Archived gamma");
+    expect(res.text).not.toContain("Expired delta");
+    expect(res.details).toMatchObject({ total: 2 });
   });
 
   it("orders decisions and pinned entries first", async () => {

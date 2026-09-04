@@ -66,7 +66,15 @@ export interface EngramStoreShape {
     Engram,
     StoreError | EngramNotFoundError | AmbiguousIdError | DuplicateIdError
   >;
-  readonly add: (scope: Scope, input: EngramInput) => Effect.Effect<Engram, StoreError>;
+  readonly add: (
+    scope: Scope,
+    input: EngramInput,
+  ) => Effect.Effect<
+    Engram,
+    /* ENG-17: establishing supersedes marks the predecessor via `update`, so
+     * the id-resolution errors `update` can surface belong here too. */
+    StoreError | EngramNotFoundError | AmbiguousIdError | DuplicateIdError
+  >;
   readonly update: (
     scope: Scope,
     id: string,
@@ -241,6 +249,37 @@ const isAlreadyExists = (e: unknown): boolean => {
   const reason = (e as { reason?: { _tag?: string } }).reason;
   return reason?._tag === "AlreadyExists";
 };
+
+/** Human-readable one-line description of a failure for rollback messages. */
+const describeError = (e: unknown): string => {
+  if (e instanceof Error && e.message) return e.message;
+  const tag = (e as { _tag?: string } | undefined)?._tag;
+  return tag !== undefined ? `${tag}: ${String(e)}` : String(e);
+};
+
+/** ENG-17 atomicity (review fix): run one compensating step after a primary
+ * failure and INSPECT the result. Returns null when the step succeeded; when
+ * the step itself fails, returns an error naming BOTH failures and what may
+ * remain on disk — a cleanup result is never silently discarded. Callers run
+ * every step, then report the first rollback error or the primary failure. */
+const rollbackStep = (
+  file: string,
+  leftBehind: string,
+  primary: unknown,
+  compensation: Effect.Effect<void, StoreError>,
+): Effect.Effect<FrontmatterParseError | null, StoreError> =>
+  Effect.gen(function* () {
+    const rolled = yield* Effect.result(compensation);
+    if (Result.isSuccess(rolled)) return null;
+    return new FrontmatterParseError({
+      file,
+      message:
+        `incomplete rollback: ${leftBehind} may remain in a half-applied state. ` +
+        `Primary failure: ${describeError(primary)}. ` +
+        `Rollback failure: ${describeError(rolled.failure)}. ` +
+        `Run engram check and repair the store by hand.`,
+    });
+  });
 
 /** Build the live EngramStore from the platform FileSystem + Path services. */
 const makeEngramStoreLive = (
@@ -520,6 +559,21 @@ const makeEngramStoreLive = (
           const title = input.title.trim();
           const slug = slugify(title);
 
+          /* ENG-17 R1/R5: a supersedes claim is hard-validated before any
+           * file is written, so rejections leave the store byte-identical.
+           * The probe id seeds only the cycle walk and the error file
+           * context; a fresh id cannot appear in any stored chain, and the
+           * real candidate's self-reference check runs in validateCandidate. */
+          if (input.supersedes !== undefined) {
+            const probeId = newId();
+            yield* validateSupersedesEstablish(
+              scope,
+              probeId,
+              input.supersedes,
+              path.join(dir, `${probeId}-${slug}.md`),
+            );
+          }
+
           /**
            * Ids are globally unique by construction (see `newId`), so no scan
            * or shared counter is needed — different machines, sessions, and CI
@@ -563,12 +617,167 @@ const makeEngramStoreLive = (
                   : attempt(tries - 1),
             );
 
-          return yield* attempt(5);
+          const added = yield* attempt(5);
+          if (input.supersedes === undefined) return added;
+          /* ENG-17 R1: establishing supersedes marks the predecessor
+           * superseded as part of the same logical operation: either the new
+           * entry exists AND the predecessor is marked, or nothing is
+           * written. The predecessor's `updated` bumps to the operation
+           * time, matching the store's existing convention for metadata
+           * edits via update(). Atomicity is surfaced-failure rollback (R2):
+           * a failed marking write is compensated by removing the just-
+           * written entry file, and the compensation result is inspected —
+           * a failed cleanup surfaces an incomplete-rollback error naming
+           * both failures (review fix). A hard crash between the two writes
+           * can still leave the new entry without the marking; cross-process
+           * concurrency is check-then-act and out of scope (R8). */
+          const marked = yield* Effect.result(
+            update(scope, input.supersedes, { status: "superseded" }),
+          );
+          if (Result.isFailure(marked)) {
+            const cleanup = yield* rollbackStep(
+              added.path,
+              `the new entry file "${added.path}"`,
+              marked.failure,
+              fs.remove(added.path, { force: true }),
+            );
+            return yield* Effect.fail(cleanup ?? marked.failure);
+          }
+          return added;
+        });
+
+      /** ENG-17 R5: a supersedes claim must resolve to an exact, valid,
+       * uniquely-claimed entry in the same scope that is neither superseded
+       * nor archived, and must not close a cycle through the supersedes
+       * chain. Runs before ANY write, so rejections leave files
+       * byte-identical. Returns the validated target (callers need its path
+       * and bytes for atomic marking). Reuses FrontmatterParseError per R7,
+       * exactly like validateCandidate. */
+      const validateSupersedesEstablish = (
+        scope: Scope,
+        entryId: string,
+        targetId: string,
+        candidateFile: string,
+      ): Effect.Effect<Engram, StoreError> =>
+        Effect.gen(function* () {
+          const reject = (message: string) =>
+            new FrontmatterParseError({ file: candidateFile, message });
+          if (targetId === entryId) {
+            return yield* Effect.fail(
+              reject(`supersedes self-reference: "${entryId}" cannot supersede itself`),
+            );
+          }
+          const scanned = yield* scan(scope);
+          const claimed = scanned.duplicateIds.find((c) => c.id === targetId);
+          if (claimed !== undefined) {
+            return yield* Effect.fail(
+              reject(
+                `supersedes target "${targetId}" is claimed by multiple files (${claimed.files.join(", ")}); resolve the duplicate first, e.g. with engram dedupe`,
+              ),
+            );
+          }
+          const target = scanned.entries.find((m) => m.id === targetId);
+          if (target === undefined) {
+            // No valid entry claims the id: distinguish an invalid/unreadable
+            // candidate file from a truly missing id, and a same-id entry in
+            // the other scope from both (supersedes is same-scope only).
+            const diagnosed = scanned.diagnostics.filter(
+              (d) => parseEntryFilename(path.basename(d.file))?.id === targetId,
+            );
+            if (diagnosed.length > 0) {
+              return yield* Effect.fail(
+                reject(
+                  `supersedes target "${targetId}" is not a valid readable entry: ${diagnosed[0].message}`,
+                ),
+              );
+            }
+            const other: Scope = scope === "project" ? "personal" : "project";
+            const elsewhere = yield* Effect.result(scan(other));
+            if (
+              Result.isSuccess(elsewhere) &&
+              elsewhere.success.entries.some((m) => m.id === targetId)
+            ) {
+              return yield* Effect.fail(
+                reject(
+                  `supersedes target "${targetId}" exists only in the ${other} store; supersedes must reference an entry in the same ${scope} store`,
+                ),
+              );
+            }
+            return yield* Effect.fail(
+              reject(
+                `supersedes target "${targetId}" does not match any entry in the ${scope} store`,
+              ),
+            );
+          }
+          if (target.status === "superseded" || target.status === "archived") {
+            return yield* Effect.fail(
+              reject(
+                `supersedes target "${targetId}" is already ${target.status}; only an active entry can be superseded`,
+              ),
+            );
+          }
+          // Transitive cycle: follow the current chain from the target;
+          // reaching the entry that is gaining the link closes a cycle. The
+          // visited set also terminates on pre-existing cycles in
+          // hand-edited stores instead of looping forever.
+          const byId = new Map(scanned.entries.map((m) => [m.id, m] as const));
+          const chain: Array<string> = [];
+          const visited = new Set<string>([entryId]);
+          let cursor: string | undefined = targetId;
+          while (cursor !== undefined && !visited.has(cursor)) {
+            chain.push(cursor);
+            visited.add(cursor);
+            cursor = byId.get(cursor)?.supersedes;
+          }
+          if (cursor !== undefined) {
+            return yield* Effect.fail(
+              reject(
+                `supersedes cycle: ${[...chain, cursor].join(" -> ")} would loop back to "${entryId}"`,
+              ),
+            );
+          }
+          return target;
         });
 
       const update: EngramStoreShape["update"] = (scope, id, patch) =>
         Effect.gen(function* () {
           const mem = yield* get(scope, id);
+          const instruction = patch.supersedes;
+
+          /* ENG-17 R1 transition table for `supersedes`:
+           *   keep (undefined) -> no validation, no side effect
+           *   clear (null)     -> clears this entry's link only; the
+           *                       predecessor is NOT reactivated (status
+           *                       metadata is never mutated implicitly)
+           *   X -> X           -> idempotent no-op: the predecessor is
+           *                       inactive by now (this entry superseded it),
+           *                       so re-validation would reject its own link
+           *   unset -> X       -> establish: hard validation (R5), then the
+           *                       predecessor is marked superseded atomically
+           *   X -> Y           -> rejected: clear first, then set (no silent
+           *                       re-pointing) */
+          const dir = yield* dirForScope(scope);
+          const currentFile = path.join(dir, `${mem.id}-${slugify(mem.title)}.md`);
+          if (
+            typeof instruction === "string" &&
+            mem.supersedes !== undefined &&
+            mem.supersedes !== instruction
+          ) {
+            return yield* Effect.fail(
+              new FrontmatterParseError({
+                file: currentFile,
+                message: `supersedes is already "${mem.supersedes}"; re-pointing is not supported: clear it first (supersedes: null), then set the new target`,
+              }),
+            );
+          }
+          // Reaching here with a concrete instruction means either X->X
+          // (idempotent no-op: no validation, no re-marking) or establish
+          // from unset (validated and marked below).
+          const target =
+            typeof instruction === "string" && mem.supersedes === undefined
+              ? yield* validateSupersedesEstablish(scope, mem.id, instruction, currentFile)
+              : undefined;
+
           const next: Engram = {
             ...mem,
             title: patch.title !== undefined ? patch.title.trim() : mem.title,
@@ -578,16 +787,91 @@ const makeEngramStoreLive = (
             pinned: patch.pinned ?? mem.pinned,
             author: patch.author !== undefined ? patch.author : mem.author,
             status: applyLifecyclePatch(mem.status, patch.status),
-            supersedes: applyLifecyclePatch(mem.supersedes, patch.supersedes),
+            supersedes: applyLifecyclePatch(mem.supersedes, instruction),
             reviewAfter: applyLifecyclePatch(mem.reviewAfter, patch.reviewAfter),
             expires: applyLifecyclePatch(mem.expires, patch.expires),
             sourceType: applyLifecyclePatch(mem.sourceType, patch.sourceType),
             sourceRef: applyLifecyclePatch(mem.sourceRef, patch.sourceRef),
             updated: nowISO(),
           };
-          const dir = yield* dirForScope(scope);
           const file = path.join(dir, `${next.id}-${slugify(next.title)}.md`);
           yield* validateCandidate(next, file);
+
+          if (target !== undefined) {
+            /* ENG-17 R1: establishing the link marks the predecessor
+             * superseded as part of the same logical operation. The
+             * predecessor's `updated` bumps to the operation time, matching
+             * the store's existing convention for metadata edits. Write
+             * order: predecessor first (its filename cannot change: marking
+             * touches only status and `updated`), then the entry. Every
+             * surfaced failure after the first write is rolled back, and
+             * every compensation result is inspected (review fix):
+             *   - entry write fails  -> remove the (possibly partially
+             *     created) destination, restore the predecessor's bytes;
+             *   - old-file removal after a rename fails -> remove the
+             *     renamed successor, restore the predecessor.
+             * A failing compensation surfaces an incomplete-rollback error
+             * naming both failures instead of the primary one. Surfaced-
+             * failure rollback only (R2): a hard crash between writes can
+             * still leave a half-applied state. Cross-process concurrency is
+             * check-then-act, out of scope (R8). */
+            const targetBefore = yield* fs.readFileString(target.path);
+            // exact pre-operation bytes of the entry file, so a failed write
+            // can restore them byte-identically when the destination is the
+            // original path (no rename)
+            const entryBefore = yield* fs.readFileString(mem.path);
+            const marked = yield* Effect.result(update(scope, target.id, { status: "superseded" }));
+            if (Result.isFailure(marked)) return yield* Effect.fail(marked.failure);
+            const wrote = yield* Effect.result(
+              Effect.as(fs.writeFileString(file, serialize(next)), next),
+            );
+            if (Result.isFailure(wrote)) {
+              // Restore the entry file to its exact pre-operation bytes when
+              // the write targeted the original path, or drop the renamed
+              // destination otherwise; then restore the predecessor. Every
+              // compensation result is inspected (review fix).
+              const entryRollback =
+                file !== mem.path
+                  ? fs.remove(file, { force: true })
+                  : fs.writeFileString(file, entryBefore);
+              const step1 = yield* rollbackStep(
+                file,
+                `the partially written successor "${file}"`,
+                wrote.failure,
+                entryRollback,
+              );
+              const step2 = yield* rollbackStep(
+                target.path,
+                `the marked predecessor "${target.path}"`,
+                wrote.failure,
+                fs.writeFileString(target.path, targetBefore),
+              );
+              return yield* Effect.fail(step1 ?? step2 ?? wrote.failure);
+            }
+            if (file !== mem.path) {
+              const removed = yield* Effect.result(fs.remove(mem.path));
+              if (Result.isFailure(removed)) {
+                // The rename landed and the predecessor is marked, but the
+                // original successor file could not be removed: without a
+                // rollback two files would claim one id.
+                const step1 = yield* rollbackStep(
+                  file,
+                  `the renamed successor "${file}"`,
+                  removed.failure,
+                  fs.remove(file, { force: true }),
+                );
+                const step2 = yield* rollbackStep(
+                  target.path,
+                  `the marked predecessor "${target.path}"`,
+                  removed.failure,
+                  fs.writeFileString(target.path, targetBefore),
+                );
+                return yield* Effect.fail(step1 ?? step2 ?? removed.failure);
+              }
+            }
+            return { ...next, path: file };
+          }
+
           yield* fs.writeFileString(file, serialize(next));
           if (file !== mem.path) yield* fs.remove(mem.path);
           return { ...next, path: file };
