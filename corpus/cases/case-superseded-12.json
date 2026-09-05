@@ -1,0 +1,13 @@
+{
+  "id": "case-superseded-12",
+  "query": "locales bundled upfront history",
+  "category": "superseded",
+  "requiredIds": ["01jwq2hqt0000000000000001y"],
+  "supportingIds": ["01jwq2fx70000000000000001x"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/i18n"],
+  "expectEmpty": false,
+  "notes": "includeInactive mode: audit of the retired upfront bundling; bundled and upfront appear only in the retired decision.",
+  "includeInactive": true
+}

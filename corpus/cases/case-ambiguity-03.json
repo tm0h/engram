@@ -1,0 +1,12 @@
+{
+  "id": "case-ambiguity-03",
+  "query": "migration",
+  "category": "ambiguity",
+  "requiredIds": ["01jwq28jv0000000000000001s"],
+  "supportingIds": ["01jwq2ade0000000000000001t"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/storage"],
+  "expectEmpty": false,
+  "notes": "One-word query with two senses; this variant needs the content-migration sense and tolerates the host-migration note as support."
+}

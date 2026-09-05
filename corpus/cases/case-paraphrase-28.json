@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-28",
+  "query": "see theme changes without real posts",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq638m0000000000000003w"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["themes/loader"],
+  "expectEmpty": false,
+  "notes": "User wants to see theme changes without real posts; the note explains previews render with mock content. See/preview and real posts/mock content are the bridge."
+}

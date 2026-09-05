@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-30",
+  "query": "when do old thumbnails get thrown away",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq1jkq0000000000000001d"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/cache"],
+  "expectEmpty": false,
+  "notes": "User asks when old thumbnails are thrown away; the fact says cached thumbnails evict lazily after 7 days. Thrown away/evict and thumbnails/images are the vocabulary bridge."
+}

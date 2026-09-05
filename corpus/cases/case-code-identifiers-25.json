@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-25",
+  "query": "purgeShards(workspace) scope",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq46v10000000000000002v"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/cache"],
+  "expectEmpty": false,
+  "notes": "Raw call-form query over purgeShards; the memory documents its one-workspace targeting, which is the scope question asked."
+}

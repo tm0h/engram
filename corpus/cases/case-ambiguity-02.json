@@ -1,0 +1,13 @@
+{
+  "id": "case-ambiguity-02",
+  "query": "rollback",
+  "category": "ambiguity",
+  "requiredIds": ["01jwpzp640000000000000000c"],
+  "supportingIds": ["01jwpzmbh0000000000000000b"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/deploy"],
+  "expectEmpty": false,
+  "duplicateOf": "case-ambiguity-01",
+  "notes": "duplicateOf case-ambiguity-01: the identical query with the opposite information need; the deploy sense is required and the storage sense is support."
+}

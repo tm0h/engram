@@ -1,0 +1,12 @@
+{
+  "id": "case-distractors-03",
+  "query": "dev server ports",
+  "category": "distractors",
+  "requiredIds": ["01jwq04tw0000000000000000m"],
+  "supportingIds": ["01jwq0c580000000000000000r", "01jwq0hn10000000000000000v"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["apps/dev-server"],
+  "expectEmpty": false,
+  "notes": "Several dev-server facts mention ports; the bind fact is required and the proxy and live reload facts are tolerated support."
+}

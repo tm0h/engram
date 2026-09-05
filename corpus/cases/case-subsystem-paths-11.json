@@ -1,0 +1,12 @@
+{
+  "id": "case-subsystem-paths-11",
+  "query": "feed renderer caching behavior",
+  "category": "subsystem-paths",
+  "requiredIds": ["01jwq4kn600000000000000032"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/feed"],
+  "expectEmpty": false,
+  "notes": "Feed subsystem rule; the hourly feed fact shares feed tokens but not renderer or caching."
+}

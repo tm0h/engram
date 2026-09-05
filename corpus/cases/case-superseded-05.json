@@ -1,0 +1,12 @@
+{
+  "id": "case-superseded-05",
+  "query": "shortcode rendering order",
+  "category": "superseded",
+  "requiredIds": ["01jwq13yz00000000000000015"],
+  "supportingIds": [],
+  "forbiddenIds": ["01jwq15sj00000000000000016"],
+  "scope": "project",
+  "applicablePaths": ["core/renderer"],
+  "expectEmpty": false,
+  "notes": "Default visibility mode: the after-markdown order is superseded and lifecycle-excluded."
+}

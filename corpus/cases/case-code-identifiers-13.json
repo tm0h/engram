@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-13",
+  "query": "purgeshards workspace targeting",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq46v10000000000000002v"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/cache"],
+  "expectEmpty": false,
+  "notes": "Query built from the purgeShards identifier; the single token never matches the one-word purge ambiguity queries."
+}

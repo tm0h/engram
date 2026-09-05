@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-26",
+  "query": "too many pictures on one page",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq5zke0000000000000003t"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/assets"],
+  "expectEmpty": false,
+  "notes": "User asks about too many pictures on one page; the fact states the gallery pagination limit and its rendering-cost reason, which answers the underlying page-weight concern."
+}

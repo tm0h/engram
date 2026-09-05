@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-23",
+  "query": "what kills stale module state between runs",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq5t3n0000000000000003q"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["apps/dev-server"],
+  "expectEmpty": false,
+  "notes": "User asks what kills stale module state; the decision says stop and start the dev server to clear it. Kill/stop and state/clear are the meaning bridge; the memory answers the underlying need."
+}

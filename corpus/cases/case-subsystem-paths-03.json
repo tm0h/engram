@@ -1,0 +1,12 @@
+{
+  "id": "case-subsystem-paths-03",
+  "query": "watcher rename events missing",
+  "category": "subsystem-paths",
+  "requiredIds": ["01jwq0fte0000000000000000t"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/watcher"],
+  "expectEmpty": false,
+  "notes": "Known watcher limitation on network mounts; the sibling watcher note shares no query tokens."
+}

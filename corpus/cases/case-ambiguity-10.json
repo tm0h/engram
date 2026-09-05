@@ -1,0 +1,13 @@
+{
+  "id": "case-ambiguity-10",
+  "query": "prune",
+  "category": "ambiguity",
+  "requiredIds": ["01jwq5d9g0000000000000003g"],
+  "supportingIds": ["01jwq5bex0000000000000003f"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["workflow/deps"],
+  "expectEmpty": false,
+  "notes": "duplicateOf case-ambiguity-09: the identical query with the opposite information need; the dependency-pruning fact is required.",
+  "duplicateOf": "case-ambiguity-09"
+}

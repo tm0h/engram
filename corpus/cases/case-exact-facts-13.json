@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-13",
+  "query": "poster images source frame",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq2q7k00000000000000021"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/assets"],
+  "expectEmpty": false,
+  "notes": "Pins the poster-from-first-frame fact."
+}

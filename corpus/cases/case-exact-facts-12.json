@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-12",
+  "query": "favicon sizes generated",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq2c810000000000000001v"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/assets"],
+  "expectEmpty": false,
+  "notes": "Pins the five-size favicon set."
+}

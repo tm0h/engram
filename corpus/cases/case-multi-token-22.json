@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-22",
+  "query": "german umlaut samples für kiosk",
+  "category": "multi-token",
+  "requiredIds": ["01jwq5pef0000000000000003n", "01jwq5r920000000000000003p"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/i18n"],
+  "expectEmpty": false,
+  "notes": "User asks which samples carry German umlauts; the pack fact stores für and the stored-form note shows für Kiosk, so both memories are needed to answer. The umlaut appears in both NFC and NFD stored forms."
+}

@@ -1,0 +1,12 @@
+{
+  "id": "case-abstention-02",
+  "query": "oauth refresh token rotation",
+  "category": "abstention",
+  "requiredIds": [],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["auth/session"],
+  "expectEmpty": true,
+  "notes": "Auth-token management is absent from the corpus by construction; the loader and tests verify these tokens appear nowhere in the fixtures."
+}

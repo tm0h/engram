@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-01",
+  "query": "api rate limit for preview",
+  "category": "paraphrase",
+  "requiredIds": ["01jwpz3w600000000000000002"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["apps/preview-api"],
+  "expectEmpty": false,
+  "notes": "The query says rate limit; the fact says throttles. Only the body carries the paraphrased phrasing, so lexical retrieval must reach past the title."
+}

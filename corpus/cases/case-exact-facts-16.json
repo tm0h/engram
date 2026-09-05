@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-16",
+  "query": "rss feed update cadence",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq3d6q0000000000000002d"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/feed"],
+  "expectEmpty": false,
+  "notes": "Pins the hourly feed update cadence."
+}

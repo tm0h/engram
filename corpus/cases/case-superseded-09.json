@@ -1,0 +1,12 @@
+{
+  "id": "case-superseded-09",
+  "query": "canary promotion window",
+  "category": "superseded",
+  "requiredIds": ["01jwq1zdw0000000000000001m"],
+  "supportingIds": [],
+  "forbiddenIds": ["01jwq218f0000000000000001n"],
+  "scope": "project",
+  "applicablePaths": ["ops/deploy"],
+  "expectEmpty": false,
+  "notes": "Default visibility mode: the one-day window is superseded and lifecycle-excluded."
+}

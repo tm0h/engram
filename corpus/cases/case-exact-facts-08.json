@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-08",
+  "query": "draft cap per workspace",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq1p8x0000000000000001f"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/storage"],
+  "expectEmpty": false,
+  "notes": "Pins the 200 drafts per workspace cap."
+}

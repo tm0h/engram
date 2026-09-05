@@ -1,0 +1,12 @@
+{
+  "id": "case-superseded-03",
+  "query": "snippet ranking current rule",
+  "category": "superseded",
+  "requiredIds": ["01jwq0wmk00000000000000011"],
+  "supportingIds": [],
+  "forbiddenIds": ["01jwq0yf600000000000000012"],
+  "scope": "project",
+  "applicablePaths": ["core/search"],
+  "expectEmpty": false,
+  "notes": "Default visibility mode: the recency-only decision is lifecycle-excluded before scoring."
+}

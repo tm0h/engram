@@ -1,0 +1,12 @@
+{
+  "id": "case-abstention-05",
+  "query": "webassembly modules",
+  "category": "abstention",
+  "requiredIds": [],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/wasm"],
+  "expectEmpty": true,
+  "notes": "Wasm module compilation is absent from the corpus by construction."
+}

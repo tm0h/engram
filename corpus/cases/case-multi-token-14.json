@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-14",
+  "query": "backup exports cold storage weekly",
+  "category": "multi-token",
+  "requiredIds": ["01jwq3gvx0000000000000002f"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/backup"],
+  "expectEmpty": false,
+  "notes": "Tokens combine from title (backup exports) and body (cold storage, weekly)."
+}

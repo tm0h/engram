@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-18",
+  "query": "how much static export compresses",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq3t0w0000000000000002m"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/export"],
+  "expectEmpty": false,
+  "notes": "The fact states the gzip level; the query asks how much it compresses."
+}

@@ -1,0 +1,13 @@
+{
+  "id": "case-temporal-12",
+  "query": "udp shipping logs history",
+  "category": "temporal",
+  "requiredIds": ["01jwq4ymr00000000000000038"],
+  "supportingIds": ["01jwq50fb00000000000000039"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/logging"],
+  "expectEmpty": false,
+  "notes": "Historical audit with includeInactive: the udp pipeline fact is intentionally retrievable; the https fact is support.",
+  "includeInactive": true
+}

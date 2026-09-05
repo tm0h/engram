@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-12",
+  "query": "defineshortcode registers inline templates",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq450e0000000000000002t"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/renderer"],
+  "expectEmpty": false,
+  "notes": "Query built from the defineShortcode identifier."
+}

@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-17",
+  "query": "sitemap url cap limits",
+  "category": "multi-token",
+  "requiredIds": ["01jwq3f1a0000000000000002e"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/seo"],
+  "expectEmpty": false,
+  "notes": "Tokens combine from title (sitemap, urls) and tags (limits)."
+}

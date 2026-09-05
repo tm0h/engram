@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-22",
+  "query": "resume sections",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq5mkw0000000000000003m"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/i18n", "core/search"],
+  "expectEmpty": false,
+  "notes": "User types the plain-ASCII word resume; the memory stores Résumé with accents in NFD form. Same entity and meaning, different surface encoding: a ranker that normalizes accents matches it, which is the realistic bridge."
+}

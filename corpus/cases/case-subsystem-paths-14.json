@@ -1,0 +1,12 @@
+{
+  "id": "case-subsystem-paths-14",
+  "query": "backup archive encryption",
+  "category": "subsystem-paths",
+  "requiredIds": ["01jwq4htk00000000000000031"],
+  "supportingIds": ["01jwq4qac00000000000000034"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/backup"],
+  "expectEmpty": false,
+  "notes": "Backup subsystem behavior; the policy decision is acceptable support for the identifier note."
+}

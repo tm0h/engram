@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-21",
+  "query": "default locale setting",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq3pbp0000000000000002j"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/i18n"],
+  "expectEmpty": false,
+  "notes": "Pins English as the default locale."
+}

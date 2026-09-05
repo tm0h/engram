@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-07",
+  "query": "mothlight config js overrides",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq2wqc00000000000000024"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["cli/config"],
+  "expectEmpty": false,
+  "notes": "Query names the mothlight.config.js file as the tokenizer splits it, plus the overrides fact."
+}

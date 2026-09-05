@@ -1,0 +1,12 @@
+{
+  "id": "case-superseded-14",
+  "query": "backup archive encryption policy",
+  "category": "superseded",
+  "requiredIds": ["01jwq4qac00000000000000034"],
+  "supportingIds": ["01jwq4htk00000000000000031"],
+  "forbiddenIds": ["01jwq4nfs00000000000000033"],
+  "scope": "project",
+  "applicablePaths": ["ops/backup"],
+  "expectEmpty": false,
+  "notes": "Default visibility mode: the unencrypted-zips policy is superseded and lifecycle-excluded."
+}

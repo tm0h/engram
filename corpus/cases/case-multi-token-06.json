@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-06",
+  "query": "custom filters theme init hook",
+  "category": "multi-token",
+  "requiredIds": ["01jwq17m500000000000000017"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["themes/loader"],
+  "expectEmpty": false,
+  "notes": "Tokens spread across title (custom filters) and body (init hook) with themes in the tags."
+}

@@ -1,0 +1,12 @@
+{
+  "id": "case-superseded-13",
+  "query": "scheduler trigger model",
+  "category": "superseded",
+  "requiredIds": ["01jwq2yhz00000000000000025"],
+  "supportingIds": [],
+  "forbiddenIds": ["01jwq30cj00000000000000026"],
+  "scope": "project",
+  "applicablePaths": ["core/scheduler"],
+  "expectEmpty": false,
+  "notes": "Default visibility mode: the fixed-interval model is superseded and lifecycle-excluded."
+}

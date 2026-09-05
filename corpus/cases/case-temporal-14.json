@@ -1,0 +1,13 @@
+{
+  "id": "case-temporal-14",
+  "query": "legacy theme guide status",
+  "category": "temporal",
+  "requiredIds": ["01jwq529y0000000000000003a"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["themes/loader"],
+  "expectEmpty": false,
+  "notes": "Second angle on the expired guide with includeInactive; theme and guide tokens keep it the top result.",
+  "includeInactive": true
+}

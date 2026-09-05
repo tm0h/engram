@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-06",
+  "query": "registerfilter theme init",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq17m500000000000000017"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["themes/loader"],
+  "expectEmpty": false,
+  "notes": "Query built from the registerFilter identifier as the tokenizer sees it."
+}

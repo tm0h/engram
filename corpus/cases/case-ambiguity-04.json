@@ -1,0 +1,13 @@
+{
+  "id": "case-ambiguity-04",
+  "query": "migration",
+  "category": "ambiguity",
+  "requiredIds": ["01jwq2ade0000000000000001t"],
+  "supportingIds": ["01jwq28jv0000000000000001s"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/deploy"],
+  "expectEmpty": false,
+  "notes": "duplicateOf case-ambiguity-03: the identical query with the opposite information need; the host-migration note is required.",
+  "duplicateOf": "case-ambiguity-03"
+}

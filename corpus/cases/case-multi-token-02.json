@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-02",
+  "query": "dev server websocket reconnect loop",
+  "category": "multi-token",
+  "requiredIds": ["01jwq06nf0000000000000000n"],
+  "supportingIds": ["01jwq04tw0000000000000000m"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["apps/dev-server"],
+  "expectEmpty": false,
+  "notes": "Five tokens must combine; the issue matches all, the bind fact matches only two and is acceptable support."
+}

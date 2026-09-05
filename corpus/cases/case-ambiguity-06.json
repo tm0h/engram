@@ -1,0 +1,13 @@
+{
+  "id": "case-ambiguity-06",
+  "query": "purge",
+  "category": "ambiguity",
+  "requiredIds": ["01jwq3bc40000000000000002c"],
+  "supportingIds": ["01jwq39hh0000000000000002b"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/scheduler"],
+  "expectEmpty": false,
+  "notes": "duplicateOf case-ambiguity-05: the identical query with the opposite information need; the queue-purge note is required.",
+  "duplicateOf": "case-ambiguity-05"
+}

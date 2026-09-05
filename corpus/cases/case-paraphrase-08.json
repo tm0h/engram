@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-08",
+  "query": "shard files deduplicate identical inputs",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq1eyh0000000000000001b"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/cache"],
+  "expectEmpty": false,
+  "notes": "The decision says identical inputs share one shard; deduplicate is the query's paraphrase word."
+}

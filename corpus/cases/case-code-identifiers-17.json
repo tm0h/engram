@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-17",
+  "query": "scheduler run missed windows",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq4e5d0000000000000002z"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/scheduler"],
+  "expectEmpty": false,
+  "notes": "Query built from the Scheduler.run identifier and its missed-window behavior."
+}

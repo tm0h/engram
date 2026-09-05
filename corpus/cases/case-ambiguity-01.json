@@ -1,0 +1,12 @@
+{
+  "id": "case-ambiguity-01",
+  "query": "rollback",
+  "category": "ambiguity",
+  "requiredIds": ["01jwpzmbh0000000000000000b"],
+  "supportingIds": ["01jwpzp640000000000000000c"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/storage"],
+  "expectEmpty": false,
+  "notes": "One-word query with two senses; this variant needs the storage-schema sense and tolerates the deploy sense as support."
+}

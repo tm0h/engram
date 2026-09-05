@@ -1,0 +1,13 @@
+{
+  "id": "case-superseded-02",
+  "query": "survives restarts directory",
+  "category": "superseded",
+  "requiredIds": ["01jwpzevr00000000000000008"],
+  "supportingIds": [],
+  "forbiddenIds": ["01jwpzd1500000000000000007"],
+  "scope": "project",
+  "applicablePaths": ["core/cache"],
+  "expectEmpty": false,
+  "includeInactive": true,
+  "notes": "includeInactive mode: the superseded tmpfs decision is back in the candidate set, but the query tokens appear only in the current decision, so the forbidden id scores zero. Pins pass-under-inclusion."
+}

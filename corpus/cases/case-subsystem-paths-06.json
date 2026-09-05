@@ -1,0 +1,12 @@
+{
+  "id": "case-subsystem-paths-06",
+  "query": "snippet ranking section depth",
+  "category": "subsystem-paths",
+  "requiredIds": ["01jwq0wmk00000000000000011"],
+  "supportingIds": [],
+  "forbiddenIds": ["01jwq0yf600000000000000012"],
+  "scope": "project",
+  "applicablePaths": ["core/search"],
+  "expectEmpty": false,
+  "notes": "Current ranking decision; the superseded recency-only decision is lifecycle-excluded under default visibility."
+}

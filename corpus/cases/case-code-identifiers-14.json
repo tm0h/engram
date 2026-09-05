@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-14",
+  "query": "lintprose weasel words",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq48nm0000000000000002w"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/lint"],
+  "expectEmpty": false,
+  "notes": "Query built from the lintProse identifier."
+}

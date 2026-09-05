@@ -1,0 +1,12 @@
+{
+  "id": "case-abstention-06",
+  "query": "kafka consumer offsets",
+  "category": "abstention",
+  "requiredIds": [],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["infra/kafka"],
+  "expectEmpty": true,
+  "notes": "Message-broker offset tracking is absent from the corpus by construction."
+}

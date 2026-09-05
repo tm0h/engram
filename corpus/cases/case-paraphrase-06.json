@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-06",
+  "query": "fallback for a missing layout",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq109s00000000000000013"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["themes/loader"],
+  "expectEmpty": false,
+  "notes": "The fact states the fallback order; the query asks about a missing layout scenario."
+}

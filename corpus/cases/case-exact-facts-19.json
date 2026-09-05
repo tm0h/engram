@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-19",
+  "query": "log retention window",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq3jpg0000000000000002g"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/logging"],
+  "expectEmpty": false,
+  "notes": "Pins the 90 day log retention."
+}

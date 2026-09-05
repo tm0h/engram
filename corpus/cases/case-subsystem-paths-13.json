@@ -1,0 +1,12 @@
+{
+  "id": "case-subsystem-paths-13",
+  "query": "sitemap generation limits",
+  "category": "subsystem-paths",
+  "requiredIds": ["01jwq3f1a0000000000000002e"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/seo"],
+  "expectEmpty": false,
+  "notes": "SEO subsystem limit retrieved by its generation behavior."
+}

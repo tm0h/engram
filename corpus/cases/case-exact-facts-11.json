@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-11",
+  "query": "artifact retention days",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq24xn0000000000000001q"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/deploy"],
+  "expectEmpty": false,
+  "notes": "Pins the 30 day artifact retention."
+}

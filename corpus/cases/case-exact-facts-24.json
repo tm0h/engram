@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-24",
+  "query": "robots rules preview hosts",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq3vvf0000000000000002n"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/seo"],
+  "expectEmpty": false,
+  "notes": "Pins the robots exclusion for preview hosts."
+}

@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-07",
+  "query": "site metadata templates variable",
+  "category": "multi-token",
+  "requiredIds": ["01jwq124c00000000000000014"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["themes/loader"],
+  "expectEmpty": false,
+  "notes": "Tokens combine from title (site metadata) and body (site variable) with templates in the tags."
+}

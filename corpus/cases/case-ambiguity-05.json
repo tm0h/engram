@@ -1,0 +1,12 @@
+{
+  "id": "case-ambiguity-05",
+  "query": "purge",
+  "category": "ambiguity",
+  "requiredIds": ["01jwq39hh0000000000000002b"],
+  "supportingIds": ["01jwq3bc40000000000000002c"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/cache"],
+  "expectEmpty": false,
+  "notes": "One-word query with two senses; this variant needs the cache-purge sense and tolerates the queue-purge note as support."
+}

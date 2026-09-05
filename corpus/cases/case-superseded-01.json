@@ -1,0 +1,12 @@
+{
+  "id": "case-superseded-01",
+  "query": "fragment cache location",
+  "category": "superseded",
+  "requiredIds": ["01jwpzevr00000000000000008"],
+  "supportingIds": [],
+  "forbiddenIds": ["01jwpzd1500000000000000007"],
+  "scope": "project",
+  "applicablePaths": ["core/cache"],
+  "expectEmpty": false,
+  "notes": "Default visibility mode: the superseded tmpfs decision is lifecycle-excluded before scoring, so the current on-disk cache location wins. Pins pass-under-exclusion."
+}

@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-22",
+  "query": "analytics sampling percentage",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq3r690000000000000002k"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/analytics"],
+  "expectEmpty": false,
+  "notes": "Pins the 10 percent sampling rate."
+}

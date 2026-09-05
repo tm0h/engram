@@ -1,0 +1,13 @@
+{
+  "id": "case-superseded-06",
+  "query": "shortcode after markdown history",
+  "category": "superseded",
+  "requiredIds": ["01jwq15sj00000000000000016"],
+  "supportingIds": ["01jwq13yz00000000000000015"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/renderer"],
+  "expectEmpty": false,
+  "includeInactive": true,
+  "notes": "includeInactive mode: audit of the retired after-markdown order; the after token appears only in the retired decision, so it outranks the replacement."
+}

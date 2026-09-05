@@ -1,0 +1,13 @@
+{
+  "id": "case-superseded-08",
+  "query": "var tree workspace cleanup",
+  "category": "superseded",
+  "requiredIds": ["01jwq1d3y0000000000000001a"],
+  "supportingIds": [],
+  "forbiddenIds": ["01jwq1b9b00000000000000019"],
+  "scope": "project",
+  "applicablePaths": ["core/cache"],
+  "expectEmpty": false,
+  "notes": "includeInactive mode: audit of the middle generation; query tokens isolate the var-tree decision so the forbidden tmpDirectories generation scores zero.",
+  "includeInactive": true
+}

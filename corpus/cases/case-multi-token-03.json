@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-03",
+  "query": "proxy mock service development",
+  "category": "multi-token",
+  "requiredIds": ["01jwq0c580000000000000000r"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["apps/dev-server"],
+  "expectEmpty": false,
+  "notes": "Tokens split across title (proxy) and body (mock service, development)."
+}

@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-16",
+  "query": "health endpoint build sha",
+  "category": "multi-token",
+  "requiredIds": ["01jwq3mh30000000000000002h"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/health"],
+  "expectEmpty": false,
+  "notes": "Tokens combine from title (health endpoint) and body (build sha)."
+}

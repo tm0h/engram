@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-10",
+  "query": "how long are build artifacts kept",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq24xn0000000000000001q"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/deploy"],
+  "expectEmpty": false,
+  "notes": "The fact states retention is 30 days; the query asks how long artifacts are kept."
+}

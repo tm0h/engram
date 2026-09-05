@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-27",
+  "query": "german locale pack sample strings",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq5pef0000000000000003n"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/i18n"],
+  "expectEmpty": false,
+  "notes": "User asks what the German locale pack contains; the fact lists its sample strings (für, über) and answers the contents question directly."
+}

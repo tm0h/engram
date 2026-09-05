@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-19",
+  "query": "backupexport encrypts archives",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq4htk00000000000000031"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/backup"],
+  "expectEmpty": false,
+  "notes": "Query built from the BackupExport identifier; distinct from the policy-level superseded pair."
+}

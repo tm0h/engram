@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-01",
+  "query": "node runtime version",
+  "category": "multi-token",
+  "requiredIds": ["01jwq03090000000000000000k"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["infra/runtime"],
+  "expectEmpty": false,
+  "notes": "Tokens spread across tag (node, runtime) and body (version); no single field contains the whole query."
+}

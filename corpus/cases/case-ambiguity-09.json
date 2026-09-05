@@ -1,0 +1,12 @@
+{
+  "id": "case-ambiguity-09",
+  "query": "prune",
+  "category": "ambiguity",
+  "requiredIds": ["01jwq5bex0000000000000003f"],
+  "supportingIds": ["01jwq5d9g0000000000000003g"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/search"],
+  "expectEmpty": false,
+  "notes": "One-word query with two senses; this variant needs the index-pruning sense and tolerates the dependency note as support."
+}

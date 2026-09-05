@@ -1,0 +1,12 @@
+{
+  "id": "case-subsystem-paths-10",
+  "query": "missed jobs after sleep",
+  "category": "subsystem-paths",
+  "requiredIds": ["01jwq37py0000000000000002a"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/scheduler"],
+  "expectEmpty": false,
+  "notes": "Known scheduler issue; the cron decision shares no query tokens."
+}

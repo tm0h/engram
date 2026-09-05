@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-01",
+  "query": "parsetimestamp iso time zones",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwpz5ps00000000000000003"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/time"],
+  "expectEmpty": false,
+  "notes": "Query is built from the code identifier parseTimestamp lowercased, exactly as the tokenizer sees it."
+}

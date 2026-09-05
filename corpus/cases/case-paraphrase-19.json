@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-19",
+  "query": "where are preview hosts blocked",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq3vvf0000000000000002n"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/seo"],
+  "expectEmpty": false,
+  "notes": "The fact says excluded in robots; the query says blocked. Overlap via preview and hosts."
+}

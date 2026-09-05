@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-18",
+  "query": "sampling rate analytics events",
+  "category": "multi-token",
+  "requiredIds": ["01jwq3r690000000000000002k"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/analytics"],
+  "expectEmpty": false,
+  "notes": "Tokens combine from body (sampling, rate, events) and tags (analytics)."
+}

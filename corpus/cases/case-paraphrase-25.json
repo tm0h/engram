@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-25",
+  "query": "pictures 404 after the rename",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq5xrv0000000000000003s"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/assets"],
+  "expectEmpty": false,
+  "notes": "User reports pictures 404ing after a rename; the issue explains broken image links trace to renamed assets. Pictures/images and 404/broken-link are the vocabulary bridge."
+}

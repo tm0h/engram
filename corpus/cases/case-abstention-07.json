@@ -1,0 +1,12 @@
+{
+  "id": "case-abstention-07",
+  "query": "blazor components",
+  "category": "abstention",
+  "requiredIds": [],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["frontend/blazor"],
+  "expectEmpty": true,
+  "notes": "Component frameworks outside the project stack are absent from the corpus by construction."
+}

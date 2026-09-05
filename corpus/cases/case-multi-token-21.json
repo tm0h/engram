@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-21",
+  "query": "résumé sections keep combining marks",
+  "category": "multi-token",
+  "requiredIds": ["01jwq5mkw0000000000000003m"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/i18n", "core/search"],
+  "expectEmpty": false,
+  "notes": "User asks whether accented words keep their combining marks; the note stores Résumé sections as its example and answers the preservation question. Tokens combine from the accented word and the body."
+}

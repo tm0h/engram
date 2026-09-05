@@ -1,0 +1,12 @@
+{
+  "id": "case-abstention-01",
+  "query": "kubernetes ingress controller",
+  "category": "abstention",
+  "requiredIds": [],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["infra/cluster"],
+  "expectEmpty": true,
+  "notes": "The corpus contains nothing about cluster infrastructure; correct behavior is zero results, not a nearest-neighbor guess."
+}

@@ -1,0 +1,12 @@
+{
+  "id": "case-distractors-05",
+  "query": "favicon icons assets",
+  "category": "distractors",
+  "requiredIds": ["01jwq2c810000000000000001v"],
+  "supportingIds": ["01jwq2e2m0000000000000001w"],
+  "forbiddenIds": ["01jwq2s2600000000000000022"],
+  "scope": "project",
+  "applicablePaths": ["core/assets"],
+  "expectEmpty": false,
+  "notes": "The stale single-ico fact is superseded and must stay hidden; the svg note is tolerated support."
+}

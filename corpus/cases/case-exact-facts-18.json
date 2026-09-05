@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-18",
+  "query": "backup export schedule destination",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq3gvx0000000000000002f"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/backup"],
+  "expectEmpty": false,
+  "notes": "Pins the weekly backup schedule and cold storage destination."
+}

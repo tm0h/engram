@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-13",
+  "query": "rss feed hourly updates",
+  "category": "multi-token",
+  "requiredIds": ["01jwq3d6q0000000000000002d"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/feed"],
+  "expectEmpty": false,
+  "notes": "Tokens spread across title (rss feed) and body (hourly)."
+}

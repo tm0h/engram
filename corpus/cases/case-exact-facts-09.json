@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-09",
+  "query": "incremental index updates store",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq1sy30000000000000001h"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/storage"],
+  "expectEmpty": false,
+  "notes": "Pins the incremental index decision in its active role."
+}

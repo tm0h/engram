@@ -1,0 +1,12 @@
+{
+  "id": "case-subsystem-paths-12",
+  "query": "robots rules for hosts",
+  "category": "subsystem-paths",
+  "requiredIds": ["01jwq3vvf0000000000000002n"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/seo"],
+  "expectEmpty": false,
+  "notes": "SEO subsystem rule retrieved by its robots behavior."
+}

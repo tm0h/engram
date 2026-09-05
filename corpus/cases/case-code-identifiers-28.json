@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-28",
+  "query": "LocaleSwitcher.getActive() source of truth",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq4cat0000000000000002y"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/i18n"],
+  "expectEmpty": false,
+  "notes": "Raw accessor query over LocaleSwitcher; the memory documents that the active locale comes from local storage, which is the source-of-truth question."
+}

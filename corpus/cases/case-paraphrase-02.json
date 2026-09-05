@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-02",
+  "query": "how do pages reload in the browser",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq0hn10000000000000000v"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["apps/dev-server"],
+  "expectEmpty": false,
+  "notes": "The fact says live reload; the query asks how pages reload in the browser. Overlap lives in reload and browser."
+}

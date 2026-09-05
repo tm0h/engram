@@ -1,0 +1,12 @@
+{
+  "id": "case-distractors-10",
+  "query": "cache sizing limits",
+  "category": "distractors",
+  "requiredIds": ["01jwq327500000000000000027"],
+  "supportingIds": ["01jwq0rzd0000000000000000z"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/cache", "core/search"],
+  "expectEmpty": false,
+  "notes": "The build cache limit is required; the search snippet limit is a near-miss sharing limits."
+}

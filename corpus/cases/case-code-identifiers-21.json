@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-21",
+  "query": "ContentIndex.rebuild() before deploys",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq3zgn0000000000000002q"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/search", "ops/deploy"],
+  "expectEmpty": false,
+  "notes": "Raw developer query naming the call form ContentIndex.rebuild(); the memory is about that call's rebuild semantics and idempotence, which is what the user needs before wiring it into a deploy."
+}

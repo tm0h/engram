@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-05",
+  "query": "parsefrontmatter case sensitive keys",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq0na70000000000000000x"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/parser"],
+  "expectEmpty": false,
+  "notes": "Identifier query over parseFrontmatter plus the case sensitivity rule."
+}

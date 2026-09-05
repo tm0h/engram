@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-02",
+  "query": "engramstore scan dedupe",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwpz7hc00000000000000004"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/storage"],
+  "expectEmpty": false,
+  "notes": "Identifier-style query over EngramStore.scan and dedupe; matches only the store-scan note."
+}

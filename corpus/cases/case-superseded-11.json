@@ -1,0 +1,12 @@
+{
+  "id": "case-superseded-11",
+  "query": "locale loading strategy",
+  "category": "superseded",
+  "requiredIds": ["01jwq2fx70000000000000001x"],
+  "supportingIds": [],
+  "forbiddenIds": ["01jwq2hqt0000000000000001y"],
+  "scope": "project",
+  "applicablePaths": ["core/i18n"],
+  "expectEmpty": false,
+  "notes": "Default visibility mode: the bundle-upfront strategy is superseded and lifecycle-excluded."
+}

@@ -1,0 +1,12 @@
+{
+  "id": "case-ambiguity-07",
+  "query": "tag",
+  "category": "ambiguity",
+  "requiredIds": ["01jwq57sq0000000000000003d"],
+  "supportingIds": ["01jwq59ma0000000000000003e"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/release"],
+  "expectEmpty": false,
+  "notes": "One-word query with two senses; this variant needs the release-tag sense and tolerates the theme-tag taxonomy note as support."
+}

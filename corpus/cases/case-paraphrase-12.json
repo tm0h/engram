@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-12",
+  "query": "does the pipeline handle video thumbnails",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq2q7k00000000000000021"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/assets"],
+  "expectEmpty": false,
+  "notes": "The fact says poster images; the query says video thumbnails. Overlap via pipeline and video."
+}

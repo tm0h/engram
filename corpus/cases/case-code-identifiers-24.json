@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-24",
+  "query": "defineShortcode(name, fn) signature",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq450e0000000000000002t"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/renderer"],
+  "expectEmpty": false,
+  "notes": "Raw signature query over defineShortcode; the memory documents registering inline templates through it."
+}

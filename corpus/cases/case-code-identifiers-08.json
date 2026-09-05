@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-08",
+  "query": "watch command rebuild save",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq2tws00000000000000023"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["cli/commands", "core/watcher"],
+  "expectEmpty": false,
+  "notes": "Query names the mothlight watch command and its rebuild-on-save behavior."
+}

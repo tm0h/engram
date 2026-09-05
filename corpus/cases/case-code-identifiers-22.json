@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-22",
+  "query": "renderPage(stream, page) contract",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq41b80000000000000002r"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/renderer"],
+  "expectEmpty": false,
+  "notes": "Raw call-form query over renderPage; the memory documents its stream-first contract, which answers what the user is asking about the two-argument call."
+}

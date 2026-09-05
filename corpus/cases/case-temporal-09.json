@@ -1,0 +1,12 @@
+{
+  "id": "case-temporal-09",
+  "query": "beta program signups status",
+  "category": "temporal",
+  "requiredIds": ["01jwq4wt500000000000000037"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/release"],
+  "expectEmpty": false,
+  "notes": "Evaluated at manifest defaultNow (2026-06-01), before the beta fact expires (2026-08-01): future expiry does not deactivate."
+}

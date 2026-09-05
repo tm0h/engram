@@ -1,0 +1,13 @@
+{
+  "id": "case-superseded-04",
+  "query": "recency only ranking history",
+  "category": "superseded",
+  "requiredIds": ["01jwq0yf600000000000000012"],
+  "supportingIds": ["01jwq0wmk00000000000000011"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/search"],
+  "expectEmpty": false,
+  "includeInactive": true,
+  "notes": "includeInactive mode: an audit of the retired recency-only rule; the query tokens appear only in the retired decision, so it outranks its replacement."
+}

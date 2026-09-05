@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-10",
+  "query": "renderpage streams html shell",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq41b80000000000000002r"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/renderer"],
+  "expectEmpty": false,
+  "notes": "Query built from the renderPage identifier plus its streaming behavior."
+}

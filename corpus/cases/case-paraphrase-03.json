@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-03",
+  "query": "how many snippets does search keep",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq0rzd0000000000000000z"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/search"],
+  "expectEmpty": false,
+  "notes": "The fact states a cap; the query asks how many are kept. Overlap lives in snippets and search."
+}

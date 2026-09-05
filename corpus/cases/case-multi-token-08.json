@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-08",
+  "query": "cache prewarming deploy step",
+  "category": "multi-token",
+  "requiredIds": ["01jwq1mea0000000000000001e"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/cache", "ops/deploy"],
+  "expectEmpty": false,
+  "notes": "Tokens combine from title (cache prewarming) and body (deploy step)."
+}

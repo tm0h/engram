@@ -1,0 +1,12 @@
+{
+  "id": "case-subsystem-paths-04",
+  "query": "watcher skips generated output",
+  "category": "subsystem-paths",
+  "requiredIds": ["01jwq0dzv0000000000000000s"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/watcher"],
+  "expectEmpty": false,
+  "notes": "Watcher ignore rules; tokens overlap the ignore note, not the rename issue."
+}

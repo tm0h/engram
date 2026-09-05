@@ -1,0 +1,13 @@
+{
+  "id": "case-temporal-08",
+  "query": "preview port 4700 history",
+  "category": "temporal",
+  "requiredIds": ["01jwq4s4z00000000000000035"],
+  "supportingIds": ["01jwq4tzj00000000000000036"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/deploy"],
+  "expectEmpty": false,
+  "notes": "Historical audit with includeInactive: the expired port fact is intentionally retrievable; the ephemeral urls fact is support.",
+  "includeInactive": true
+}

@@ -1,0 +1,12 @@
+{
+  "id": "case-distractors-07",
+  "query": "index rebuild behavior",
+  "category": "distractors",
+  "requiredIds": ["01jwq08g20000000000000000p"],
+  "supportingIds": ["01jwq1sy30000000000000001h"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/search", "core/storage"],
+  "expectEmpty": false,
+  "notes": "The seed index note and the incremental decision share index and rebuild tokens; the note is required, the decision is support."
+}

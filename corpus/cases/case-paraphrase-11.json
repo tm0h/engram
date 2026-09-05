@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-11",
+  "query": "missing translations behavior",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq2kjd0000000000000001z"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/i18n"],
+  "expectEmpty": false,
+  "notes": "The fact describes the fallback; the query names the scenario and asks for the behavior."
+}

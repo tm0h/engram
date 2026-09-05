@@ -1,0 +1,13 @@
+{
+  "id": "case-temporal-06",
+  "query": "deploy freeze release week",
+  "category": "temporal",
+  "requiredIds": ["01jwq23320000000000000001p"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/deploy"],
+  "expectEmpty": false,
+  "notes": "Historical audit with includeInactive: the retired freeze policy expired 2026-03-01 and is retrievable only with inclusion.",
+  "includeInactive": true
+}

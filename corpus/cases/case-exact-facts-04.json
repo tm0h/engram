@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-04",
+  "query": "live reload port",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq0hn10000000000000000v"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["apps/dev-server"],
+  "expectEmpty": false,
+  "notes": "Pins the live reload port fact: 35729."
+}

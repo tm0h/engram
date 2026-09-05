@@ -1,0 +1,12 @@
+{
+  "id": "case-abstention-03",
+  "query": "terraform plan drift",
+  "category": "abstention",
+  "requiredIds": [],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["infra/terraform"],
+  "expectEmpty": true,
+  "notes": "Infrastructure-as-code drift detection is absent from the corpus by construction."
+}

@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-29",
+  "query": "will my cache disappear when I restart",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq1jkq0000000000000001d"],
+  "supportingIds": ["01jwpz07000000000000000000"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/cache"],
+  "expectEmpty": false,
+  "notes": "User asks whether the cache disappears on restart; the fact gives the 7 day TTL with lazy eviction, which is the survival answer. Disappear/evict and restart/duration are the meaning bridge. The metrics fact is unrelated support noise."
+}
