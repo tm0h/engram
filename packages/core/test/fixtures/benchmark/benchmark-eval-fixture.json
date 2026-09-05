@@ -1,0 +1,287 @@
+{
+  "manifest": {
+    "schemaVersion": 1,
+    "corpusVersion": "0.0.1",
+    "name": "benchmark-internal-eval-fixture",
+    "description": "Synthetic benchmark-internal fixture mirroring the ENG-11 contract shapes. NOT the golden corpus.",
+    "defaultNow": "2026-06-01T00:00:00.000Z"
+  },
+  "engrams": [
+    {
+      "engram": {
+        "id": "0001",
+        "title": "Port for the dev server",
+        "type": "fact",
+        "tags": ["config"],
+        "scope": "project",
+        "created": "2026-01-10T00:00:00.000Z",
+        "updated": "2026-01-10T00:00:00.000Z",
+        "pinned": false,
+        "body": "the dev server listens on port 4747 by default",
+        "path": "engrams/0001-port-for-the-dev-server.md"
+      },
+      "file": "0001-port-for-the-dev-server.md"
+    },
+    {
+      "engram": {
+        "id": "0002",
+        "title": "Personal editor config",
+        "type": "preference",
+        "tags": ["editor"],
+        "scope": "personal",
+        "created": "2026-01-11T00:00:00.000Z",
+        "updated": "2026-01-11T00:00:00.000Z",
+        "pinned": false,
+        "body": "remaps keybindings and uses a two-space indent",
+        "path": "engrams/0002-personal-editor-config.md"
+      },
+      "file": "0002-personal-editor-config.md"
+    },
+    {
+      "engram": {
+        "id": "01js9x5e0000000000000000aa",
+        "title": "Build pipeline uses webpack",
+        "type": "decision",
+        "tags": ["build"],
+        "scope": "project",
+        "created": "2026-01-12T00:00:00.000Z",
+        "updated": "2026-01-12T00:00:00.000Z",
+        "pinned": false,
+        "status": "superseded",
+        "body": "the site build runs through webpack with babel",
+        "path": "engrams/01js9x5e0000000000000000aa-build-pipeline-uses-webpack.md"
+      },
+      "file": "01js9x5e0000000000000000aa-build-pipeline-uses-webpack.md"
+    },
+    {
+      "engram": {
+        "id": "01js9x5e0000000000000000ab",
+        "title": "Build pipeline uses esbuild",
+        "type": "decision",
+        "tags": ["build"],
+        "scope": "project",
+        "created": "2026-01-13T00:00:00.000Z",
+        "updated": "2026-01-13T00:00:00.000Z",
+        "pinned": false,
+        "supersedes": "01js9x5e0000000000000000aa",
+        "body": "esbuild replaced webpack for speed",
+        "path": "engrams/01js9x5e0000000000000000ab-build-pipeline-uses-esbuild.md"
+      },
+      "file": "01js9x5e0000000000000000ab-build-pipeline-uses-esbuild.md"
+    },
+    {
+      "engram": {
+        "id": "01js9x5e0000000000000000ac",
+        "title": "Page cache",
+        "type": "note",
+        "tags": ["cache"],
+        "scope": "project",
+        "created": "2026-01-14T00:00:00.000Z",
+        "updated": "2026-01-14T00:00:00.000Z",
+        "pinned": false,
+        "body": "the page cache stores rendered html",
+        "path": "engrams/01js9x5e0000000000000000ac-page-cache.md"
+      },
+      "file": "01js9x5e0000000000000000ac-page-cache.md"
+    },
+    {
+      "engram": {
+        "id": "01js9x5e0000000000000000ad",
+        "title": "Cache invalidation",
+        "type": "note",
+        "tags": ["cache"],
+        "scope": "project",
+        "created": "2026-01-15T00:00:00.000Z",
+        "updated": "2026-01-15T00:00:00.000Z",
+        "pinned": false,
+        "body": "invalidation clears the cache on deploy",
+        "path": "engrams/01js9x5e0000000000000000ad-cache-invalidation.md"
+      },
+      "file": "01js9x5e0000000000000000ad-cache-invalidation.md"
+    },
+    {
+      "engram": {
+        "id": "01js9x5e0000000000000000ae",
+        "title": "Tls certificate expiry",
+        "type": "fact",
+        "tags": ["security"],
+        "scope": "project",
+        "created": "2026-01-16T00:00:00.000Z",
+        "updated": "2026-01-16T00:00:00.000Z",
+        "pinned": false,
+        "expires": "2026-03-01T00:00:00.000Z",
+        "body": "the leaf certificate for mothlight.dev expires on 2026-03-01",
+        "path": "engrams/01js9x5e0000000000000000ae-tls-certificate-expiry.md"
+      },
+      "file": "01js9x5e0000000000000000ae-tls-certificate-expiry.md"
+    },
+    {
+      "engram": {
+        "id": "01js9x5e0000000000000000af",
+        "title": "Tls certificate renewal",
+        "type": "fact",
+        "tags": ["security"],
+        "scope": "project",
+        "created": "2026-01-17T00:00:00.000Z",
+        "updated": "2026-01-17T00:00:00.000Z",
+        "pinned": false,
+        "body": "renewed leaf certificate installed, valid through 2027",
+        "path": "engrams/01js9x5e0000000000000000af-tls-certificate-renewal.md"
+      },
+      "file": "01js9x5e0000000000000000af-tls-certificate-renewal.md"
+    },
+    {
+      "engram": {
+        "id": "01js9x5e0000000000000000ag",
+        "title": "Incremental sitemap generation",
+        "type": "note",
+        "tags": [],
+        "scope": "project",
+        "created": "2026-01-18T00:00:00.000Z",
+        "updated": "2026-01-18T00:00:00.000Z",
+        "pinned": false,
+        "body": "regenerates the sitemap only when pages change",
+        "path": "engrams/01js9x5e0000000000000000ag-incremental-sitemap-generation.md"
+      },
+      "file": "01js9x5e0000000000000000ag-incremental-sitemap-generation.md"
+    },
+    {
+      "engram": {
+        "id": "01js9x5e0000000000000000ah",
+        "title": "Sitemap templates",
+        "type": "note",
+        "tags": ["sitemap"],
+        "scope": "project",
+        "created": "2026-01-19T00:00:00.000Z",
+        "updated": "2026-01-19T00:00:00.000Z",
+        "pinned": false,
+        "body": "sitemap layout templates for the sitemap module",
+        "path": "engrams/01js9x5e0000000000000000ah-sitemap-templates.md"
+      },
+      "file": "01js9x5e0000000000000000ah-sitemap-templates.md"
+    },
+    {
+      "engram": {
+        "id": "01js9x5e0000000000000000ai",
+        "title": "Sitemap generation is deprecated",
+        "type": "note",
+        "tags": ["sitemap"],
+        "scope": "project",
+        "created": "2026-01-20T00:00:00.000Z",
+        "updated": "2026-01-20T00:00:00.000Z",
+        "pinned": false,
+        "status": "superseded",
+        "body": "the old sitemap generation path was removed",
+        "path": "engrams/01js9x5e0000000000000000ai-sitemap-generation-is-deprecated.md"
+      },
+      "file": "01js9x5e0000000000000000ai-sitemap-generation-is-deprecated.md"
+    }
+  ],
+  "cases": [
+    {
+      "id": "case-exact-facts-01",
+      "query": "dev server port",
+      "category": "exact-facts",
+      "requiredIds": ["0001"],
+      "supportingIds": [],
+      "forbiddenIds": [],
+      "scope": "project",
+      "expectEmpty": false
+    },
+    {
+      "id": "case-paraphrase-01",
+      "query": "keybinding remapping",
+      "category": "paraphrase",
+      "requiredIds": ["0002"],
+      "supportingIds": [],
+      "forbiddenIds": [],
+      "scope": "personal",
+      "expectEmpty": false
+    },
+    {
+      "id": "case-superseded-01",
+      "query": "build pipeline",
+      "category": "superseded",
+      "requiredIds": ["01js9x5e0000000000000000ab"],
+      "supportingIds": [],
+      "forbiddenIds": ["01js9x5e0000000000000000aa"],
+      "scope": "project",
+      "expectEmpty": false
+    },
+    {
+      "id": "case-superseded-02",
+      "query": "esbuild speed",
+      "category": "superseded",
+      "requiredIds": ["01js9x5e0000000000000000ab"],
+      "supportingIds": [],
+      "forbiddenIds": ["01js9x5e0000000000000000aa"],
+      "scope": "project",
+      "expectEmpty": false,
+      "includeInactive": true
+    },
+    {
+      "id": "case-temporal-01",
+      "query": "tls certificate",
+      "category": "temporal",
+      "requiredIds": ["01js9x5e0000000000000000af"],
+      "supportingIds": [],
+      "forbiddenIds": ["01js9x5e0000000000000000ae"],
+      "scope": "project",
+      "expectEmpty": false,
+      "now": "2026-03-15T00:00:00.000Z"
+    },
+    {
+      "id": "case-temporal-02",
+      "query": "tls certificate audit",
+      "category": "temporal",
+      "requiredIds": ["01js9x5e0000000000000000ae"],
+      "supportingIds": ["01js9x5e0000000000000000af"],
+      "forbiddenIds": [],
+      "scope": "project",
+      "expectEmpty": false,
+      "now": "2026-03-15T00:00:00.000Z",
+      "includeInactive": true
+    },
+    {
+      "id": "case-ambiguity-01",
+      "query": "cache",
+      "category": "ambiguity",
+      "requiredIds": ["01js9x5e0000000000000000ac"],
+      "supportingIds": ["01js9x5e0000000000000000ad"],
+      "forbiddenIds": [],
+      "scope": "project",
+      "expectEmpty": false
+    },
+    {
+      "id": "case-ambiguity-02",
+      "query": "cache",
+      "category": "ambiguity",
+      "requiredIds": ["01js9x5e0000000000000000ad"],
+      "supportingIds": ["01js9x5e0000000000000000ac"],
+      "forbiddenIds": [],
+      "scope": "project",
+      "expectEmpty": false,
+      "duplicateOf": "case-ambiguity-01"
+    },
+    {
+      "id": "case-distractors-01",
+      "query": "sitemap generation",
+      "category": "distractors",
+      "requiredIds": ["01js9x5e0000000000000000ag"],
+      "supportingIds": ["01js9x5e0000000000000000ah"],
+      "forbiddenIds": ["01js9x5e0000000000000000ai"],
+      "scope": "project",
+      "expectEmpty": false
+    },
+    {
+      "id": "case-abstention-01",
+      "query": "kubernetes cluster autoscaling",
+      "category": "abstention",
+      "requiredIds": [],
+      "supportingIds": [],
+      "forbiddenIds": [],
+      "scope": "project",
+      "expectEmpty": true
+    }
+  ]
+}
