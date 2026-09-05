@@ -1,15 +1,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Engram } from "../../src/domain.js";
-import { searchEngrams, type SearchResult } from "../../src/search.js";
-import { parseTimestamp } from "../../src/util.js";
-import type {
-  CorpusCaseMirror,
-  EvaluateFn,
-  LoadedCorpusMirror,
-  QueryCase,
-  RunConfig,
-} from "../../src/benchmark/types.js";
+import { evaluateCase, loadCorpus } from "@engram/core/corpus";
+import type { CorpusCase, QueryCase, RunConfig } from "../../src/benchmark/types.js";
 
 /** Fixed benchmark configuration. `abstainThreshold` is deliberately
  * exercised at two values in runner tests to prove it is inert in the
@@ -19,7 +12,7 @@ export const TEST_CONFIG: RunConfig = {
   abstainThreshold: 0,
 };
 
-/** The manifest default instant, as epoch ms (adapter resolves the same
+/** The manifest default instant, as epoch ms (the adapter resolves the same
  * value via util.parseTimestamp). */
 export const DEFAULT_NOW_MS = Date.parse("2026-06-01T00:00:00.000Z");
 
@@ -32,29 +25,17 @@ export function loadFixtureRaw(): unknown {
   return JSON.parse(readFileSync(path, "utf8")) as unknown;
 }
 
-/** The fixture as a LoadedCorpusMirror: the raw object is
+/** The fixture as a real LoadedCorpus: the raw object is
  * { manifest, engrams, cases } by design (loading, including issue
- * collection, is ENG-11's job), so the empty issues list is attached here. */
-export function loadFixtureLoaded(): LoadedCorpusMirror {
-  const raw = loadFixtureRaw() as Omit<LoadedCorpusMirror, "issues">;
-  return { ...raw, issues: [] };
+ * collection, is loadCorpus's job), so the empty issues list is attached
+ * here. */
+export function loadFixtureLoaded() {
+  const raw = loadFixtureRaw() as Omit<ReturnType<typeof loadCorpus>, "issues">;
+  return { ...raw, issues: [] } as ReturnType<typeof loadCorpus>;
 }
 
-/** Test-only evaluate fn implementing the pinned procedure over the real
- * searchEngrams (scope filter, one search call, case.now else
- * defaultNowMs). Mirrors ENG-11's evaluateCase so fixture tests exercise
- * the same semantics; src/ never contains this. */
-export const pinnedEvaluate: EvaluateFn = (engrams, c, defaultNowMs) => {
-  const scoped = engrams.filter((e) => e.scope === c.scope);
-  const nowMs = (c.now !== undefined ? parseTimestamp(c.now) : undefined) ?? defaultNowMs;
-  if (nowMs === undefined) {
-    throw new Error(`case ${c.id} has no fixed timestamp; refusing to read the wall clock`);
-  }
-  return searchEngrams(scoped, c.query, c.limit, {
-    includeInactive: c.includeInactive ?? false,
-    now: nowMs,
-  }) as SearchResult[];
-};
+// Re-exported so tests exercise the exact production evaluation seam.
+export { evaluateCase };
 
 /** Injected clock stepping `step` ns per call. Two calls per query (t0, t1)
  * mean every query's latencyNs is exactly `step`: deterministic. */
@@ -90,7 +71,7 @@ export function engram(over: Partial<Engram> & { id: string }): Engram {
 }
 
 /** Benchmark QueryCase builder with defaults so tests spell out only what
- * matters. The source mirror is synthesized from the same fields. */
+ * matters. The source contract case is synthesized from the same fields. */
 export function queryCase(over: Partial<QueryCase> & { id: string }): QueryCase {
   const merged: QueryCase = {
     query: over.id,
@@ -110,14 +91,16 @@ export function queryCase(over: Partial<QueryCase> & { id: string }): QueryCase 
       forbiddenIds: [],
       scope: over.scope ?? "project",
       expectEmpty: false,
+      applicablePaths: ["benchmark/synthetic"],
+      notes: "synthetic unit-test case",
     },
     ...over,
   };
   return merged;
 }
 
-/** Convenience: a mirror case carrying the ground truth a test needs. */
-export function mirrorCase(over: Partial<CorpusCaseMirror> & { id: string }): CorpusCaseMirror {
+/** Convenience: a contract case carrying the ground truth a test needs. */
+export function mirrorCase(over: Partial<CorpusCase> & { id: string }): CorpusCase {
   return {
     query: over.id,
     category: "exact-facts",
@@ -126,6 +109,8 @@ export function mirrorCase(over: Partial<CorpusCaseMirror> & { id: string }): Co
     forbiddenIds: [],
     scope: "project",
     expectEmpty: false,
+    applicablePaths: ["benchmark/synthetic"],
+    notes: "synthetic unit-test case",
     ...over,
   };
 }

@@ -28,14 +28,14 @@
  * (round6, 6 decimal places), never mid-pipeline.
  */
 import { effectiveStatus, type Engram } from "../domain.js";
-import {
-  CORPUS_CATEGORIES,
-  type CategoryMetric,
-  type KAggregate,
-  type MetricReport,
-  type QueryCase,
-  type QueryMetrics,
-  type QueryOutcome,
+import { CORPUS_CATEGORIES } from "@engram/core/corpus";
+import type {
+  CategoryMetric,
+  KAggregate,
+  MetricReport,
+  QueryCase,
+  QueryMetrics,
+  QueryOutcome,
 } from "./types.js";
 
 /** Round once, to 6 decimal places. All benchmark metrics are non-negative,

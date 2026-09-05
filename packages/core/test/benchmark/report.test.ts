@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { ContractCorpusAdapter } from "../../src/benchmark/adapter.js";
 import { renderReport } from "../../src/benchmark/report.js";
 import { runBenchmark } from "../../src/benchmark/runner.js";
-import { loadFixtureLoaded, pinnedEvaluate, steppingClock, TEST_CONFIG } from "./helpers.js";
+import { evaluateCase, loadFixtureLoaded, steppingClock, TEST_CONFIG } from "./helpers.js";
 
 /** Snapshot fixture run: stepping clock makes every latency exactly 10ns,
  * so the whole report, latency included, is deterministic.
@@ -56,7 +56,7 @@ const expectedReport =
 
 const fixtureResult = () => {
   const input = new ContractCorpusAdapter(loadFixtureLoaded()).toRunInput();
-  return runBenchmark(pinnedEvaluate, input, TEST_CONFIG, {
+  return runBenchmark(evaluateCase, input, TEST_CONFIG, {
     clock: steppingClock(),
   });
 };
@@ -91,7 +91,7 @@ describe("renderReport", () => {
 
   it("keeps latency structural under the default clock", () => {
     const input = new ContractCorpusAdapter(loadFixtureLoaded()).toRunInput();
-    const result = runBenchmark(pinnedEvaluate, input, TEST_CONFIG);
+    const result = runBenchmark(evaluateCase, input, TEST_CONFIG);
     const report = renderReport(result);
     expect(report).toMatch(/latency p50=\d+ p95=\d+ p99=\d+ samples=/);
   });

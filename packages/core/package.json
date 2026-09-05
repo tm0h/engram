@@ -9,7 +9,8 @@
     "./corpus": "./src/corpus.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "benchmark": "tsx src/benchmark/run.ts"
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",

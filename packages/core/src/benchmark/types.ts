@@ -1,6 +1,12 @@
 /**
  * Types for the ENG-8 deterministic retrieval benchmark runner.
  *
+ * The benchmark consumes the real ENG-11 contract through the
+ * `@engram/core/corpus` subpath (never the barrel): corpus types are the
+ * real ones, the loaded corpus comes from the real `loadCorpus`, and
+ * evaluation is the real `evaluateCase` (injected into the runner as a
+ * function so the runner stays testable). No mirror types remain.
+ *
  * Determinism contract for the whole benchmark module family:
  * - every evaluation instant is resolved per case (case.now, else the
  *   manifest defaultNow) and carried as `nowMs`; wall clocks are never read
@@ -11,95 +17,9 @@
  */
 import type { Engram } from "../domain.js";
 import type { SearchResult } from "../search.js";
+import type { CorpusCase, CorpusCategory } from "@engram/core/corpus";
 
-/* ------------------------------------------------------------------ */
-/* Structural consumer mirror of @engram/core/corpus                   */
-/* ------------------------------------------------------------------ */
-
-/** Structural consumer mirror of @engram/core/corpus; replaced by real type
- * imports at the gated integration turn. No validation or loading logic
- * here: that is ENG-11's executable contract. Mirrors carry only fields the
- * benchmark reads (or that the injected evaluate seam reads); at
- * integration the real, stricter types flow through unchanged because every
- * mirror is a structural superset target. */
-
-/** The fixed contract coverage categories, in contract order (report table
- * order and aggregation keys). */
-export const CORPUS_CATEGORIES = [
-  "exact-facts",
-  "paraphrase",
-  "code-identifiers",
-  "multi-token",
-  "subsystem-paths",
-  "superseded",
-  "temporal",
-  "ambiguity",
-  "distractors",
-  "abstention",
-] as const;
-
-export type CorpusCategory = (typeof CORPUS_CATEGORIES)[number];
-
-export type CorpusScope = "personal" | "project";
-
-/** Corpus-level versioning and defaults (contract manifest). */
-export interface CorpusManifestMirror {
-  readonly schemaVersion: number;
-  readonly corpusVersion: string;
-  readonly name: string;
-  readonly description: string;
-  readonly defaultNow?: string | undefined;
-}
-
-/** One labeled retrieval case (contract case fields the benchmark reads). */
-export interface CorpusCaseMirror {
-  readonly id: string;
-  readonly query: string;
-  readonly category: CorpusCategory;
-  readonly requiredIds: ReadonlyArray<string>;
-  readonly supportingIds: ReadonlyArray<string>;
-  readonly forbiddenIds: ReadonlyArray<string>;
-  readonly scope: CorpusScope;
-  readonly expectEmpty: boolean;
-  readonly now?: string | undefined;
-  readonly limit?: number | undefined;
-  readonly includeInactive?: boolean | undefined;
-}
-
-/** One diagnostic from loading or validating the corpus. */
-export interface CorpusIssueMirror {
-  readonly file: string;
-  readonly message: string;
-}
-
-/** A fixture engram plus the file it came from. */
-export interface CorpusEngramRecordMirror {
-  readonly engram: Engram;
-  readonly file: string;
-}
-
-/** Everything one contract load produced. Defects surface as `issues`; a
- * corpus with issues is not evaluable. */
-export interface LoadedCorpusMirror {
-  readonly manifest: CorpusManifestMirror | undefined;
-  readonly engrams: ReadonlyArray<CorpusEngramRecordMirror>;
-  readonly cases: ReadonlyArray<CorpusCaseMirror>;
-  readonly issues: ReadonlyArray<CorpusIssueMirror>;
-}
-
-/** The pinned evaluation procedure's signature (ENG-11 evaluateCase):
- * filter to the case scope, run one search call at the case's fixed
- * instant. The benchmark never implements the procedure; it injects a fn of
- * this shape (tests build one over the real searchEngrams). */
-export type EvaluateFn = (
-  engrams: ReadonlyArray<Engram>,
-  c: CorpusCaseMirror,
-  defaultNowMs?: number,
-) => ReadonlyArray<SearchResult>;
-
-/* ------------------------------------------------------------------ */
-/* Benchmark-internal types                                            */
-/* ------------------------------------------------------------------ */
+export type { CorpusCase, CorpusCategory };
 
 /** Corpus identity surfaced for the report header. */
 export interface CorpusMeta {
@@ -112,28 +32,31 @@ export interface CorpusMeta {
  *
  * Field semantics:
  * - `relevantIds` = requiredIds: ids that must appear. Queries with an
- *   empty list are EXCLUDED from Recall/Precision/MRR aggregation.
+ *   empty list are EXCLUDED from Recall/Precision/MRR aggregation. Per the
+ *   fleet ground-truth decision, an empty required list with
+ *   `expectAbstain` false is possible only in fixtures; real contract
+ *   validation forbids it.
  * - `supportingIds`: tolerated noise, reported per case, never asserted.
  * - `forbiddenIds`: ids that must not appear (contract pass/fail input).
  * - `expectAbstain` = expectEmpty: the correct output is an empty ranking.
- *   Only these cases are abstention-eligible. Over-abstention on other
- *   cases surfaces through falseAbstainRate and Recall.
+ *   Only these queries are abstention-eligible. Over-abstention on other
+ *   queries surfaces through falseAbstainRate and Recall.
  * - `nowMs`: resolved evaluation instant (case.now else manifest
  *   defaultNow). Lifecycle staleness is effectiveStatus(engram, nowMs) !=
  *   "active"; the contract has no per-case stale marker.
- * - `source`: the mirror case, handed unchanged to the injected evaluate fn
- *   (which reads scope/query/limit/includeInactive/now off it). */
+ * - `source`: the contract case, handed unchanged to the injected evaluate
+ *   fn (which reads scope/query/limit/includeInactive/now off it). */
 export interface QueryCase {
   readonly id: string;
   readonly query: string;
   readonly category: CorpusCategory;
-  readonly scope: CorpusScope;
+  readonly scope: "personal" | "project";
   readonly relevantIds: ReadonlyArray<string>;
   readonly supportingIds: ReadonlyArray<string>;
   readonly forbiddenIds: ReadonlyArray<string>;
   readonly expectAbstain: boolean;
   readonly nowMs: number;
-  readonly source: CorpusCaseMirror;
+  readonly source: CorpusCase;
 }
 
 /** Canonical input to the runner: corpus identity, the loaded engrams, and
@@ -149,11 +72,11 @@ export interface RunInput {
 
 /** Benchmark configuration.
  *
- * `abstainThreshold` is defined and carried for the score-aware integration
+ * `abstainThreshold` is defined and carried for a score-aware integration
  * path, but is INERT in this id-only scaffold: abstention is defined as an
- * empty ranking, and no score ever crosses the threshold (turn-1 ruling Q1,
- * guarded by a dedicated runner test). There is deliberately no global
- * `now`: each case carries its own resolved `nowMs`. */
+ * empty ranking, and no score ever crosses the threshold (guarded by a
+ * dedicated runner test). There is deliberately no global `now`: each case
+ * carries its own resolved `nowMs`. */
 export interface RunConfig {
   /** The k values for Recall@k / Precision@k. Canonicalized to sorted,
    * deduped, integer >= 1 order before use. */
@@ -267,3 +190,12 @@ export interface BenchmarkResult {
   readonly outcomes: ReadonlyArray<QueryOutcome>;
   readonly metrics: MetricReport;
 }
+
+/** The injected evaluation seam's shape: identical to the contract's
+ * `evaluateCase` (the pinned procedure's executable form). The runner never
+ * implements the procedure; production binds the real `evaluateCase`. */
+export type EvaluateFn = (
+  engrams: ReadonlyArray<Engram>,
+  c: CorpusCase,
+  defaultNowMs?: number,
+) => ReadonlyArray<SearchResult>;

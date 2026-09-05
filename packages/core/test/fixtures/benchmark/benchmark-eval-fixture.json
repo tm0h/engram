@@ -186,7 +186,9 @@
       "supportingIds": [],
       "forbiddenIds": [],
       "scope": "project",
-      "expectEmpty": false
+      "expectEmpty": false,
+      "applicablePaths": ["cli/dev-server"],
+      "notes": "the dev server port fact must surface for an exact-facts query"
     },
     {
       "id": "case-paraphrase-01",
@@ -196,7 +198,9 @@
       "supportingIds": [],
       "forbiddenIds": [],
       "scope": "personal",
-      "expectEmpty": false
+      "expectEmpty": false,
+      "applicablePaths": ["editor/config"],
+      "notes": "query wording differs from the entry wording; overlap carried by body text"
     },
     {
       "id": "case-superseded-01",
@@ -206,7 +210,9 @@
       "supportingIds": [],
       "forbiddenIds": ["01js9x5e0000000000000000aa"],
       "scope": "project",
-      "expectEmpty": false
+      "expectEmpty": false,
+      "applicablePaths": ["build/pipeline"],
+      "notes": "the superseded webpack decision must stay excluded under default visibility"
     },
     {
       "id": "case-superseded-02",
@@ -217,7 +223,9 @@
       "forbiddenIds": ["01js9x5e0000000000000000aa"],
       "scope": "project",
       "expectEmpty": false,
-      "includeInactive": true
+      "includeInactive": true,
+      "applicablePaths": ["build/pipeline"],
+      "notes": "under includeInactive the superseded fixture scores zero by construction and stays forbidden"
     },
     {
       "id": "case-temporal-01",
@@ -228,7 +236,9 @@
       "forbiddenIds": ["01js9x5e0000000000000000ae"],
       "scope": "project",
       "expectEmpty": false,
-      "now": "2026-03-15T00:00:00.000Z"
+      "now": "2026-03-15T00:00:00.000Z",
+      "applicablePaths": ["infra/tls"],
+      "notes": "the expired certificate is filtered at the case fixed now; the renewal surfaces"
     },
     {
       "id": "case-temporal-02",
@@ -240,7 +250,9 @@
       "scope": "project",
       "expectEmpty": false,
       "now": "2026-03-15T00:00:00.000Z",
-      "includeInactive": true
+      "includeInactive": true,
+      "applicablePaths": ["infra/tls"],
+      "notes": "audit case retrieves the expired entry on purpose via includeInactive"
     },
     {
       "id": "case-ambiguity-01",
@@ -250,7 +262,9 @@
       "supportingIds": ["01js9x5e0000000000000000ad"],
       "forbiddenIds": [],
       "scope": "project",
-      "expectEmpty": false
+      "expectEmpty": false,
+      "applicablePaths": ["rendering/cache"],
+      "notes": "page-cache sense of the ambiguous query; invalidation tolerated as support"
     },
     {
       "id": "case-ambiguity-02",
@@ -261,7 +275,9 @@
       "forbiddenIds": [],
       "scope": "project",
       "expectEmpty": false,
-      "duplicateOf": "case-ambiguity-01"
+      "duplicateOf": "case-ambiguity-01",
+      "applicablePaths": ["rendering/cache"],
+      "notes": "invalidation sense of the same query via duplicateOf; page cache tolerated as support"
     },
     {
       "id": "case-distractors-01",
@@ -271,7 +287,9 @@
       "supportingIds": ["01js9x5e0000000000000000ah"],
       "forbiddenIds": ["01js9x5e0000000000000000ai"],
       "scope": "project",
-      "expectEmpty": false
+      "expectEmpty": false,
+      "applicablePaths": ["content/sitemap"],
+      "notes": "required incremental sitemap note must appear; near-miss template distractor tolerated; stale deprecation forbidden"
     },
     {
       "id": "case-abstention-01",
@@ -281,7 +299,9 @@
       "supportingIds": [],
       "forbiddenIds": [],
       "scope": "project",
-      "expectEmpty": true
+      "expectEmpty": true,
+      "applicablePaths": ["infra/orchestration"],
+      "notes": "the corpus contains nothing about the query by construction; zero results expected"
     }
   ]
 }

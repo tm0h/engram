@@ -22,7 +22,11 @@ files.
   plus one personal-scope preference). No real engrams, credentials, or
   private data.
 
-# Shape notes (consumer mirror)
+# Shape notes (contract-shaped)
+
+All 10 cases satisfy the real CorpusCase structurally (applicablePaths and
+notes present); the adapter consumes them as a LoadedCorpus with an empty
+issues list, exactly like loadCorpus output.
 
 - `engrams` entries are { engram, file } records like loadCorpus output;
   the engram objects use the full domain Engram shape (path is synthetic).

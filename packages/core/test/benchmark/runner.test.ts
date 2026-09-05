@@ -3,7 +3,7 @@ import { ContractCorpusAdapter } from "../../src/benchmark/adapter.js";
 import { runBenchmark } from "../../src/benchmark/runner.js";
 import type { EvaluateFn } from "../../src/benchmark/types.js";
 import type { Engram } from "../../src/domain.js";
-import { loadFixtureLoaded, pinnedEvaluate, steppingClock, TEST_CONFIG } from "./helpers.js";
+import { evaluateCase, loadFixtureLoaded, steppingClock, TEST_CONFIG } from "./helpers.js";
 
 const fixtureInput = () => new ContractCorpusAdapter(loadFixtureLoaded()).toRunInput();
 
@@ -28,7 +28,7 @@ const EXPECTED_RANKINGS: ReadonlyArray<readonly [string, ReadonlyArray<string>]>
 describe("runBenchmark over the benchmark-internal fixture", () => {
   it("produces the hand-computed rankings via the injected evaluate fn", () => {
     const input = fixtureInput();
-    const result = runBenchmark(pinnedEvaluate, input, TEST_CONFIG, {
+    const result = runBenchmark(evaluateCase, input, TEST_CONFIG, {
       clock: steppingClock(),
     });
     const byId = new Map(result.outcomes.map((o) => [o.queryId, o] as const));
@@ -41,7 +41,7 @@ describe("runBenchmark over the benchmark-internal fixture", () => {
 
   it("every fixture case passes under the pinned procedure", () => {
     const input = fixtureInput();
-    const result = runBenchmark(pinnedEvaluate, input, TEST_CONFIG, {
+    const result = runBenchmark(evaluateCase, input, TEST_CONFIG, {
       clock: steppingClock(),
     });
     expect(result.metrics.passedCount).toBe(10);
@@ -53,7 +53,7 @@ describe("runBenchmark over the benchmark-internal fixture", () => {
 
   it("derives the stale count from lifecycle at the case instant", () => {
     const input = fixtureInput();
-    const result = runBenchmark(pinnedEvaluate, input, TEST_CONFIG, {
+    const result = runBenchmark(evaluateCase, input, TEST_CONFIG, {
       clock: steppingClock(),
     });
     // case-temporal-02 returns ae (expired 2026-03-01) at now 2026-03-15
@@ -84,7 +84,7 @@ describe("runBenchmark over the benchmark-internal fixture", () => {
 
   it("is deterministic: two fresh runs produce identical bytes", () => {
     const input = fixtureInput();
-    const evaluate = pinnedEvaluate;
+    const evaluate = evaluateCase;
     const a = runBenchmark(evaluate, input, TEST_CONFIG, { clock: steppingClock() });
     const b = runBenchmark(evaluate, input, TEST_CONFIG, { clock: steppingClock() });
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
@@ -92,11 +92,11 @@ describe("runBenchmark over the benchmark-internal fixture", () => {
 
   it("measures latency through the injected clock only", () => {
     const input = fixtureInput();
-    const stepped = runBenchmark(pinnedEvaluate, input, TEST_CONFIG, {
+    const stepped = runBenchmark(evaluateCase, input, TEST_CONFIG, {
       clock: steppingClock(10),
     });
     for (const o of stepped.outcomes) expect(o.latencyNs).toBe(10);
-    const zeroed = runBenchmark(pinnedEvaluate, input, TEST_CONFIG, {
+    const zeroed = runBenchmark(evaluateCase, input, TEST_CONFIG, {
       clock: () => 5n,
     });
     for (const o of zeroed.outcomes) expect(o.latencyNs).toBe(0);
@@ -104,7 +104,7 @@ describe("runBenchmark over the benchmark-internal fixture", () => {
 
   it("default clock yields structurally valid latency (never scored)", () => {
     const input = fixtureInput();
-    const result = runBenchmark(pinnedEvaluate, input, TEST_CONFIG);
+    const result = runBenchmark(evaluateCase, input, TEST_CONFIG);
     for (const o of result.outcomes) {
       expect(Number.isInteger(o.latencyNs)).toBe(true);
       expect(o.latencyNs).toBeGreaterThanOrEqual(0);
@@ -116,7 +116,7 @@ describe("runBenchmark over the benchmark-internal fixture", () => {
 
   it("keeps abstainThreshold inert in the id-only path (turn-1 ruling Q1)", () => {
     const input = fixtureInput();
-    const evaluate = pinnedEvaluate;
+    const evaluate = evaluateCase;
     const a = runBenchmark(
       evaluate,
       input,
@@ -140,7 +140,7 @@ describe("runBenchmark over the benchmark-internal fixture", () => {
 
   it("sums rendered chars over returned entries per case and in total", () => {
     const input = fixtureInput();
-    const result = runBenchmark(pinnedEvaluate, input, TEST_CONFIG, {
+    const result = runBenchmark(evaluateCase, input, TEST_CONFIG, {
       clock: steppingClock(),
     });
     // Verified render lengths (title\nbody\ntags):
@@ -182,7 +182,7 @@ describe("runBenchmark over the benchmark-internal fixture", () => {
       path: "engrams/ghost.md",
     };
     const ghost: EvaluateFn = (engrams, c, defaultNowMs) => {
-      const base = pinnedEvaluate(engrams, c, defaultNowMs);
+      const base = evaluateCase(engrams, c, defaultNowMs);
       return c.id === "case-exact-facts-01" ? [{ engram: ghostEngram, score: 1 }, ...base] : base;
     };
     const result = runBenchmark(ghost, input, TEST_CONFIG, { clock: steppingClock() });
@@ -196,7 +196,7 @@ describe("runBenchmark over the benchmark-internal fixture", () => {
 
   it("validates config and input before running", () => {
     const input = fixtureInput();
-    const evaluate = pinnedEvaluate;
+    const evaluate = evaluateCase;
     expect(() => runBenchmark(evaluate, input, { ...TEST_CONFIG, kValues: [0] })).toThrow(
       RangeError,
     );
