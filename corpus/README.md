@@ -217,7 +217,9 @@ not complete below these counts.
   `schemaVersion` differs from the supported version.
 - `corpusVersion` bumps whenever fixtures or cases change: major for
   semantic changes (expectations flip, categories redefined), minor for
-  additive cases/fixtures, patch for prose-only fixture edits.
+  additive cases/fixtures, patch for prose-only fixture edits or for
+  reviewed data corrections that do not change expectations or
+  semantics.
 - Adding a category, renaming a field, or changing evaluation semantics
   is a breaking change: it requires a `schemaVersion` bump and a note in
   the PR description so downstream runners re-validate.

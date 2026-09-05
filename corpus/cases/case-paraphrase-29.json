@@ -1,12 +1,12 @@
 {
   "id": "case-paraphrase-29",
-  "query": "will my cache disappear when I restart",
+  "query": "how long does the image cache keep entries",
   "category": "paraphrase",
   "requiredIds": ["01jwq1jkq0000000000000001d"],
-  "supportingIds": ["01jwpz07000000000000000000"],
+  "supportingIds": [],
   "forbiddenIds": [],
   "scope": "project",
   "applicablePaths": ["core/cache"],
   "expectEmpty": false,
-  "notes": "User asks whether the cache disappears on restart; the fact gives the 7 day TTL with lazy eviction, which is the survival answer. Disappear/evict and restart/duration are the meaning bridge. The metrics fact is unrelated support noise."
+  "notes": "User asks how long the image cache keeps entries; the fact documents exactly that duration (entries kept for 7 days, cached thumbnails evict lazily after that). Keep/retention and long/duration are the meaning bridge. This asks the retention duration, distinct from the eviction-timing question in case-paraphrase-30."
 }

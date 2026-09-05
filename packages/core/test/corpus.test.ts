@@ -506,7 +506,7 @@ describe("corpus fixtures: snapshot identity", () => {
    * <relpath>\n<byte length>\n<bytes>. Any byte change to the corpus
    * requires updating this constant in the same reviewed change. */
   const RECORDED_SNAPSHOT_SHA256 =
-    "a44acee44bc1c6658635ce265432a31f2cb0aa235906410ca94def1437adf09b";
+    "ca2df5ed7b459811961941f37540b91f14793144a7200e60b6fbdb57885bb39a";
 
   const snapshotHash = (dir: string): string => {
     const entries: Array<{ rel: string; bytes: Buffer }> = [
@@ -533,6 +533,84 @@ describe("corpus fixtures: snapshot identity", () => {
     const hash = snapshotHash(CORPUS_DIR);
     console.log(`[corpus] snapshot sha256: ${hash}`);
     expect(hash).toBe(RECORDED_SNAPSHOT_SHA256);
+  });
+});
+
+describe("unicode case data integrity", () => {
+  /** Expectation table for the Unicode cases (no corpus fields; this
+   * table is the recorded claim). Per row: the query's NFC form must
+   * equal the phrase, and the declared form must hold. Per the README
+   * authoring guidance, these claims are about encoding of the same
+   * words, independent of search behavior. */
+  const UNICODE_CASES = [
+    { id: "case-paraphrase-21", phrase: "télécharger label", form: "NFD" },
+    { id: "case-exact-facts-26", phrase: "télécharger label in the french locale", form: "NFC" },
+    { id: "case-paraphrase-22", phrase: "resume sections", form: "ASCII" },
+    { id: "case-exact-facts-27", phrase: "german locale pack sample strings", form: "ASCII" },
+    { id: "case-multi-token-21", phrase: "résumé sections keep combining marks", form: "NFC" },
+    { id: "case-multi-token-22", phrase: "german umlaut samples für kiosk", form: "NFC" },
+  ] as const;
+
+  const COMBINING = /[\u0300-\u036f]/;
+  const byId = new Map(corpus.cases.map((c) => [c.id, c]));
+  const fixtureById = new Map(corpus.engrams.map((r) => [r.engram.id, r.engram]));
+
+  it("queries match their declared unicode form and phrase", () => {
+    for (const row of UNICODE_CASES) {
+      const c = byId.get(row.id);
+      expect(c, `${row.id} present`).toBeDefined();
+      expect(
+        (c as CorpusCase).query.normalize("NFC"),
+        `${row.id}: NFC(query) must equal the claimed phrase`,
+      ).toBe(row.phrase);
+      if (row.form === "NFC") {
+        expect(
+          COMBINING.test((c as CorpusCase).query),
+          `${row.id}: NFC form has no combining marks`,
+        ).toBe(false);
+        expect((c as CorpusCase).query).toBe((c as CorpusCase).query.normalize("NFC"));
+      }
+      if (row.form === "NFD") {
+        expect((c as CorpusCase).query, `${row.id}: NFD form must be phrase.normalize('NFD')`).toBe(
+          row.phrase.normalize("NFD"),
+        );
+        expect(
+          COMBINING.test((c as CorpusCase).query),
+          `${row.id}: NFD form has combining marks`,
+        ).toBe(true);
+      }
+      if (row.form === "ASCII") {
+        // ASCII iff the UTF-8 byte count equals the code-unit count.
+        expect(Buffer.from((c as CorpusCase).query, "utf8").length, `${row.id}: ASCII form`).toBe(
+          (c as CorpusCase).query.length,
+        );
+      }
+    }
+  });
+
+  it("fixture encoding claims hold", () => {
+    const nfdFixtures = ["01jwq5mkw0000000000000003m", "01jwq5r920000000000000003p"];
+    for (const id of nfdFixtures) {
+      const e = fixtureById.get(id);
+      expect(e, `${id} present`).toBeDefined();
+      expect(COMBINING.test((e as Engram).body), `${id}: NFD fixture has combining marks`).toBe(
+        true,
+      );
+    }
+    expect(fixtureById.get("01jwq5mkw0000000000000003m")?.body.normalize("NFC")).toContain(
+      "Résumé",
+    );
+    expect(fixtureById.get("01jwq5r920000000000000003p")?.body.normalize("NFC")).toContain("für");
+    const nfcFixtures = ["01jwq5js90000000000000003k", "01jwq5pef0000000000000003n"];
+    for (const id of nfcFixtures) {
+      const e = fixtureById.get(id);
+      expect(e, `${id} present`).toBeDefined();
+      expect(COMBINING.test((e as Engram).body), `${id}: NFC fixture has no combining marks`).toBe(
+        false,
+      );
+    }
+    expect(fixtureById.get("01jwq5js90000000000000003k")?.body).toContain("Télécharger");
+    expect(fixtureById.get("01jwq5pef0000000000000003n")?.body).toContain("für");
   });
 });
 
