@@ -23,6 +23,19 @@ import { normalizeText, tokenizeQuery } from "./tokenize.js";
 export interface SearchResult {
   readonly engram: Engram;
   readonly score: number;
+  readonly explanation?: SearchExplanation;
+}
+
+export interface ScoreContribution {
+  readonly field: "tag" | "title" | "type" | "body" | "pinned";
+  /** Normalized query token, not source text or a source offset. */
+  readonly token: string | null;
+  readonly score: number;
+}
+
+export interface SearchExplanation {
+  readonly mode: "relevance" | "recency";
+  readonly contributions: ReadonlyArray<ScoreContribution>;
 }
 
 /** ENG-17 options (4th, optional parameter — fully backward compatible).
@@ -32,22 +45,32 @@ export interface SearchResult {
 export interface SearchOptions {
   readonly includeInactive?: boolean;
   readonly now?: number;
+  readonly explain?: boolean;
 }
 
-function scoreEngram(m: Engram, tokens: ReadonlyArray<string>): number {
+function scoreEngram(m: Engram, tokens: ReadonlyArray<string>, explain: boolean): SearchResult {
   let score = 0;
+  const contributions: ScoreContribution[] | undefined = explain ? [] : undefined;
+  const add = (field: ScoreContribution["field"], token: string | null, points: number) => {
+    score += points;
+    contributions?.push({ field, token, score: points });
+  };
   const title = normalizeText(m.title);
   const body = normalizeText(m.body);
   const type = normalizeText(m.type);
   const tags = m.tags.map((t) => normalizeText(t));
   for (const t of tokens) {
-    if (tags.includes(t)) score += 5;
-    if (title.includes(t)) score += 3;
-    if (type === t) score += 2;
-    if (body.includes(t)) score += 1;
+    if (tags.includes(t)) add("tag", t, 5);
+    if (title.includes(t)) add("title", t, 3);
+    if (type === t) add("type", t, 2);
+    if (body.includes(t)) add("body", t, 1);
   }
-  if (m.pinned) score += 0.5;
-  return score;
+  if (m.pinned) add("pinned", null, 0.5);
+  return {
+    engram: m,
+    score,
+    ...(contributions ? { explanation: { mode: "relevance" as const, contributions } } : {}),
+  };
 }
 
 /** Search engrams. With no query, returns all sorted by recency.
@@ -69,7 +92,13 @@ export function searchEngrams(
   let results: SearchResult[];
   if (tokens.length === 0) {
     results = candidates
-      .map((engram) => ({ engram, score: 0 }))
+      .map((engram) => ({
+        engram,
+        score: 0,
+        ...(options.explain
+          ? { explanation: { mode: "recency" as const, contributions: [] } }
+          : {}),
+      }))
       .sort(
         (a, b) =>
           b.engram.updated.localeCompare(a.engram.updated) ||
@@ -77,7 +106,7 @@ export function searchEngrams(
       );
   } else {
     results = candidates
-      .map((engram) => ({ engram, score: scoreEngram(engram, tokens) }))
+      .map((engram) => scoreEngram(engram, tokens, options.explain === true))
       .filter((r) => r.score > 0)
       .sort((a, b) => b.score - a.score || a.engram.id.localeCompare(b.engram.id));
   }

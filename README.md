@@ -280,7 +280,7 @@ You can edit these by hand (they're just files), but never invent an id:
 | `engram init [--tracked\|--untracked]`                    | Initialize `.engram/` and choose git tracking.                                                                                                                                                                                                                                                                                                                                            |
 | `engram add [content]`                                    | Record an engram. Body from arg, `--stdin`, or `$EDITOR`.                                                                                                                                                                                                                                                                                                                                 |
 | `engram list [--scope] [--type] [--tag] [--all]`          | List engrams. Inactive entries (superseded, archived, expired) are hidden unless `--all`.                                                                                                                                                                                                                                                                                                 |
-| `engram search <query> [--scope] [-n] [--all]`            | Relevance search (tags > title > type > body). Inactive entries hidden unless `--all`.                                                                                                                                                                                                                                                                                                    |
+| `engram search <query> [options]`                         | Relevance search (tags > title > type > body). Supports JSON, score explanations, and pagination. Inactive entries are hidden unless `--all`.                                                                                                                                                                                                                                             |
 | `engram show <id>`                                        | Show one engram in full (id or unique prefix). Status-blind: historical entries stay addressable.                                                                                                                                                                                                                                                                                         |
 | `engram edit <id> [content]`                              | Edit an engram: flags replace fields, no flags opens `$EDITOR`, `--stdin`/content replaces the body.                                                                                                                                                                                                                                                                                      |
 | `engram remove <id> [-y]`                                 | Delete an engram.                                                                                                                                                                                                                                                                                                                                                                         |
@@ -290,6 +290,63 @@ You can edit these by hand (they're just files), but never invent an id:
 | `engram config [get\|set] [key] [value]`                  | Keys: `tracked`, `defaultType`, `author`, `editor`, plus the automatic-context user settings: `autoContext` (`on`/`off`, default `on`), `autoContextScope` (`project`/`personal`/`both`, default `project`), `autoContextLimit` (integer `1..100`, default `25`).                                                                                                                         |
 | `engram inject`                                           | Print the agent-injection snippet.                                                                                                                                                                                                                                                                                                                                                        |
 | `engram where`                                            | Show resolved paths and the current default scope.                                                                                                                                                                                                                                                                                                                                        |
+
+### Structured search
+
+`engram search "auth" --json --explain --limit 10 --offset 0` emits one JSON
+document. `--json` alone omits explanations. `--explain` alone emits plain-text
+score contributions instead of the normal snippet output.
+
+```json
+{
+  "schemaVersion": 1,
+  "query": "auth",
+  "total": 1,
+  "offset": 0,
+  "limit": 10,
+  "nextOffset": null,
+  "results": [
+    {
+      "id": "0001",
+      "scope": "project",
+      "title": "Auth policy",
+      "type": "note",
+      "tags": [],
+      "updated": "2026-01-01T00:00:00.000Z",
+      "pinned": false,
+      "score": 3,
+      "explanation": {
+        "mode": "relevance",
+        "contributions": [{ "field": "title", "token": "auth", "score": 3 }]
+      }
+    }
+  ]
+}
+```
+
+Results are globally ranked across selected scopes, then paginated. CLI search
+defaults to the current project, or personal scope outside a project. Use
+`--scope all` for both. The default limit is unlimited (`limit: null`). A supplied
+limit is a positive safe integer; offset is a nonnegative safe integer and
+requires `--json` or `--explain`. An offset beyond the end returns an empty page
+with the requested offset and unchanged total. `nextOffset: null` means no more
+results. Default text mode retains scope grouping and its per-scope limit.
+
+Each result is identified by both `scope` and `id`. Summaries allow only the
+fields shown above. They omit bodies, filesystem paths, author, and source
+references. Match tokens come from the normalized query, never excerpts from
+the matched field. `tag`, `title`, `type`, and `body` contributions retain the
+existing scoring weights; `pinned` contributes 0.5 with `token: null`. A pinned
+result can match without a lexical hit. Empty or punctuation-only queries use
+recency ordering, score 0, and empty contributions (`mode: "recency"`).
+No trigger or path-metadata matching is introduced by this change. Code/path
+query tokens are explained by the existing fields they match.
+
+Pi and OpenCode `engram_search` expose the same versioned report as result
+details/metadata, with `explain: true` enabling contributions. Their existing
+text and default 10-result pagination remain unchanged. Errors retain each
+surface's existing error channel; CLI errors exit nonzero with no JSON on
+stdout. `--all` continues to include inactive entries in CLI search.
 
 `add` highlights:
 

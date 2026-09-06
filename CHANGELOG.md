@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Search JSON output and ranking explanations, with scope-qualified results,
+  pagination metadata, and equivalent structured metadata in Pi and OpenCode.
+
 ## [0.4.0] - 2026-08-28
 
 ### Added

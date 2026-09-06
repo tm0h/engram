@@ -9,7 +9,7 @@
  *
  * Built with Effect; CLI dispatch via commander.
  */
-import { Command } from "commander";
+import { Command, InvalidArgumentError } from "commander";
 import { Effect, Exit, Cause } from "effect";
 import chalk from "chalk";
 import process from "node:process";
@@ -155,7 +155,22 @@ program
   .command("search <query>")
   .description("Search engrams by keyword/tag/type.")
   .option("-s, --scope <scope>", "personal | project | all")
-  .option("-n, --limit <n>", "Max results.", (v: string) => parseInt(v, 10))
+  .option(
+    "-n, --limit <n>",
+    "Max results per scope in text mode; global page size with --json/--explain. Default unlimited.",
+    (v: string) => {
+      if (!/^\d+$/.test(v) || !Number.isSafeInteger(Number(v)) || Number(v) < 1)
+        throw new InvalidArgumentError("limit must be a positive safe integer");
+      return Number(v);
+    },
+  )
+  .option("--offset <n>", "Global page offset; requires --json or --explain.", (v: string) => {
+    if (!/^\d+$/.test(v) || !Number.isSafeInteger(Number(v)))
+      throw new InvalidArgumentError("offset must be a nonnegative safe integer");
+    return Number(v);
+  })
+  .option("--json", "Emit one versioned JSON document. Default unlimited results.")
+  .option("--explain", "Include matched fields, normalized query tokens, and score contributions.")
   .option("--all", "Include inactive entries (superseded, archived, expired).")
   .action((query: string, opts: Record<string, string | number | undefined>) =>
     run(
@@ -163,6 +178,9 @@ program
         scope: opts.scope as string | undefined,
         limit: opts.limit as number | undefined,
         all: Boolean(opts.all),
+        json: Boolean(opts.json),
+        explain: Boolean(opts.explain),
+        offset: opts.offset as number | undefined,
       }),
     ),
   );

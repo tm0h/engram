@@ -34,6 +34,7 @@ export interface ContextOptions {
 
 export interface SearchOptions {
   readonly query: string;
+  readonly explain?: boolean;
   readonly limit?: number;
   readonly offset?: number;
   readonly scope?: ScopeFilter;

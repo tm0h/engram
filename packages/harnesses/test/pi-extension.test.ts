@@ -8,7 +8,7 @@ import { Value } from "typebox/value";
 import { z } from "zod";
 import engramExtension from "../src/pi/index.js";
 import { registerEngramCommand } from "../src/pi/commands.js";
-import { registerEngramTools } from "../src/pi/tools.js";
+import { registerEngramTools, engramSearchTool } from "../src/pi/tools.js";
 import { engramAddTool as ocAddTool, engramEditTool as ocEditTool } from "../src/opencode/tools.js";
 
 /* --------------------------- fake pi harness --------------------------- */
@@ -120,6 +120,11 @@ describe("engram extension / registration", () => {
       "offset",
     ]);
     expect(Object.keys(byName.get("engram_search")!.parameters.properties!)).toContain("query");
+    expect(Object.keys(byName.get("engram_search")!.parameters.properties!)).toContain("explain");
+    expect(Value.Check(engramSearchTool.parameters, { query: "auth", explain: true })).toBe(true);
+    expect(Value.Check(engramSearchTool.parameters, { query: "auth", explain: "true" })).toBe(
+      false,
+    );
     expect(Object.keys(byName.get("engram_show")!.parameters.properties!)).toContain("id");
     expect(Object.keys(byName.get("engram_add")!.parameters.properties!)).toEqual([
       "title",

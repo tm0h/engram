@@ -38,6 +38,12 @@ enabled.
 
 ## When to record (and when not to)
 
+Use `engram search "auth" --json --explain` for structured scores, matched
+fields, normalized query tokens, and score contributions. Explanations contain
+no memory bodies, source references, or filesystem paths. Use `engram show`
+to read the selected memory. Identify entries by scope and id.
+JSON pagination uses `--limit` and `--offset`; `nextOffset: null` marks the end.
+
 Record:
 
 - Decisions — with rationale and rejected alternatives in the body

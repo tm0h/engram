@@ -29,6 +29,8 @@ import {
   projectReadmePath,
   removeGitignoreLine,
   searchEngrams,
+  searchReport,
+  searchPaginationError,
   type Engram,
   type EngramPatch,
   type Scope,
@@ -276,6 +278,8 @@ export const contextDigest = (
 export const searchOp = (opts: SearchOptions): Effect.Effect<OpResult, never, EngramStore> =>
   capture(
     Effect.gen(function* () {
+      const invalid = searchPaginationError(opts.offset ?? 0, opts.limit ?? DEFAULT_SEARCH_LIMIT);
+      if (invalid) return err(invalid);
       const store = yield* EngramStore;
       const root = yield* store.projectRoot();
       const resolved = resolveScopes(opts.scope ?? "both", root);
@@ -287,9 +291,13 @@ export const searchOp = (opts: SearchOptions): Effect.Effect<OpResult, never, En
       for (const scope of resolved.scopes) {
         candidates.push(...(yield* store.list(scope)));
       }
-      const matched = searchEngrams(candidates, opts.query).map((r) => r.engram);
+      const ranked = searchEngrams(candidates, opts.query, undefined, {
+        explain: opts.explain === true,
+      });
+      const matched = ranked.map((r) => r.engram);
       const multiScope = resolved.scopes.length > 1;
       const page = paginate(matched, opts.offset ?? 0, opts.limit ?? DEFAULT_SEARCH_LIMIT);
+      const report = searchReport(ranked, opts.query, page.offset, page.limit);
 
       const lines: string[] = [
         `# Engram search: "${opts.query}" - ${matched.length} match${matched.length === 1 ? "" : "es"}.`,
@@ -297,7 +305,7 @@ export const searchOp = (opts: SearchOptions): Effect.Effect<OpResult, never, En
       if (!matched.length) {
         lines.push(`No matches. Broaden the query, or call engram_context for the digest.`);
         if (resolved.personalOnly) lines.push(`(${PERSONAL_ONLY_NOTE})`);
-        return ok(lines.join("\n"), { total: 0, offset: 0, limit: page.limit, nextOffset: null });
+        return ok(lines.join("\n"), { ...report });
       }
       lines.push(...page.items.map((m) => lineOf(m, multiScope)));
 
@@ -308,6 +316,7 @@ export const searchOp = (opts: SearchOptions): Effect.Effect<OpResult, never, En
         const nextParams: Record<string, unknown> = { query: opts.query, offset: page.nextOffset };
         if (opts.scope !== undefined) nextParams.scope = opts.scope;
         if (opts.limit !== undefined) nextParams.limit = opts.limit;
+        if (opts.explain) nextParams.explain = true;
         const nextCall = `engram_search(${JSON.stringify(nextParams)})`;
         footer = `${pageFooter({ from, to, total: page.total, nextOffset: page.nextOffset, nextCall })}; use engram_show({"id":"…"}) to read one`;
       }
@@ -315,11 +324,7 @@ export const searchOp = (opts: SearchOptions): Effect.Effect<OpResult, never, En
       const body = lines.join("\n");
       const text = footer === null ? applyCap(body) : capWithFooter(body, footer).text;
       return ok(text, {
-        total: page.total,
-        offset: page.offset,
-        limit: page.limit,
-        nextOffset: page.nextOffset,
-        query: opts.query,
+        ...report,
       });
     }),
   );
