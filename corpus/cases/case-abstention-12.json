@@ -1,0 +1,12 @@
+{
+  "id": "case-abstention-12",
+  "query": "can I buy a domain through mothlight",
+  "category": "abstention",
+  "requiredIds": [],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["billing/domains"],
+  "expectEmpty": true,
+  "notes": "Host and alias fixtures exist (CDN alias, preview hosts), but they describe pointing domains, not selling or registering them. Nothing in the corpus answers a purchasing question, so empty is correct despite the hosting vocabulary overlap."
+}

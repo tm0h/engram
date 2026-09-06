@@ -1,0 +1,12 @@
+{
+  "id": "case-subsystem-paths-01",
+  "query": "unmatched code fence handling",
+  "category": "subsystem-paths",
+  "requiredIds": ["01jwpzxgg0000000000000000g"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/parser"],
+  "expectEmpty": false,
+  "notes": "Query scoped to the parser subsystem; the sibling parser note about line breaks shares no query tokens and must not surface."
+}

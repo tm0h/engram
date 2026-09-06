@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-12",
+  "query": "daily notes personal files",
+  "category": "multi-token",
+  "requiredIds": ["01jwq341r00000000000000028"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "personal",
+  "applicablePaths": ["workflow/notes"],
+  "expectEmpty": false,
+  "notes": "Personal-scope preference; the scope filter keeps project note fixtures out of the candidate set."
+}

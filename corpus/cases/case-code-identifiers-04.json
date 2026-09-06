@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-04",
+  "query": "queryparser quoted phrases",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq0tt000000000000000010"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/search"],
+  "expectEmpty": false,
+  "notes": "Query built from the QueryParser identifier as the tokenizer sees it."
+}

@@ -1,0 +1,13 @@
+{
+  "id": "case-temporal-15",
+  "query": "watermark export history",
+  "category": "temporal",
+  "requiredIds": ["01jwq544h0000000000000003b"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/export"],
+  "expectEmpty": false,
+  "notes": "Historical audit with includeInactive: the watermark fact expired 2026-04-01 and is retrievable on purpose.",
+  "includeInactive": true
+}

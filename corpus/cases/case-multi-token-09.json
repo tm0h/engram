@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-09",
+  "query": "rollback drills quarterly schedule",
+  "category": "multi-token",
+  "requiredIds": ["01jwq26r80000000000000001r"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/deploy"],
+  "expectEmpty": false,
+  "notes": "Tokens combine from title (rollback drills, quarterly) and body (drill runs)."
+}

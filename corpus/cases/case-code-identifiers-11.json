@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-11",
+  "query": "watchglobs brace expansion",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq435v0000000000000002s"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/watcher"],
+  "expectEmpty": false,
+  "notes": "Query built from the watchGlobs identifier."
+}

@@ -10,9 +10,15 @@
  *
  * This is intentionally simple and fast. Semantic/embedding search can be
  * layered behind the same interface later.
+ *
+ * Queries and indexed fields are folded with `normalizeText` from
+ * `./tokenize.js` (ENG-21), so matching is Unicode-normalization safe on
+ * both sides; queries are expanded with `tokenizeQuery` (camelCase,
+ * snake_case, paths, and so on).
  */
 import type { Engram } from "./domain.js";
 import { effectiveStatus } from "./domain.js";
+import { normalizeText, tokenizeQuery } from "./tokenize.js";
 
 export interface SearchResult {
   readonly engram: Engram;
@@ -28,19 +34,12 @@ export interface SearchOptions {
   readonly now?: number;
 }
 
-function tokenize(query: string): string[] {
-  return query
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((t) => t.length > 0);
-}
-
 function scoreEngram(m: Engram, tokens: ReadonlyArray<string>): number {
   let score = 0;
-  const title = m.title.toLowerCase();
-  const body = m.body.toLowerCase();
-  const type = m.type.toLowerCase();
-  const tags = m.tags.map((t) => t.toLowerCase());
+  const title = normalizeText(m.title);
+  const body = normalizeText(m.body);
+  const type = normalizeText(m.type);
+  const tags = m.tags.map((t) => normalizeText(t));
   for (const t of tokens) {
     if (tags.includes(t)) score += 5;
     if (title.includes(t)) score += 3;
@@ -66,7 +65,7 @@ export function searchEngrams(
   const candidates = options.includeInactive
     ? list
     : list.filter((m) => effectiveStatus(m, nowMs) === "active");
-  const tokens = query ? tokenize(query) : [];
+  const tokens = query ? tokenizeQuery(query) : [];
   let results: SearchResult[];
   if (tokens.length === 0) {
     results = candidates

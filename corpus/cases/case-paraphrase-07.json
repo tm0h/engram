@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-07",
+  "query": "how long do cached images stay in the cache",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq1jkq0000000000000001d"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/cache"],
+  "expectEmpty": false,
+  "notes": "The fact states a 7 day TTL; the query asks how long entries stay. Overlap via cache family and cached."
+}

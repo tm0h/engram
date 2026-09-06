@@ -1,0 +1,12 @@
+{
+  "id": "case-temporal-11",
+  "query": "log shipping pipeline",
+  "category": "temporal",
+  "requiredIds": ["01jwq50fb00000000000000039"],
+  "supportingIds": [],
+  "forbiddenIds": ["01jwq4ymr00000000000000038"],
+  "scope": "project",
+  "applicablePaths": ["ops/logging"],
+  "expectEmpty": false,
+  "notes": "Evaluated at manifest defaultNow (2026-06-01), after the udp pipeline fact expired (2025-09-01)."
+}

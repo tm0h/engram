@@ -1,0 +1,12 @@
+{
+  "id": "case-distractors-01",
+  "query": "image resizing pipeline",
+  "category": "distractors",
+  "requiredIds": ["01jwpzr0q0000000000000000d"],
+  "supportingIds": ["01jwpzvnx0000000000000000f"],
+  "forbiddenIds": ["01jwpzsva0000000000000000e"],
+  "scope": "project",
+  "applicablePaths": ["core/assets"],
+  "expectEmpty": false,
+  "notes": "Near-miss assets notes share tokens with the required decision; the stale fastgallery fact is superseded and must stay hidden under default exclusion."
+}

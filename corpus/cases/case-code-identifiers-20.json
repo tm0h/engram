@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-20",
+  "query": "feedrenderer caches between runs",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq4kn600000000000000032"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/feed"],
+  "expectEmpty": false,
+  "notes": "Query built from the FeedRenderer identifier."
+}

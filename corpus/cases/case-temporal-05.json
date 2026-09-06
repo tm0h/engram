@@ -1,0 +1,13 @@
+{
+  "id": "case-temporal-05",
+  "query": "nightly index rebuilds schedule",
+  "category": "temporal",
+  "requiredIds": ["01jwq1r3g0000000000000001g"],
+  "supportingIds": ["01jwq1sy30000000000000001h"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/storage"],
+  "expectEmpty": false,
+  "notes": "The nightly rebuild decision is both superseded and expired; an audit query retrieves it with includeInactive at the manifest defaultNow.",
+  "includeInactive": true
+}

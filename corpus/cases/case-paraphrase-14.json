@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-14",
+  "query": "how often do backup exports run",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq3gvx0000000000000002f"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/backup"],
+  "expectEmpty": false,
+  "notes": "The fact states weekly; the query asks how often."
+}

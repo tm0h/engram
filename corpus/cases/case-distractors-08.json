@@ -1,0 +1,12 @@
+{
+  "id": "case-distractors-08",
+  "query": "highlight unknown languages",
+  "category": "distractors",
+  "requiredIds": ["01jwq0q4t0000000000000000y"],
+  "supportingIds": ["01jwq19er00000000000000018"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/renderer"],
+  "expectEmpty": false,
+  "notes": "The dark variant rule shares highlight tokens; the highlighting note is required and the rule is support."
+}

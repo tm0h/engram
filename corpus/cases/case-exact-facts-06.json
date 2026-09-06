@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-06",
+  "query": "theme layout fallback order",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq109s00000000000000013"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["themes/loader"],
+  "expectEmpty": false,
+  "notes": "Pins the layout fallback chain: default theme, then skeleton template."
+}

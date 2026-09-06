@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-16",
+  "query": "localeswitcher active locale",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq4cat0000000000000002y"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/i18n"],
+  "expectEmpty": false,
+  "notes": "Query built from the LocaleSwitcher identifier."
+}

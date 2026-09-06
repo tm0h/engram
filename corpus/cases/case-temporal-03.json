@@ -1,0 +1,12 @@
+{
+  "id": "case-temporal-03",
+  "query": "image cache ttl days",
+  "category": "temporal",
+  "requiredIds": ["01jwq1jkq0000000000000001d"],
+  "supportingIds": [],
+  "forbiddenIds": ["01jwq1gs40000000000000001c"],
+  "scope": "project",
+  "applicablePaths": ["core/cache"],
+  "expectEmpty": false,
+  "notes": "Evaluated at manifest defaultNow (2026-06-01), well after the old 24 hour TTL expired (2025-12-01), so the expired fact stays hidden without includeInactive."
+}

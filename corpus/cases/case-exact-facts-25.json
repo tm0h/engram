@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-25",
+  "query": "digest delivery day",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq3xp20000000000000002p"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["workflow/email"],
+  "expectEmpty": false,
+  "notes": "Pins the Tuesday morning digest delivery."
+}

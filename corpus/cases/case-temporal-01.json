@@ -1,0 +1,12 @@
+{
+  "id": "case-temporal-01",
+  "query": "deploy retry attempts backoff",
+  "category": "temporal",
+  "requiredIds": ["01jwpzgpb00000000000000009"],
+  "supportingIds": [],
+  "forbiddenIds": ["01jwpzjgy0000000000000000a"],
+  "scope": "project",
+  "applicablePaths": ["ops/deploy"],
+  "expectEmpty": false,
+  "notes": "Evaluated at manifest defaultNow (2026-06-01), after the old policy expired (2026-01-15), so time-derived inactivity hides the forbidden id without includeInactive."
+}

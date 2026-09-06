@@ -133,3 +133,78 @@ describe("searchEngrams / inactive filtering (ENG-17)", () => {
     expect(r.map((x) => x.engram.id)).toEqual(["0003", "0001"]);
   });
 });
+
+describe("searchEngrams / Unicode normalization (ENG-21 remediation)", () => {
+  const uni: Engram[] = [
+    mem({ id: "u1", title: "Café menu" }), // precomposed e-acute in title
+    mem({ id: "u2", title: "Kitchen notes", body: "café au lait" }), // precomposed in body
+    mem({ id: "u3", title: "Decomposed notes", body: "cafe\u0301 corner" }), // decomposed
+    mem({ id: "u4", title: "Plain Cafe", tags: ["résumé"] }), // ASCII title, accented tag
+    mem({ id: "u5", title: "Такой порядок" }), // Cyrillic target
+    mem({ id: "u6", title: "Unrelated entry", body: "nothing here" }),
+  ];
+
+  it("precomposed query matches precomposed and decomposed documents", () => {
+    expect(searchEngrams(uni, "Café").map((x) => x.engram.id)).toEqual(["u1", "u4", "u2", "u3"]);
+  });
+
+  it("plain ASCII query matches precomposed documents (finding 1)", () => {
+    const ids = searchEngrams(uni, "cafe").map((x) => x.engram.id);
+    expect(ids).toContain("u1");
+    expect(ids).toContain("u2");
+  });
+
+  it("decomposed query matches precomposed documents", () => {
+    expect(searchEngrams(uni, "cafe\u0301").map((x) => x.engram.id)).toEqual([
+      "u1",
+      "u4",
+      "u2",
+      "u3",
+    ]);
+  });
+
+  it("ASCII query also matches decomposed documents (pinned explicitly)", () => {
+    expect(searchEngrams(uni, "cafe").map((x) => x.engram.id)).toContain("u3");
+  });
+
+  it("accented tag matches exactly at score level, both query forms", () => {
+    const r = searchEngrams(uni, "resume");
+    expect(r.map((x) => x.engram.id)).toEqual(["u4"]);
+    expect(r[0]?.score).toBe(5);
+    const symmetric = searchEngrams(uni, "résumé");
+    expect(symmetric.map((x) => x.engram.id)).toEqual(["u4"]);
+    expect(symmetric[0]?.score).toBe(5);
+  });
+
+  it("non-ASCII query filters instead of degenerating to the recency list (C3)", () => {
+    const r = searchEngrams(uni, "такой");
+    expect(r.map((x) => x.engram.id)).toEqual(["u5"]);
+  });
+
+  it("ASCII scoring is unchanged (regression set)", () => {
+    const r = searchEngrams(sample, "auth tokens");
+    expect(r.map((x) => x.engram.id)).toEqual(["0003", "0001"]);
+    expect(r[0]?.score).toBe(9);
+    expect(r[1]?.score).toBe(5);
+  });
+
+  it("empty query still returns the recency list", () => {
+    expect(searchEngrams(uni, "").map((x) => x.engram.id)).toEqual([
+      "u1",
+      "u2",
+      "u3",
+      "u4",
+      "u5",
+      "u6",
+    ]);
+  });
+
+  it("path queries match on components and basename", () => {
+    const list = [
+      mem({ id: "p1", title: "Fix parse in packages/core/src/search.ts" }),
+      mem({ id: "p2", title: "Unrelated" }),
+    ];
+    const r = searchEngrams(list, "packages/core/src/search.ts");
+    expect(r.map((x) => x.engram.id)).toEqual(["p1"]);
+  });
+});

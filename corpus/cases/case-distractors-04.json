@@ -1,0 +1,12 @@
+{
+  "id": "case-distractors-04",
+  "query": "syntax theme highlight rules",
+  "category": "distractors",
+  "requiredIds": ["01jwq19er00000000000000018"],
+  "supportingIds": ["01jwq0q4t0000000000000000y"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["themes/loader", "core/renderer"],
+  "expectEmpty": false,
+  "notes": "The highlighting note is a near-miss sharing syntax and highlight tokens; the dark variant requirement is required."
+}

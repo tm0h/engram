@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-23",
+  "query": "static export compression level",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq3t0w0000000000000002m"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/export"],
+  "expectEmpty": false,
+  "notes": "Pins gzip level 6 for static export."
+}

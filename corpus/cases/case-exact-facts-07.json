@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-07",
+  "query": "dark variant requirement syntax themes",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq19er00000000000000018"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["themes/loader"],
+  "expectEmpty": false,
+  "notes": "Pins the dark variant validation rule for syntax themes."
+}

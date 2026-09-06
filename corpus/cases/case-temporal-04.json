@@ -1,0 +1,13 @@
+{
+  "id": "case-temporal-04",
+  "query": "ttl 24 hours image cache history",
+  "category": "temporal",
+  "requiredIds": ["01jwq1gs40000000000000001c"],
+  "supportingIds": ["01jwq1jkq0000000000000001d"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/cache"],
+  "expectEmpty": false,
+  "notes": "Historical audit with includeInactive: the expired 24 hour TTL fact is intentionally retrievable; the current 7 day fact is acceptable support.",
+  "includeInactive": true
+}

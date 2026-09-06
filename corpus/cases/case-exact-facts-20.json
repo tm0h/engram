@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-20",
+  "query": "health endpoint payload",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq3mh30000000000000002h"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/health"],
+  "expectEmpty": false,
+  "notes": "Pins the health endpoint payload contents."
+}

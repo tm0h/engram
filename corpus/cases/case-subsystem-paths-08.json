@@ -1,0 +1,12 @@
+{
+  "id": "case-subsystem-paths-08",
+  "query": "alt text linting checks",
+  "category": "subsystem-paths",
+  "requiredIds": ["01jwq2nd000000000000000020"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/assets"],
+  "expectEmpty": false,
+  "notes": "Assets accessibility rule retrieved by its linting behavior."
+}

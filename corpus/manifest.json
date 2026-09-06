@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "corpusVersion": "0.3.1",
+  "name": "mothlight-retrieval-corpus",
+  "description": "Golden retrieval corpus for the fictional mothlight static-site generator. All fixtures are synthetic; any resemblance to a real project is coincidental.",
+  "defaultNow": "2026-06-01T00:00:00.000Z"
+}

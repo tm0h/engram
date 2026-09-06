@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-15",
+  "query": "exportstatic gzipped bundles",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq4ag70000000000000002x"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/export"],
+  "expectEmpty": false,
+  "notes": "Query built from the exportStatic identifier."
+}

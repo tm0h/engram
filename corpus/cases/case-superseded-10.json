@@ -1,0 +1,13 @@
+{
+  "id": "case-superseded-10",
+  "query": "canary one day promotion history",
+  "category": "superseded",
+  "requiredIds": ["01jwq218f0000000000000001n"],
+  "supportingIds": ["01jwq1zdw0000000000000001m"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/deploy"],
+  "expectEmpty": false,
+  "notes": "includeInactive mode: audit of the retired one-day window; the one and day tokens appear only in the retired decision.",
+  "includeInactive": true
+}

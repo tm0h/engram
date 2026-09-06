@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-13",
+  "query": "when does the feed update",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq3d6q0000000000000002d"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/feed"],
+  "expectEmpty": false,
+  "notes": "The fact states hourly updates; the query asks when."
+}

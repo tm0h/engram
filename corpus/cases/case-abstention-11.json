@@ -1,0 +1,12 @@
+{
+  "id": "case-abstention-11",
+  "query": "how do I rotate log files on windows",
+  "category": "abstention",
+  "requiredIds": [],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/logging"],
+  "expectEmpty": true,
+  "notes": "The corpus has log fixtures, but they cover retention (90 day rollover) and shipping transport, neither of which answers how to rotate logs on Windows. No memory addresses rotation mechanics on that platform, so the correct result is empty."
+}

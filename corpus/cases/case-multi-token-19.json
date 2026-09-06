@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-19",
+  "query": "gzip level static export",
+  "category": "multi-token",
+  "requiredIds": ["01jwq3t0w0000000000000002m"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/export"],
+  "expectEmpty": false,
+  "notes": "Tokens combine from title (static export) and body (gzip level)."
+}

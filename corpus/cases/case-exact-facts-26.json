@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-26",
+  "query": "télécharger label in the french locale",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq5js90000000000000003k"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/i18n"],
+  "expectEmpty": false,
+  "notes": "User asks about the accented French action label; the fact stores exactly that label set (Télécharger among them) in NFC form, so the same encoded word appears on both sides."
+}

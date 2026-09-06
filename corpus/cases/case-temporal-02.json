@@ -1,0 +1,14 @@
+{
+  "id": "case-temporal-02",
+  "query": "fixed attempts retry history",
+  "category": "temporal",
+  "requiredIds": ["01jwpzjgy0000000000000000a"],
+  "supportingIds": ["01jwpzgpb00000000000000009"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/deploy"],
+  "expectEmpty": false,
+  "now": "2026-03-01T00:00:00.000Z",
+  "includeInactive": true,
+  "notes": "Historical audit at now=2026-03-01 with includeInactive: true: the expired policy is intentionally retrievable, and the current policy is acceptable support."
+}

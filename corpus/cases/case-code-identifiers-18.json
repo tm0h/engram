@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-18",
+  "query": "healthcheck disk headroom",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq4g0000000000000000030"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/health"],
+  "expectEmpty": false,
+  "notes": "Query built from the HealthCheck identifier."
+}

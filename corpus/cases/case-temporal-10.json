@@ -1,0 +1,14 @@
+{
+  "id": "case-temporal-10",
+  "query": "beta signups after cutoff",
+  "category": "temporal",
+  "requiredIds": ["01jwq4wt500000000000000037"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/release"],
+  "expectEmpty": false,
+  "notes": "Same fact as case-temporal-09 evaluated after its expiry (now 2026-09-01) with includeInactive: the expired entry is retrievable on purpose.",
+  "now": "2026-09-01T00:00:00.000Z",
+  "includeInactive": true
+}

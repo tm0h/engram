@@ -1,0 +1,12 @@
+{
+  "id": "case-subsystem-paths-05",
+  "query": "unknown language code blocks",
+  "category": "subsystem-paths",
+  "requiredIds": ["01jwq0q4t0000000000000000y"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/renderer"],
+  "expectEmpty": false,
+  "notes": "Renderer highlighting rule; the parser fence note is a different subsystem with different tokens."
+}

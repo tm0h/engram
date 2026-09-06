@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-14",
+  "query": "build cache size limit",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq327500000000000000027"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/cache"],
+  "expectEmpty": false,
+  "notes": "Pins the 2 GB build cache limit."
+}

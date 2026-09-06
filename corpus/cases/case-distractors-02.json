@@ -1,0 +1,12 @@
+{
+  "id": "case-distractors-02",
+  "query": "server port",
+  "category": "distractors",
+  "requiredIds": ["01jwq04tw0000000000000000m"],
+  "supportingIds": ["01jwq06nf0000000000000000n"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["apps/dev-server"],
+  "expectEmpty": false,
+  "notes": "Generic two-token query: the bind fact must outrank the websocket issue (server token only), and the metrics fact matches port in passing."
+}

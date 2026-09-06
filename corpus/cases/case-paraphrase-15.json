@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-15",
+  "query": "how long are log files kept",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq3jpg0000000000000002g"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/logging"],
+  "expectEmpty": false,
+  "notes": "The fact states 90 day retention; the query asks how long files are kept."
+}

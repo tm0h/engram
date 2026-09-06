@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-16",
+  "query": "which sha does the health endpoint report",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq3mh30000000000000002h"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/health"],
+  "expectEmpty": false,
+  "notes": "The fact lists the payload; the query asks which sha it reports."
+}

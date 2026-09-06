@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-09",
+  "query": "where do release notes come from",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq1xk90000000000000001k"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/release"],
+  "expectEmpty": false,
+  "notes": "The note states the source (commit trailers); the query asks where notes come from."
+}

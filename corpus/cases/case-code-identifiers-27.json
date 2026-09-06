@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-27",
+  "query": "exportStatic(outDir) behavior",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq4ag70000000000000002x"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/export"],
+  "expectEmpty": false,
+  "notes": "Raw call-form query over exportStatic; the memory documents its gzipped-bundle output behavior."
+}

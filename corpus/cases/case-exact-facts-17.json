@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-17",
+  "query": "sitemap maximum urls",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq3f1a0000000000000002e"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/seo"],
+  "expectEmpty": false,
+  "notes": "Pins the 5000 url sitemap cap."
+}

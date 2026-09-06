@@ -1,0 +1,13 @@
+{
+  "id": "case-temporal-13",
+  "query": "v1 theme migration guidance",
+  "category": "temporal",
+  "requiredIds": ["01jwq529y0000000000000003a"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["themes/loader"],
+  "expectEmpty": false,
+  "notes": "Historical audit with includeInactive: the v1 guide expired 2026-05-01 and is retrievable on purpose.",
+  "includeInactive": true
+}

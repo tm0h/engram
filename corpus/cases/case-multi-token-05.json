@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-05",
+  "query": "quoted phrases single units parser",
+  "category": "multi-token",
+  "requiredIds": ["01jwq0tt000000000000000010"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/search", "core/parser"],
+  "expectEmpty": false,
+  "notes": "Tokens spread across title (quoted phrases) and body (single units) with parser in the tags."
+}

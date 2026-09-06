@@ -1,0 +1,12 @@
+{
+  "id": "case-temporal-16",
+  "query": "regional rollout phases",
+  "category": "temporal",
+  "requiredIds": ["01jwq55z40000000000000003c"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/deploy"],
+  "expectEmpty": false,
+  "notes": "Evaluated at manifest defaultNow (2026-06-01), before the rollout fact expires (2026-07-15): still active without inclusion."
+}

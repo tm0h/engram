@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-05",
+  "query": "search corpus snippet cap",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq0rzd0000000000000000z"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/search"],
+  "expectEmpty": false,
+  "notes": "Pins the 500 snippets per section cap."
+}

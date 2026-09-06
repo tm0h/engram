@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-01",
+  "query": "metrics endpoint port",
+  "category": "exact-facts",
+  "requiredIds": ["01jwpz07000000000000000000"],
+  "supportingIds": ["01jwq04tw0000000000000000m"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["apps/dev-server", "ops/observability"],
+  "expectEmpty": false,
+  "notes": "Pins the metrics port fact. The dev-server bind fact may also surface (it mentions a port) and is acceptable support."
+}

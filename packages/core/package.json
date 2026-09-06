@@ -5,10 +5,12 @@
   "description": "The engram engine: git-native Markdown-backed engram for AI agents. Library consumed by the `engram` CLI and any other harness.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./corpus": "./src/corpus.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "benchmark": "tsx src/benchmark/run.ts"
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",

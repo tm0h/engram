@@ -1,0 +1,12 @@
+{
+  "id": "case-abstention-14",
+  "query": "does mothlight support real-time collaborative editing",
+  "category": "abstention",
+  "requiredIds": [],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/collab"],
+  "expectEmpty": true,
+  "notes": "The websocket reconnect issue is a dev-server bug, not an editing feature; no memory documents multi-user or collaborative editing support. The plausible websocket candidate does not answer the product-capability question."
+}

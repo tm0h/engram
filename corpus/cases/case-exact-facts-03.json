@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-03",
+  "query": "dev server proxy target port",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq0c580000000000000000r"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["apps/dev-server"],
+  "expectEmpty": false,
+  "notes": "Pins the proxy target fact: mock service on port 4600."
+}

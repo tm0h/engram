@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-05",
+  "query": "what variables can templates read",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq124c00000000000000014"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["themes/loader"],
+  "expectEmpty": false,
+  "notes": "The note names the site and page variables; the query asks the general question."
+}

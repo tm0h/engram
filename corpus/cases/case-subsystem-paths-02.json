@@ -1,0 +1,12 @@
+{
+  "id": "case-subsystem-paths-02",
+  "query": "long flags scripts convention",
+  "category": "subsystem-paths",
+  "requiredIds": ["01jwq015p0000000000000000j"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["cli/commands"],
+  "expectEmpty": false,
+  "notes": "CLI convention note retrieved by a query about the convention, not the note's title wording alone."
+}

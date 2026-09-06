@@ -1,0 +1,12 @@
+{
+  "id": "case-abstention-10",
+  "query": "godot editor addons",
+  "category": "abstention",
+  "requiredIds": [],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["tooling/godot"],
+  "expectEmpty": true,
+  "notes": "Game-engine addon development is absent from the corpus by construction."
+}

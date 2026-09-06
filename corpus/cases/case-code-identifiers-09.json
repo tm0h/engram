@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-09",
+  "query": "contentindex rebuild idempotent",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq3zgn0000000000000002q"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/search"],
+  "expectEmpty": false,
+  "notes": "Query built from the ContentIndex.rebuild identifier as the tokenizer splits it."
+}

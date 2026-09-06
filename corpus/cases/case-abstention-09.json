@@ -1,0 +1,12 @@
+{
+  "id": "case-abstention-09",
+  "query": "coreml model inference",
+  "category": "abstention",
+  "requiredIds": [],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ml/inference"],
+  "expectEmpty": true,
+  "notes": "On-device model serving is absent from the corpus by construction."
+}

@@ -1,0 +1,12 @@
+{
+  "id": "case-superseded-07",
+  "query": "shard key content hash",
+  "category": "superseded",
+  "requiredIds": ["01jwq1eyh0000000000000001b"],
+  "supportingIds": [],
+  "forbiddenIds": ["01jwq1d3y0000000000000001a"],
+  "scope": "project",
+  "applicablePaths": ["core/cache"],
+  "expectEmpty": false,
+  "notes": "Default visibility mode: the var-directories generation is superseded and lifecycle-excluded."
+}

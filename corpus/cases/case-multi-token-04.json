@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-04",
+  "query": "review builds shared server",
+  "category": "multi-token",
+  "requiredIds": ["01jwq0kfm0000000000000000w"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "personal",
+  "applicablePaths": ["workflow/tooling"],
+  "expectEmpty": false,
+  "notes": "Personal-scope preference; all four tokens land in the title, scope filter keeps project fixtures out."
+}

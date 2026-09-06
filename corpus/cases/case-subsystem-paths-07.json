@@ -1,0 +1,12 @@
+{
+  "id": "case-subsystem-paths-07",
+  "query": "svg assets raster pipeline skip",
+  "category": "subsystem-paths",
+  "requiredIds": ["01jwq2e2m0000000000000001w"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/assets"],
+  "expectEmpty": false,
+  "notes": "Assets subsystem rule; the sharp resizing decision shares pipeline and assets tokens but not the svg token."
+}

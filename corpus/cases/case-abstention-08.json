@@ -1,0 +1,12 @@
+{
+  "id": "case-abstention-08",
+  "query": "paddle payment checkout",
+  "category": "abstention",
+  "requiredIds": [],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["billing/checkout"],
+  "expectEmpty": true,
+  "notes": "Payment processing is absent from the corpus by construction."
+}

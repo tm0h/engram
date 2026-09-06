@@ -1,0 +1,13 @@
+{
+  "id": "case-superseded-15",
+  "query": "unencrypted backup zips history",
+  "category": "superseded",
+  "requiredIds": ["01jwq4nfs00000000000000033"],
+  "supportingIds": ["01jwq4qac00000000000000034"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/backup"],
+  "expectEmpty": false,
+  "notes": "includeInactive mode: audit of the retired plaintext policy; unencrypted and zips appear only in the retired decision.",
+  "includeInactive": true
+}

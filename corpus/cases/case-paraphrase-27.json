@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-27",
+  "query": "can we move search into the browser",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq61e10000000000000003v"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/search", "core/architecture"],
+  "expectEmpty": false,
+  "notes": "User asks about moving search client-side; the decision records that server-side was kept and a client index was rejected over bundle size, which is the settled answer to exactly this proposal."
+}

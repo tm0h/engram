@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-20",
+  "query": "mail digest tuesday schedule",
+  "category": "multi-token",
+  "requiredIds": ["01jwq3xp20000000000000002p"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["workflow/email"],
+  "expectEmpty": false,
+  "notes": "Tokens combine from title (mail digest) and body (Tuesday)."
+}

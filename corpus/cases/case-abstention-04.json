@@ -1,0 +1,12 @@
+{
+  "id": "case-abstention-04",
+  "query": "graphql subscriptions",
+  "category": "abstention",
+  "requiredIds": [],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["api/graphql"],
+  "expectEmpty": true,
+  "notes": "Realtime graph subscriptions are absent from the corpus by construction."
+}

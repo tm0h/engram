@@ -1,0 +1,12 @@
+{
+  "id": "case-distractors-06",
+  "query": "watcher events",
+  "category": "distractors",
+  "requiredIds": ["01jwq0fte0000000000000000t"],
+  "supportingIds": ["01jwq0dzv0000000000000000s"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/watcher"],
+  "expectEmpty": false,
+  "notes": "Two watcher notes share tokens; the rename issue is required and the ignore rule is tolerated support."
+}

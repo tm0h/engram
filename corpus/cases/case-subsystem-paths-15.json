@@ -1,0 +1,12 @@
+{
+  "id": "case-subsystem-paths-15",
+  "query": "health checks disk headroom",
+  "category": "subsystem-paths",
+  "requiredIds": ["01jwq4g0000000000000000030"],
+  "supportingIds": ["01jwq3mh30000000000000002h"],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/health"],
+  "expectEmpty": false,
+  "notes": "Ops subsystem check; the payload fact is acceptable support."
+}

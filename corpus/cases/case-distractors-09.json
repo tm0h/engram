@@ -1,0 +1,16 @@
+{
+  "id": "case-distractors-09",
+  "query": "which port does the dev server use",
+  "category": "distractors",
+  "requiredIds": ["01jwq04tw0000000000000000m"],
+  "supportingIds": [
+    "01jwq0c580000000000000000r",
+    "01jwq0hn10000000000000000v",
+    "01jwpz07000000000000000000"
+  ],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["apps/dev-server", "ops/observability"],
+  "expectEmpty": false,
+  "notes": "A cluster of port facts; the dev bind fact is required, the rest are tolerated support. Demonstrates ambiguity of a broad query."
+}

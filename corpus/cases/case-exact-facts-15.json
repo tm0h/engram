@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-15",
+  "query": "config file location root",
+  "category": "exact-facts",
+  "requiredIds": ["01jwq2wqc00000000000000024"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["cli/config"],
+  "expectEmpty": false,
+  "notes": "Pins the config file location: mothlight.config.js at the repo root."
+}

@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-24",
+  "query": "why is my build so slow the first time",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq5vy80000000000000003r"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/buildcache"],
+  "expectEmpty": false,
+  "notes": "User asks why the first build is slow; the fact explains the cold-versus-warm cache timings, which is the cause the user is after. Slow-first-time and cold build are the same situation in different words."
+}

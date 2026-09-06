@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-15",
+  "query": "log retention audit trails",
+  "category": "multi-token",
+  "requiredIds": ["01jwq3jpg0000000000000002g"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["ops/logging"],
+  "expectEmpty": false,
+  "notes": "Tokens combine from title (log retention) and body (audit trails)."
+}

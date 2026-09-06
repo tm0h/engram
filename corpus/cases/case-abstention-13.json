@@ -1,0 +1,12 @@
+{
+  "id": "case-abstention-13",
+  "query": "how do I reset my account password",
+  "category": "abstention",
+  "requiredIds": [],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["auth/accounts"],
+  "expectEmpty": true,
+  "notes": "Signup and beta-program fixtures mention accounts in passing, but no memory covers authentication or password reset. The user's need is account recovery, which the corpus does not address."
+}

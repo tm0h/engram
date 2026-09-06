@@ -1,0 +1,12 @@
+{
+  "id": "case-code-identifiers-26",
+  "query": "lintProse() in the CI pipeline",
+  "category": "code-identifiers",
+  "requiredIds": ["01jwq48nm0000000000000002w"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/lint", "ops/ci"],
+  "expectEmpty": false,
+  "notes": "Raw call-form query over lintProse; the memory documents its weasel-word checking, which is what running it in CI would do."
+}

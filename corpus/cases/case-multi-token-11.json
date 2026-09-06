@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-11",
+  "query": "standup notes git activity summary",
+  "category": "multi-token",
+  "requiredIds": ["01jwq35wb00000000000000029"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["workflow/meetings"],
+  "expectEmpty": false,
+  "notes": "Tokens combine from title (standup notes, git activity) and body (drafts)."
+}

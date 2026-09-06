@@ -1,0 +1,12 @@
+{
+  "id": "case-multi-token-10",
+  "query": "video poster first frame",
+  "category": "multi-token",
+  "requiredIds": ["01jwq2q7k00000000000000021"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["core/assets"],
+  "expectEmpty": false,
+  "notes": "All four tokens appear in the title and body of the poster fact."
+}

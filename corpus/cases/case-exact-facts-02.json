@@ -1,0 +1,12 @@
+{
+  "id": "case-exact-facts-02",
+  "query": "pnpm package manager installs",
+  "category": "exact-facts",
+  "requiredIds": ["01jwpz21k00000000000000001"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "personal",
+  "applicablePaths": ["workflow/tooling"],
+  "expectEmpty": false,
+  "notes": "Personal-scope workflow fact; keeps scope filtering exercised on the required-id path."
+}

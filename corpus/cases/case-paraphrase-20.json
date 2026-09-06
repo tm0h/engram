@@ -1,0 +1,12 @@
+{
+  "id": "case-paraphrase-20",
+  "query": "when do email digests go out",
+  "category": "paraphrase",
+  "requiredIds": ["01jwq3xp20000000000000002p"],
+  "supportingIds": [],
+  "forbiddenIds": [],
+  "scope": "project",
+  "applicablePaths": ["workflow/email"],
+  "expectEmpty": false,
+  "notes": "The fact says mail digest sends Tuesday; the query says email digests go out. Overlap via digests."
+}
