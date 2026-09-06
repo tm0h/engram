@@ -108,6 +108,16 @@ describe("engram opencode plugin / registration", () => {
   it("schemas expose the expected params", async () => {
     const tools = await loadTools();
     expect(Object.keys(tools.engram_context.args)).toEqual(["scope", "limit", "offset"]);
+    expect(
+      z
+        .object(tools.engram_search.args as Record<string, z.ZodType>)
+        .safeParse({ query: "auth", explain: true }).success,
+    ).toBe(true);
+    expect(
+      z
+        .object(tools.engram_search.args as Record<string, z.ZodType>)
+        .safeParse({ query: "auth", explain: "true" }).success,
+    ).toBe(false);
     expect(Object.keys(tools.engram_search.args)).toContain("query");
     expect(Object.keys(tools.engram_show.args)).toContain("id");
     expect(Object.keys(tools.engram_add.args)).toEqual([

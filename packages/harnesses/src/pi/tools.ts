@@ -74,10 +74,17 @@ export const engramSearchTool = {
   description:
     `Keyword-search recorded engrams (tags score highest, then titles, types, bodies). ` +
     `Use when you need specifics beyond the digest - "auth", "migrations", the name of a library. ` +
-    `Returns matching one-line entries; read one with engram_show. Results are paginated.`,
+    `Returns matching one-line entries and structured score summaries; read one with engram_show. Results are paginated. ` +
+    `Set explain to include matched fields and score contributions in metadata.`,
   promptSnippet: "Use to pull specific recorded knowledge by keyword instead of re-deriving it.",
   parameters: Type.Object({
     query: Type.String({ description: "Search keywords (matched against tags, titles, bodies)." }),
+    explain: Type.Optional(
+      Type.Boolean({
+        description:
+          "Include matched fields, normalized query tokens, and score contributions in metadata. Default false.",
+      }),
+    ),
     scope: scopeFilter('Which memory scope to search. Default "both".'),
     limit: Type.Optional(
       Type.Integer({
@@ -95,6 +102,7 @@ export const engramSearchTool = {
       await runOp(
         searchOp({
           query: params.query,
+          explain: params.explain,
           scope: params.scope,
           limit: params.limit,
           offset: params.offset,

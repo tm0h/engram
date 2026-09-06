@@ -22,6 +22,12 @@ entries (decisions, facts, gotchas, conventions) recorded per project
    call `engram_search` with keywords, then `engram_show` on the matching id.
 3. **When you learn something durable**, record it with `engram_add`.
 
+Search results include structured scores and pagination metadata. Use
+`engram_search({ query: "auth", explain: true })` for matched fields,
+normalized query tokens, and score contributions in result details.
+Explanations contain no memory bodies, source references, or filesystem paths.
+Use `engram_show` to read the selected memory. Identify entries by scope and id.
+
 ## When to record (and when not to)
 
 Record:

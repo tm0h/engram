@@ -75,9 +75,16 @@ export const engramSearchTool = {
   description:
     `Keyword-search recorded engrams (tags score highest, then titles, types, bodies). ` +
     `Use when you need specifics beyond the digest - "auth", "migrations", the name of a library. ` +
-    `Returns matching one-line entries; read one with engram_show. Results are paginated.`,
+    `Returns matching one-line entries and structured score summaries; read one with engram_show. Results are paginated. ` +
+    `Set explain to include matched fields and score contributions in metadata.`,
   args: {
     query: z.string().describe("Search keywords (matched against tags, titles, bodies)."),
+    explain: z
+      .boolean()
+      .optional()
+      .describe(
+        "Include matched fields, normalized query tokens, and score contributions in metadata. Default false.",
+      ),
     scope: scopeFilter('Which memory scope to search. Default "both".'),
     limit: z
       .number()
@@ -89,7 +96,13 @@ export const engramSearchTool = {
     offset: z.number().int().min(0).optional().describe("0-based page offset for pagination."),
   },
   async execute(
-    args: { query: string; scope?: ScopeFilter; limit?: number; offset?: number },
+    args: {
+      query: string;
+      scope?: ScopeFilter;
+      limit?: number;
+      offset?: number;
+      explain?: boolean;
+    },
     context: OpenCodeToolContext,
   ) {
     return toOpencodeResult(

@@ -345,6 +345,32 @@ describe("shared ops / searchOp", () => {
     expect(res.isError).toBe(false);
     expect(res.text.toLowerCase()).toContain("no match");
   });
+
+  it("exposes paginated score metadata and optional reasons without bodies or paths", async () => {
+    seed(tmp, "0001", { title: "Auth", body: "PRIVATE_BODY" });
+    seed(tmp, "0002", { title: "Other", body: "auth PRIVATE_DETAIL" });
+    const res = await run(
+      searchOp({ query: "auth", scope: "project", explain: true, limit: 1, offset: 1 }),
+    );
+    expect(res.details).toMatchObject({
+      schemaVersion: 1,
+      query: "auth",
+      total: 2,
+      offset: 1,
+      results: [
+        {
+          id: "0002",
+          scope: "project",
+          score: 1,
+          explanation: { contributions: [{ field: "body", token: "auth", score: 1 }] },
+        },
+      ],
+    });
+    expect(JSON.stringify(res)).not.toMatch(/PRIVATE_BODY|PRIVATE_DETAIL/);
+    expect(JSON.stringify(res)).not.toContain(tmp);
+    const plain = await run(searchOp({ query: "auth", scope: "project" }));
+    expect((plain.details.results as object[])[0]).not.toHaveProperty("explanation");
+  });
 });
 
 /* ------------------------------ show ------------------------------ */

@@ -57,7 +57,7 @@ engram config set autoContextLimit 10        # entries per digest, 1..100 (defau
 | Surface               | What it does                                                                                                      |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `engram_context` tool | Digest one-liners (id · type · title · tags), decisions & pinned first, `limit`/`offset` pagination.              |
-| `engram_search` tool  | Relevance search (tags > title > type > body), paginated.                                                         |
+| `engram_search` tool  | Relevance search with paginated score metadata. Optional `explain` adds matched fields and score contributions.   |
 | `engram_show` tool    | Full entry by id (unique prefixes work); long bodies are char-sliced with a next-call footer.                     |
 | `engram_add` tool     | Record an entry (type defaults from project config; `scope` defaults to `project` in a repo, `personal` outside). |
 | `/engram` command     | Human dispatcher: `context` (default), `search`, `show`, `add <title> -- <body>`, `init`, `help`.                 |

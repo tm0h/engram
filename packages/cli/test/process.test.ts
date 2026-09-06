@@ -64,8 +64,8 @@ describe("engram check (process level)", () => {
     if (home) rmSync(home, { recursive: true, force: true });
   });
 
-  const freshProject = (): string => {
-    const proj = join(tmp, "proj");
+  const freshProject = (name = "proj"): string => {
+    const proj = join(tmp, name);
     mkdirSync(join(proj, ".engram", "engrams"), { recursive: true });
     writeFileSync(
       join(proj, ".engram", "config.json"),
@@ -88,6 +88,31 @@ describe("engram check (process level)", () => {
       "Body",
       "",
     ].join("\n");
+
+  it("search dispatches JSON/explain flags and validates complete numeric arguments", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject("search-proj");
+    writeFileSync(join(proj, ".engram", "engrams", "0001-auth.md"), fm("0001", "Auth"));
+    const result = runCli(
+      ["search", "auth", "--json", "--explain", "--limit", "1", "--offset", "0"],
+      proj,
+      home,
+    );
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      schemaVersion: 1,
+      query: "auth",
+      results: [{ id: "0001", score: 3 }],
+    });
+    for (const arg of ["1x", "1.5", "-1", "Infinity", "9007199254740992"]) {
+      const invalid = runCli(["search", "auth", "--json", "--limit", arg], proj, home);
+      expect(invalid.status).not.toBe(0);
+      expect(invalid.stdout).toBe("");
+    }
+    const invalidOffset = runCli(["search", "auth", "--json", "--offset", "1.5"], proj, home);
+    expect(invalidOffset.status).not.toBe(0);
+    expect(invalidOffset.stdout).toBe("");
+  });
 
   it("a clean store exits 0", (ctx) => {
     if (!spawnOk) ctx.skip();
