@@ -1,124 +1,36 @@
-# AGENTS.md
+# Repository Guidelines
 
-Working notes for AI coding agents (and humans) contributing to this repo.
+Engram is a git-native memory tool for AI agents. It stores personal or project knowledge as Markdown with YAML frontmatter. This repository is a pnpm workspace and requires Node.js 20 or newer.
 
-## What this is
+## Project Structure and Module Organization
 
-**engram** — a git-native memory tool for AI agents. Engrams are plain Markdown
-files (YAML frontmatter + body). Project scope lives in `<repo>/.engram/`
-(committed, shared with the team); personal scope lives in `~/.engram/` (never
-committed).
+- `packages/core/` contains the Effect-based engine: storage, lifecycle and integrity checks, secret scanning, BM25 search, structured output, and retrieval benchmarks.
+- `packages/cli/` contains the published `engram-cli` command surface. Commands live in `src/commands/`; Pi and OpenCode bundle entry points live beside `src/index.ts`.
+- `packages/harnesses/` contains shared serializable operations, the host-neutral installer, and Pi, OpenCode, and Claude Code integrations. Keep the Pi and Claude `SKILL.md` guidance synchronized.
+- Tests are colocated under each package's `test/` directory. `corpus/` holds synthetic retrieval fixtures and labeled cases. Follow `corpus/README.md` when changing them.
 
-pnpm workspace, two packages:
-
-| Path            | npm name       | Published    | Role                                                                                    |
-| --------------- | -------------- | ------------ | --------------------------------------------------------------------------------------- |
-| `packages/core` | `@engram/core` | no (private) | Engine: store, config, location, frontmatter, search, formatting. Bundled into the CLI. |
-| `packages/cli`  | `engram-cli`   | yes          | The `engram` CLI (commander dispatch, commands in `src/commands/`).                     |
-
-## Commands
+## Build, Test, and Development Commands
 
 ```bash
-pnpm install                 # Node >= 20; pnpm via corepack (see packageManager)
-
-pnpm check                   # fmt + lint + typecheck (vite-plus); must be green
-pnpm exec vp check --fix     # auto-fix formatting (may reorder package.json keys — expected)
-
-pnpm test                    # all tests (vitest via vite-plus)
-pnpm exec vp test run packages/core/test/location.test.ts   # single file
-
-pnpm typecheck               # recursive tsc --noEmit
+pnpm install                              # install the pinned workspace
+pnpm dev                                  # run the CLI from source
+pnpm check                                # format, lint, and typecheck
+TMPDIR=/var/tmp pnpm test                 # run all Vitest suites in isolation
+pnpm exec vp test run packages/core/test/search.test.ts
+pnpm --filter @engram/core benchmark      # evaluate the retrieval corpus
+pnpm --filter engram-cli build            # canonical CLI build
 ```
 
-**Build the CLI — always this exact form:**
+Use `pnpm exec vp check --fix` for safe formatter and lint fixes. Review its diff because automated rewrites can alter code-point counting.
 
-```bash
-pnpm --filter engram-cli build
-```
+## Coding Style and Naming Conventions
 
-**Publish — always this exact form (requires `npm login` + OTP):**
+Write strict TypeScript ESM with two-space indentation. Let Vite Plus format and lint. Use `camelCase` for values and functions, `PascalCase` for types and services, and `*.test.ts` for tests. Core logic uses `Effect.gen`, `Result`, `Context.Service`, and `Layer`; avoid raw `async`/`await` there. Reference cataloged dependencies with `catalog:`.
 
-```bash
-pnpm --filter engram-cli publish
-```
+## Testing Guidelines
 
-`prepublishOnly` copies the root `README.md` into `packages/cli/` (gitignored;
-delete the stray copy after a failed publish if you want a clean tree).
+Use TDD: add a failing test, then implement. Test services with real `NodeServices` and isolated temporary directories. Keep pure logic deterministic. Core behavior needs regression coverage. Retrieval changes must preserve the checked-in benchmark gate; never edit corpus labels to make a ranker pass.
 
-## Release process
+## Commit and Pull Request Guidelines
 
-1. Bump the version in **five places** (tests guard the last three):
-   `packages/cli/package.json`, the hardcoded `.version()` in
-   `packages/cli/src/index.ts`, `packages/harnesses/package.json`,
-   `packages/harnesses/claude/.claude-plugin/plugin.json`, and the npx pin
-   in `packages/harnesses/claude/bin/engram`.
-2. Add a `CHANGELOG.md` entry (Keep a Changelog format; link the PR).
-3. Open a PR — `main` is protected; **everything** lands via PR.
-4. After merge: `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`.
-5. Build and publish with the exact `--filter engram-cli` commands above.
-
-Version policy: `@engram/core` is private and stays at the CLI's cadence; only
-`engram-cli` is semver-visible. Check what's already published with
-`npm pack engram-cli@<version>` before deciding a bump level — changes may
-already be in the published tarball.
-
-## Conventions
-
-- **TDD**: write the failing test first (`packages/*/test/`), then implement.
-  Core behavior stays fully covered; services are tested against real
-  `NodeServices` on temp dirs (`mkdtempSync`), pure logic gets direct unit tests.
-- **Conventional commits** (`fix(core):`, `feat(cli):`, `docs:`, `chore(release):`).
-- **Effect 4.0 RC** style: `Effect.gen` + `Result`, services via
-  `Context.Service`/`Layer`, commands run through `Effect.runPromiseExit` in
-  `packages/cli/src/index.ts` with uniform error formatting. No raw async/await
-  in core logic.
-- **Bundle discipline**: the CLI ships as a single `dist/index.js`
-  (~190 kB). Dependencies are vetted for bundle size — gray-matter was
-  deliberately replaced by a ~60-line js-yaml frontmatter module
-  (`packages/core/src/frontmatter.ts`, JSON_SCHEMA both ways: no YAML 1.1
-  boolean/octal coercion).
-- **Location invariants** (regression-guarded in
-  `packages/core/test/location.test.ts`): project-root discovery stops at the
-  nearest `.git` boundary and never treats the global `~/.engram` as a project
-  root. Don't weaken these.
-- Dependencies declared in the pnpm catalog (`pnpm-workspace.yaml` — the
-  Effect-family and tooling) must be referenced as `catalog:`; dependencies
-  not in the catalog (e.g. `chalk`, `commander`, `js-yaml`) keep inline
-  version ranges.
-
-## Map of the code
-
-- `packages/core/src/`
-  - `store.ts` — `EngramStore`: CRUD over `<id>-<slug>.md` files (ULID-style
-    ids: collision-resistant across machines, sortable by creation time;
-    legacy 4-digit numeric ids still supported; `dedupe` repairs
-    legacy/hand-written duplicate ids)
-  - `config.ts` — `ConfigRepo`: global + project JSON configs (Schema-validated)
-  - `location.ts` — `findProjectRoot` / `findGitRoot` (git-boundary rules)
-  - `paths.ts` — pure path math (`~/.engram` vs `<repo>/.engram`), no I/O
-  - `frontmatter.ts`, `search.ts`, `format.ts`, `scope.ts`, `templates.ts`
-  - `layer.ts` — `MainLive` composition root
-- `packages/harnesses/` — `@engram/harnesses` (private): harness integrations
-  - `src/shared/` — harness-agnostic ops over `@engram/core`
-    (`contextDigest`/`searchOp`/`showOp`/`addOp`/`initOp`, pagination,
-    degraded modes); returns serializable `OpResult`s. Future MCP/JSON
-    surfaces should consume this, not the adapters.
-  - `src/pi/` — Pi extension: typebox tool schemas, `/engram` dispatcher,
-    factory; bundled into the CLI tarball as `dist/pi-extension.js` via the
-    re-export entry `packages/cli/src/pi-extension.ts`
-  - `src/opencode/` — opencode plugin: zod tool schemas over the shared ops;
-    bundled into the CLI tarball as `dist/opencode-plugin.js` (loaded via the
-    package's `exports["./server"]` entry) through the re-export
-    `packages/cli/src/opencode-plugin.ts`
-  - `claude/` — Claude Code plugin root (manifest + skill + `bin/engram`
-    shim); the repo root `.claude-plugin/marketplace.json` makes this repo a
-    Claude marketplace
-  - The two SKILL.md files (`src/pi/skills/engram/`, `claude/skills/engram/`)
-    are hand-maintained variants (tool-oriented vs CLI-oriented) — **keep
-    their guidance in sync** when editing either.
-- `packages/cli/src/`
-  - `index.ts` — commander dispatch + error rendering
-  - `commands/` — one file per subcommand (`init`, `add`, `list`, `show`,
-    `edit`, `remove`, `search`, `context`, `config`, `inject`, `where`,
-    `dedupe`)
-  - `interactive.ts`, `io.ts` — TTY prompts, output helpers
+Branch before editing and never commit directly to `main`. Use Conventional Commits such as `feat(core):`, `fix(cli):`, and `docs:`. PRs need a concise public description, linked issue when applicable, and exact verification commands. CI requires `pnpm check`, `pnpm test`, and the canonical CLI build. Follow `RELEASING.md` for releases. Never commit credentials or real personal engrams.
