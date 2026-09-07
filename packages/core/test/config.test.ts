@@ -389,3 +389,82 @@ describe("ConfigRepo / validateGlobal", () => {
     }).pipe(Effect.provide(unreadableConfigLive(globalConfigPath())));
   });
 });
+
+describe("ConfigRepo / secret-scan keys (ENG-15)", () => {
+  let origHome: string | undefined;
+  let home = "";
+  let proj = "";
+  beforeEach(() => {
+    origHome = process.env.HOME;
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "amem-ssec-home-"));
+    proj = fs.mkdtempSync(path.join(os.tmpdir(), "amem-ssec-proj-"));
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(proj, { recursive: true, force: true });
+  });
+
+  const writeProject = (data: unknown) => {
+    fs.mkdirSync(path.join(proj, ".engram"), { recursive: true });
+    fs.writeFileSync(projectConfigPath(proj), JSON.stringify(data, null, 2));
+  };
+  const writeGlobal = (data: unknown) => {
+    fs.mkdirSync(path.join(home, ".engram"), { recursive: true });
+    fs.writeFileSync(globalConfigPath(), JSON.stringify(data, null, 2));
+  };
+
+  it.live("project defaults to block", () =>
+    Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      const loaded = yield* cfg.loadProject(proj);
+      expect(loaded.secretScan).toBe("block");
+    }).pipe(Effect.provide(ConfigLayer)),
+  );
+
+  it.live("global defaults to warn", () =>
+    Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      const loaded = yield* cfg.loadGlobal();
+      expect(loaded.personalSecretScan).toBe("warn");
+    }).pipe(Effect.provide(ConfigLayer)),
+  );
+
+  it.live("legacy version-1 files without the keys still load and get defaults", () => {
+    writeProject({ version: 1, tracked: true, defaultType: "note" });
+    writeGlobal({ version: 1, author: "alice" });
+    return Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      const p = yield* cfg.loadProject(proj);
+      expect(p.secretScan).toBe("block");
+      expect(p.tracked).toBe(true);
+      const g = yield* cfg.loadGlobal();
+      expect(g.personalSecretScan).toBe("warn");
+      expect(g.author).toBe("alice");
+    }).pipe(Effect.provide(ConfigLayer));
+  });
+
+  it.live("explicit values round-trip", () => {
+    writeProject({ version: 1, tracked: true, defaultType: "note", secretScan: "off" });
+    writeGlobal({ version: 1, personalSecretScan: "block" });
+    return Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      const p = yield* cfg.loadProject(proj);
+      expect(p.secretScan).toBe("off");
+      const g = yield* cfg.loadGlobal();
+      expect(g.personalSecretScan).toBe("block");
+    }).pipe(Effect.provide(ConfigLayer));
+  });
+
+  it.live("an invalid policy value is diagnosed, not loaded", () => {
+    writeProject({ version: 1, tracked: true, defaultType: "note", secretScan: "banana" });
+    return Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      const diags = yield* cfg.validateProject(proj);
+      expect(diags.map((d) => d.code)).toEqual(["config_schema_invalid"]);
+      expect(diags[0].message).toContain("secretScan");
+    }).pipe(Effect.provide(ConfigLayer));
+  });
+});

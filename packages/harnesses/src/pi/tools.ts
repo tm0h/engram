@@ -211,6 +211,12 @@ export const engramAddTool = {
           "Source reference: path, URL, command, or conversation note. Optional; validated when saved.",
       }),
     ),
+    allowSecrets: Type.Optional(
+      Type.Boolean({
+        description:
+          "Write even if the secret scanner flags this content (project writes block by default). Optional.",
+      }),
+    ),
   }),
   async execute(_id: string, params: any) {
     return toToolResult(
@@ -228,6 +234,7 @@ export const engramAddTool = {
           expires: params.expires,
           sourceType: params.sourceType,
           sourceRef: params.sourceRef,
+          allowSecrets: params.allowSecrets,
         }),
       ),
     );
@@ -307,6 +314,12 @@ export const engramEditTool = {
           "Source reference: path, URL, command, or conversation note. Null clears; omit to preserve. Validated when saved.",
       }),
     ),
+    allowSecrets: Type.Optional(
+      Type.Boolean({
+        description:
+          "Write even if the secret scanner flags the resulting entry (project writes block by default). Optional.",
+      }),
+    ),
   }),
   async execute(_id: string, params: any) {
     return toToolResult(
@@ -326,6 +339,7 @@ export const engramEditTool = {
           expires: params.expires,
           sourceType: params.sourceType,
           sourceRef: params.sourceRef,
+          allowSecrets: params.allowSecrets,
         }),
       ),
     );

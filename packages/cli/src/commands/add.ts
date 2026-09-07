@@ -8,6 +8,7 @@ import { ENGRAM_TYPES } from "@engram/core";
 import type { EngramType } from "@engram/core";
 import { InvalidTypeError, ValidationError } from "@engram/core";
 import { isInteractive, openEditor } from "../interactive.js";
+import { resolveScanOptions, reportScanOutcome } from "../scanPolicy.js";
 import { parseTags, detectAuthor } from "@engram/core";
 import { readStdin, out } from "../io.js";
 import { checkLifecycleValues } from "../lifecycle.js";
@@ -22,6 +23,8 @@ export interface AddOptions extends LifecycleValueFlags {
   readonly pinned?: boolean;
   readonly author?: string;
   readonly content?: string;
+  /** ENG-15: explicit per-write override for a blocking scan policy. */
+  readonly allowSecrets?: boolean;
 }
 
 const checkType = (t?: string): Effect.Effect<EngramType | undefined, InvalidTypeError> => {
@@ -102,23 +105,30 @@ export const addCommand = (opts: AddOptions) =>
     const globalAuthor = (yield* cfg.loadGlobal()).author;
     const author = opts.author ?? projectAuthor ?? globalAuthor ?? (yield* detectAuthor());
 
-    const mem = yield* store.add(scope, {
-      title,
-      type,
-      tags,
-      body,
-      pinned: Boolean(opts.pinned),
-      author,
-      status: lifecycle.status,
-      supersedes: lifecycle.supersedes,
-      reviewAfter: lifecycle.reviewAfter,
-      expires: lifecycle.expires,
-      sourceType: lifecycle.sourceType,
-      sourceRef: lifecycle.sourceRef,
-    });
+    const scan = yield* resolveScanOptions(cfg, scope, projectRoot, Boolean(opts.allowSecrets));
+
+    const mem = yield* store.add(
+      scope,
+      {
+        title,
+        type,
+        tags,
+        body,
+        pinned: Boolean(opts.pinned),
+        author,
+        status: lifecycle.status,
+        supersedes: lifecycle.supersedes,
+        reviewAfter: lifecycle.reviewAfter,
+        expires: lifecycle.expires,
+        sourceType: lifecycle.sourceType,
+        sourceRef: lifecycle.sourceRef,
+      },
+      scan,
+    );
 
     yield* out(chalk.green("✓ Added ") + chalk.bold(`[${mem.id}]`) + ` ${mem.title}`);
     yield* out(chalk.gray(`  ${mem.path}`));
+    yield* reportScanOutcome(mem.scan);
     if (scope === "project" && Option.isSome(projectRoot)) {
       const tracked = (yield* cfg.loadProject(projectRoot.value)).tracked;
       if (tracked) {

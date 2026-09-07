@@ -170,3 +170,82 @@ describe("engram config / auto-context keys", () => {
     expect(error.message).toContain("Unknown key");
   });
 });
+
+describe("engram config / secret-scan keys (ENG-15)", () => {
+  let origCwd = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  let lines: string[] = [];
+  let spy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    origCwd = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = mkHome();
+    process.chdir(tmp);
+    process.env.HOME = home;
+    lines = [];
+    spy = vi.spyOn(console, "log").mockImplementation(((...args: unknown[]) => {
+      lines.push(args.map(String).join(" "));
+      return undefined;
+    }) as typeof console.log);
+  });
+  afterEach(() => {
+    spy.mockRestore();
+    process.chdir(origCwd);
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const run = <A>(
+    eff: Effect.Effect<A, unknown, EngramStore | ConfigRepo | FileSystem | Path>,
+  ): Promise<A> => Effect.runPromise(Effect.provide(eff, MainLive));
+  const runFail = (
+    eff: Effect.Effect<unknown, unknown, EngramStore | ConfigRepo | FileSystem | Path>,
+  ): Promise<{ message: string }> =>
+    Effect.runPromise(Effect.provide(Effect.flip(eff), MainLive)) as Promise<{
+      message: string;
+    }>;
+  const output = (): string => lines.join("");
+  const readProject = (): Record<string, unknown> =>
+    JSON.parse(fs.readFileSync(projectConfigPath(tmp), "utf8"));
+
+  it("list shows both policy keys with their defaults", async () => {
+    await run(configCommand("list"));
+    expect(output()).toMatch(/secretScan:\s+block/);
+    expect(output()).toMatch(/personalSecretScan:\s+warn/);
+  });
+
+  it("get returns the defaults for unset keys", async () => {
+    await run(configCommand("get", "secretScan"));
+    expect(output()).toBe("block");
+    lines = [];
+    await run(configCommand("get", "personalSecretScan"));
+    expect(output()).toBe("warn");
+  });
+
+  it("set persists each project policy value and rejects others", async () => {
+    for (const policy of ["warn", "off", "block"] as const) {
+      await run(configCommand("set", "secretScan", policy));
+      expect(readProject()).toMatchObject({ secretScan: policy });
+      lines = [];
+    }
+    const error = await runFail(configCommand("set", "secretScan", "sometimes"));
+    expect(error.message).toMatch(/block.*warn.*off|off.*warn.*block/);
+  });
+
+  it("set persists the personal policy and rejects others", async () => {
+    await run(configCommand("set", "personalSecretScan", "block"));
+    expect(readGlobal(home)).toMatchObject({ personalSecretScan: "block" });
+    expect(output()).toContain("global.personalSecretScan");
+    lines = [];
+    await run(configCommand("get", "personalSecretScan"));
+    expect(output()).toBe("block");
+    const error = await runFail(configCommand("set", "personalSecretScan", "louder"));
+    expect(error.message).toMatch(/block.*warn.*off|off.*warn.*block/);
+  });
+});

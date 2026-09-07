@@ -2,13 +2,18 @@
  * here, the report is the product. */
 import { Effect, Option, Result } from "effect";
 import chalk from "chalk";
+import path from "node:path";
+import { FileSystem } from "effect/FileSystem";
 import {
   ConfigRepo,
   EngramStore,
   IntegrityCheckFailedError,
   ValidationError,
   compareDiagnostics,
+  resolveSecretPolicy,
+  scanContent,
   type Scope,
+  type SecretPolicy,
   type StoreDiagnostic,
   type StoreScan,
 } from "@engram/core";
@@ -25,6 +30,10 @@ interface ScopeCheck {
   readonly scope: Scope;
   readonly scan: StoreScan;
   readonly config: ReadonlyArray<StoreDiagnostic>;
+  /** ENG-15: raw-file secret/injection diagnostics for this scope. Kept
+   * separate from the integrity scan (which stays policy-neutral) and
+   * ordered deterministically with the rest via compareDiagnostics. */
+  readonly secretDiagnostics: ReadonlyArray<StoreDiagnostic>;
 }
 
 /** A requested scope that could not be checked at all (store not
@@ -41,6 +50,7 @@ export const checkCommand = (opts: CheckOptions) =>
   Effect.gen(function* () {
     const store = yield* EngramStore;
     const config = yield* ConfigRepo;
+    const fs = yield* FileSystem;
 
     // Option validation happens before any scanning. Usage errors are not
     // scope states; they stay plain validation errors.
@@ -122,15 +132,69 @@ export const checkCommand = (opts: CheckOptions) =>
         });
         continue;
       }
+      /* ENG-15: raw-file secret/injection scan. The integrity scan above
+       * stays policy-neutral; this pass reads every readable Markdown file
+       * (including malformed frontmatter) as raw text under the scope's
+       * resolved policy. A config-load failure fails closed: the scope's
+       * raw scan is skipped and reported uncheckable rather than guessing
+       * a fallback policy. */
+      const secretDiagnostics: Array<StoreDiagnostic> = [];
+      let configuredPolicy: SecretPolicy | undefined;
+      let policyLoadError: string | undefined;
+      if (scope === "personal") {
+        const loaded = yield* Effect.result(config.loadGlobal());
+        if (Result.isFailure(loaded)) policyLoadError = (loaded.failure as Error).message;
+        else configuredPolicy = loaded.success.personalSecretScan;
+      } else {
+        const loaded = yield* Effect.result(config.loadProject(discoveredRoot as string));
+        if (Result.isFailure(loaded)) policyLoadError = (loaded.failure as Error).message;
+        else configuredPolicy = loaded.success.secretScan;
+      }
+      if (policyLoadError !== undefined) {
+        uncheckable.push({
+          scope,
+          message: `could not resolve the ${scope} secret-scan policy: ${policyLoadError}`,
+          hint: "Fix the config file to match the config schema, then re-run.",
+        });
+      } else {
+        const resolved = resolveSecretPolicy(scope, {
+          project: scope === "project" ? configuredPolicy : undefined,
+          personal: scope === "personal" ? configuredPolicy : undefined,
+        });
+        if (resolved !== "off") {
+          const dir = yield* store.dirForScope(scope);
+          if (yield* fs.exists(dir)) {
+            const names = (yield* fs.readDirectory(dir)).slice().sort();
+            for (const name of names) {
+              if (!name.endsWith(".md")) continue;
+              const file = path.join(dir, name);
+              const raw = yield* Effect.result(fs.readFileString(file));
+              // unreadable files are already reported by the integrity scan
+              if (Result.isFailure(raw)) continue;
+              for (const finding of scanContent(raw.success)) {
+                secretDiagnostics.push({
+                  code: "secret_detected",
+                  severity: resolved === "block" ? "error" : "warning",
+                  scope,
+                  file,
+                  message: `${finding.rule} (${finding.category}) at line ${finding.line}, column ${finding.column}`,
+                  hint: "Remove the secret and keep it in a dedicated secret manager; matched text is never displayed. Adjust the policy with `engram config set secretScan` (project) or `engram config set personalSecretScan` (personal).",
+                });
+              }
+            }
+          }
+        }
+      }
       checks.push({
         scope,
         scan: scanResult.success,
         config: configResult.success,
+        secretDiagnostics,
       });
     }
 
     const diagnostics = checks
-      .flatMap((c) => [...c.scan.diagnostics, ...c.config])
+      .flatMap((c) => [...c.scan.diagnostics, ...c.config, ...c.secretDiagnostics])
       .sort(compareDiagnostics);
     /* ENG-13: only errors decide the outcome. Warnings (lifecycle advisory
      * conditions) are reported in every output mode but a warning-only scan
@@ -161,7 +225,7 @@ export const checkCommand = (opts: CheckOptions) =>
       );
     } else {
       for (const c of checks) {
-        const scopeDiags = [...c.scan.diagnostics, ...c.config];
+        const scopeDiags = [...c.scan.diagnostics, ...c.config, ...c.secretDiagnostics];
         const scopeErrors = scopeDiags.filter((d) => d.severity === "error");
         const scopeWarnings = scopeDiags.filter((d) => d.severity === "warning");
         if (scopeDiags.length === 0) {

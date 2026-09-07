@@ -20,6 +20,9 @@ import { contextCommand } from "../src/commands/context.js";
 import { searchCommand } from "../src/commands/search.js";
 import { showCommand } from "../src/commands/show.js";
 
+/** ENG-15: these tests exercise legacy CRUD behavior with scanning disabled; the scan gate has its own coverage. */
+const NOSCAN = { policy: "off" as const, allowSecrets: false };
+
 /* ------------------------------ helpers ------------------------------ */
 
 const mkProject = (): string => {
@@ -95,14 +98,18 @@ describe("list and context integrity warnings", () => {
     run(
       Effect.gen(function* () {
         const store = yield* EngramStore;
-        return yield* store.add("project", {
-          title,
-          type: "note",
-          tags: [],
-          body: "b",
-          pinned: false,
-          author: undefined,
-        });
+        return yield* store.add(
+          "project",
+          {
+            title,
+            type: "note",
+            tags: [],
+            body: "b",
+            pinned: false,
+            author: undefined,
+          },
+          NOSCAN,
+        );
       }),
     );
 
@@ -110,14 +117,18 @@ describe("list and context integrity warnings", () => {
     run(
       Effect.gen(function* () {
         const store = yield* EngramStore;
-        return yield* store.add("personal", {
-          title,
-          type: "note",
-          tags: [],
-          body: "b",
-          pinned: false,
-          author: undefined,
-        });
+        return yield* store.add(
+          "personal",
+          {
+            title,
+            type: "note",
+            tags: [],
+            body: "b",
+            pinned: false,
+            author: undefined,
+          },
+          NOSCAN,
+        );
       }),
     );
 

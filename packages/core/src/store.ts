@@ -33,11 +33,14 @@ import {
   EngramNotFoundError,
   IntegrityCheckFailedError,
   ProjectNotInitializedError,
+  SecretScanBlockedError,
 } from "./errors.js";
 import { compareDiagnostics } from "./integrity.js";
 import type { DuplicateIdClaim, StoreDiagnostic, StoreScan } from "./integrity.js";
 import { globalEngramsDir, projectEngramsDir } from "./paths.js";
 import { findProjectRoot } from "./location.js";
+import { evaluateScan, scanContent } from "./secrets.js";
+import type { ScanEvaluation, SecretFinding, SecretPolicy } from "./secrets.js";
 import { nowISO, slugify, newId, parseEntryFilename, parseTimestamp } from "./util.js";
 import { validateEntry, stringifyFrontmatter } from "./frontmatter.js";
 import type { PartialFrontmatter } from "./frontmatter.js";
@@ -48,6 +51,21 @@ export type StoreError =
   | FrontmatterParseError
   | PlatformError
   | IntegrityCheckFailedError;
+
+/** ENG-15: the scan inputs every public writer must provide explicitly.
+ * There is deliberately no default: callers decide the policy (resolved
+ * from configuration at the command/ops layer) and whether the user
+ * overrode a block. */
+export interface ScanOptions {
+  readonly policy: SecretPolicy;
+  readonly allowSecrets: boolean;
+}
+
+/** ENG-15: a write through the scanned boundary returns the stored entry
+ * plus the safe (redacted) scan outcome for that exact write. */
+export interface ScannedWrite extends Engram {
+  readonly scan: ScanEvaluation;
+}
 
 /** The shape of the EngramStore service. (Methods require nothing — the
  * implementation captures FileSystem/Path at build time.) */
@@ -69,19 +87,21 @@ export interface EngramStoreShape {
   readonly add: (
     scope: Scope,
     input: EngramInput,
+    scan: ScanOptions,
   ) => Effect.Effect<
-    Engram,
+    ScannedWrite,
     /* ENG-17: establishing supersedes marks the predecessor via `update`, so
      * the id-resolution errors `update` can surface belong here too. */
-    StoreError | EngramNotFoundError | AmbiguousIdError | DuplicateIdError
+    StoreError | EngramNotFoundError | AmbiguousIdError | DuplicateIdError | SecretScanBlockedError
   >;
   readonly update: (
     scope: Scope,
     id: string,
     patch: EngramPatch,
+    scan: ScanOptions,
   ) => Effect.Effect<
-    Engram,
-    StoreError | EngramNotFoundError | AmbiguousIdError | DuplicateIdError
+    ScannedWrite,
+    StoreError | EngramNotFoundError | AmbiguousIdError | DuplicateIdError | SecretScanBlockedError
   >;
   readonly remove: (
     scope: Scope,
@@ -551,27 +571,80 @@ const makeEngramStoreLive = (
           return yield* Effect.fail(new EngramNotFoundError({ id, scope }));
         });
 
-      const add: EngramStoreShape["add"] = (scope, input) =>
+      /* ENG-15 R1: internal lifecycle marking introduces no user content, so
+       * it bypasses scanning through this explicit internal option. It is a
+       * call-site decision for store-internal code only, never a public
+       * default: every external caller must pass a policy. */
+      const INTERNAL_MARK_SCAN: ScanOptions = { policy: "off", allowSecrets: false };
+
+      /* ENG-15: gate one exact serialized candidate under the resolved
+       * policy. Fails with SecretScanBlockedError before any filesystem
+       * effect. Findings are redacted (rule, line, column) by construction. */
+      const scanGate = (
+        candidate: Engram,
+        file: string,
+        scan: ScanOptions,
+      ): Effect.Effect<ScanEvaluation, SecretScanBlockedError> => {
+        const evaluation = evaluateScan(
+          scan.policy === "off" ? [] : scanContent(serialize(candidate)),
+          scan.policy,
+          scan.allowSecrets,
+        );
+        return evaluation.blocked
+          ? Effect.fail(
+              new SecretScanBlockedError({
+                file,
+                policy: evaluation.policy,
+                findings: evaluation.findings,
+              }),
+            )
+          : Effect.succeed(evaluation);
+      };
+
+      const add: EngramStoreShape["add"] = (scope, input, scan) =>
         Effect.gen(function* () {
           const dir = yield* dirForScope(scope);
-          yield* fs.makeDirectory(dir, { recursive: true });
           const now = nowISO();
           const title = input.title.trim();
           const slug = slugify(title);
+          const probeId = newId();
+          const probeFile = path.join(dir, `${probeId}-${slug}.md`);
+          const buildCandidate = (id: string, file: string): Engram => ({
+            id,
+            title,
+            type: input.type,
+            tags: [...input.tags],
+            scope,
+            created: now,
+            updated: now,
+            author: input.author,
+            pinned: input.pinned,
+            status: input.status,
+            supersedes: input.supersedes,
+            reviewAfter: input.reviewAfter,
+            expires: input.expires,
+            sourceType: input.sourceType,
+            sourceRef: input.sourceRef,
+            body: input.body.trim(),
+            path: file,
+          });
+
+          /* ENG-15 N1: scan BEFORE any filesystem side effect (including
+           * creating the store directory itself), so a blocked write - a
+           * blocked first write especially - leaves the filesystem
+           * untouched. Each attempt below re-scans its exact candidate. */
+          yield* scanGate(buildCandidate(probeId, probeFile), probeFile, scan);
+
+          yield* fs.makeDirectory(dir, { recursive: true });
 
           /* ENG-17 R1/R5: a supersedes claim is hard-validated before any
            * file is written, so rejections leave the store byte-identical.
-           * The probe id seeds only the cycle walk and the error file
-           * context; a fresh id cannot appear in any stored chain, and the
-           * real candidate's self-reference check runs in validateCandidate. */
+           * The probe id (shared with the ENG-15 pre-directory scan) seeds
+           * only the cycle walk and the error file context; a fresh id
+           * cannot appear in any stored chain, and the real candidate's
+           * self-reference check runs in validateCandidate. */
           if (input.supersedes !== undefined) {
-            const probeId = newId();
-            yield* validateSupersedesEstablish(
-              scope,
-              probeId,
-              input.supersedes,
-              path.join(dir, `${probeId}-${slug}.md`),
-            );
+            yield* validateSupersedesEstablish(scope, probeId, input.supersedes, probeFile);
           }
 
           /**
@@ -582,33 +655,24 @@ const makeEngramStoreLive = (
            * overwrites an existing file and retries with a fresh id on the
            * (astronomically unlikely) exact-filename race.
            */
-          const writeWith = (id: string): Effect.Effect<Engram, StoreError> => {
+          const writeWith = (
+            id: string,
+          ): Effect.Effect<ScannedWrite, StoreError | SecretScanBlockedError> => {
             const file = path.join(dir, `${id}-${slug}.md`);
-            const engram: Engram = {
-              id,
-              title,
-              type: input.type,
-              tags: [...input.tags],
-              scope,
-              created: now,
-              updated: now,
-              author: input.author,
-              pinned: input.pinned,
-              status: input.status,
-              supersedes: input.supersedes,
-              reviewAfter: input.reviewAfter,
-              expires: input.expires,
-              sourceType: input.sourceType,
-              sourceRef: input.sourceRef,
-              body: input.body.trim(),
-              path: file,
-            };
-            return Effect.flatMap(validateCandidate(engram, file), () =>
-              Effect.as(fs.writeFileString(file, serialize(engram), { flag: "wx" }), engram),
+            const engram = buildCandidate(id, file);
+            return Effect.flatMap(scanGate(engram, file, scan), (evaluation) =>
+              Effect.flatMap(validateCandidate(engram, file), () =>
+                Effect.as(fs.writeFileString(file, serialize(engram), { flag: "wx" }), {
+                  ...engram,
+                  scan: evaluation,
+                }),
+              ),
             );
           };
 
-          const attempt = (tries: number): Effect.Effect<Engram, StoreError> =>
+          const attempt = (
+            tries: number,
+          ): Effect.Effect<ScannedWrite, StoreError | SecretScanBlockedError> =>
             Effect.flatMap(Effect.result(writeWith(newId())), (r) =>
               Result.isSuccess(r)
                 ? Effect.succeed(r.success)
@@ -632,7 +696,7 @@ const makeEngramStoreLive = (
            * can still leave the new entry without the marking; cross-process
            * concurrency is check-then-act and out of scope (R8). */
           const marked = yield* Effect.result(
-            update(scope, input.supersedes, { status: "superseded" }),
+            update(scope, input.supersedes, { status: "superseded" }, INTERNAL_MARK_SCAN),
           );
           if (Result.isFailure(marked)) {
             const cleanup = yield* rollbackStep(
@@ -739,7 +803,7 @@ const makeEngramStoreLive = (
           return target;
         });
 
-      const update: EngramStoreShape["update"] = (scope, id, patch) =>
+      const update: EngramStoreShape["update"] = (scope, id, patch, scan) =>
         Effect.gen(function* () {
           const mem = yield* get(scope, id);
           const instruction = patch.supersedes;
@@ -797,6 +861,11 @@ const makeEngramStoreLive = (
           const file = path.join(dir, `${next.id}-${slugify(next.title)}.md`);
           yield* validateCandidate(next, file);
 
+          /* ENG-15: scan the exact serialized candidate before ANY write
+           * (including the supersedes marking below), so a blocked edit
+           * leaves storage byte-identical. */
+          const evaluation = yield* scanGate(next, file, scan);
+
           if (target !== undefined) {
             /* ENG-17 R1: establishing the link marks the predecessor
              * superseded as part of the same logical operation. The
@@ -820,7 +889,9 @@ const makeEngramStoreLive = (
             // can restore them byte-identically when the destination is the
             // original path (no rename)
             const entryBefore = yield* fs.readFileString(mem.path);
-            const marked = yield* Effect.result(update(scope, target.id, { status: "superseded" }));
+            const marked = yield* Effect.result(
+              update(scope, target.id, { status: "superseded" }, INTERNAL_MARK_SCAN),
+            );
             if (Result.isFailure(marked)) return yield* Effect.fail(marked.failure);
             const wrote = yield* Effect.result(
               Effect.as(fs.writeFileString(file, serialize(next)), next),
@@ -869,12 +940,12 @@ const makeEngramStoreLive = (
                 return yield* Effect.fail(step1 ?? step2 ?? removed.failure);
               }
             }
-            return { ...next, path: file };
+            return { ...next, path: file, scan: evaluation };
           }
 
           yield* fs.writeFileString(file, serialize(next));
           if (file !== mem.path) yield* fs.remove(mem.path);
-          return { ...next, path: file };
+          return { ...next, path: file, scan: evaluation };
         });
 
       const remove: EngramStoreShape["remove"] = (scope, id) =>

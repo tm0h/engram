@@ -133,6 +133,7 @@ describe("engram opencode plugin / registration", () => {
       "expires",
       "sourceType",
       "sourceRef",
+      "allowSecrets",
     ]);
     expect(Object.keys(tools.engram_edit.args)).toEqual([
       "id",
@@ -149,6 +150,7 @@ describe("engram opencode plugin / registration", () => {
       "expires",
       "sourceType",
       "sourceRef",
+      "allowSecrets",
     ]);
   });
 });
@@ -391,6 +393,9 @@ describe("engram opencode plugin / lifecycle schema contract", () => {
     expect(args.expires.safeParse("2026-06-01T00:00:00.000Z").success).toBe(true);
     expect(args.supersedes.safeParse("0001").success).toBe(true);
     expect(args.sourceRef.safeParse("docs/a.md").success).toBe(true);
+    // ENG-15: allowSecrets validates as a strict boolean
+    expect(args.allowSecrets.safeParse(true).success).toBe(true);
+    expect(args.allowSecrets.safeParse("yes").success).toBe(false);
   });
 
   it("lifecycle param descriptions state the real contract without overclaims", async () => {

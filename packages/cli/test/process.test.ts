@@ -431,3 +431,92 @@ describe("engram add/edit lifecycle flags (process level)", () => {
     expect(readFileSync(file, "utf8")).toBe(before);
   });
 });
+
+describe("engram add/edit secret scan (process level, ENG-15)", () => {
+  let tmp = "";
+  let home = "";
+
+  beforeAll(() => {
+    if (!spawnOk) return;
+    tmp = mkdtempSync(join(tmpdir(), "engram-proc-scan-"));
+    home = mkdtempSync(join(tmpdir(), "engram-proc-scan-home-"));
+  });
+  afterAll(() => {
+    if (tmp) rmSync(tmp, { recursive: true, force: true });
+    if (home) rmSync(home, { recursive: true, force: true });
+  });
+
+  let projSeq = 0;
+  const freshProject = (): string => {
+    projSeq += 1;
+    const proj = join(tmp, `proj-${projSeq}`);
+    mkdirSync(join(proj, ".engram", "engrams"), { recursive: true });
+    writeFileSync(
+      join(proj, ".engram", "config.json"),
+      JSON.stringify({ version: 1, tracked: true, defaultType: "note" }),
+    );
+    return proj;
+  };
+
+  const SECRET = "S3cr3t-V4lue!";
+  const SECRET_BODY = `rotated the db password: "${SECRET}" after the incident`;
+
+  it("add with a secret exits 1 under the project default, writes nothing, and leaks nothing to stdout", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    const r = runCli(["add", "--title", "Leaky", SECRET_BODY], proj, home);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toContain("secret scanner");
+    expect(r.stderr).toContain("SEC-CRED-ASSIGNMENT");
+    expect(r.stderr).not.toContain(SECRET);
+    expect(readdirSync(join(proj, ".engram", "engrams"))).toEqual([]);
+  });
+
+  it("add --allow-secrets exits 0, writes the entry, and prints the bypass notice on stdout", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    const r = runCli(["add", "--title", "Leaky", SECRET_BODY, "--allow-secrets"], proj, home);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("bypassed");
+    expect(r.stdout).toContain("SEC-CRED-ASSIGNMENT");
+    expect(r.stdout).not.toContain(SECRET);
+    expect(r.stderr).toBe("");
+    expect(readdirSync(join(proj, ".engram", "engrams"))).toHaveLength(1);
+  });
+
+  it("personal add warns by default and exits 0", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    const r = runCli(["add", "--title", "Leaky", SECRET_BODY, "--scope", "personal"], proj, home);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("Secret scan warning");
+    expect(r.stdout).not.toContain(SECRET);
+  });
+
+  it("config set secretScan off re-enables plain writes", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    const off = runCli(["config", "set", "secretScan", "off"], proj, home);
+    expect(off.status).toBe(0);
+    const r = runCli(["add", "--title", "Leaky", SECRET_BODY], proj, home);
+    expect(r.status).toBe(0);
+    expect(r.stdout).not.toContain("Secret scan warning");
+  });
+
+  it("edit with a secret exits 1 without mutating the entry", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    writeFileSync(
+      join(proj, ".engram", "engrams", "0001-clean.md"),
+      '---\nid: "0001"\ntitle: Clean\ntype: note\ntags: []\nscope: project\ncreated: 2025-08-15T10:00:00.000Z\nupdated: 2025-08-15T11:00:00.000Z\n---\nB\n',
+    );
+    const file = join(proj, ".engram", "engrams", "0001-clean.md");
+    const before = readFileSync(file, "utf8");
+    const r = runCli(["edit", "0001", SECRET_BODY], proj, home);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("secret scanner");
+    expect(r.stderr).not.toContain(SECRET);
+    expect(readFileSync(file, "utf8")).toBe(before);
+  });
+});

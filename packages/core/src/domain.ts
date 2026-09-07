@@ -179,11 +179,23 @@ export const effectiveStatus = (
  * different version load as data but fail integrity validation. */
 export const SUPPORTED_CONFIG_VERSION = 1;
 
+/** ENG-15: secret-scan write policy. Project writes default to block,
+ * personal writes to warn; `off` disables scanning entirely. */
+export const SecretPolicySchema = Schema.Literals(["block", "warn", "off"]);
+export type SecretPolicy = Schema.Schema.Type<typeof SecretPolicySchema>;
+export const SECRET_POLICIES: ReadonlyArray<SecretPolicy> = ["block", "warn", "off"];
+
+/** ENG-15 defaults: project writes block, personal writes warn. */
+export const DEFAULT_SECRET_SCAN: SecretPolicy = "block";
+export const DEFAULT_PERSONAL_SECRET_SCAN: SecretPolicy = "warn";
+
 export const ProjectConfigSchema = Schema.Struct({
   version: Schema.Number,
   tracked: Schema.Boolean,
   defaultType: EngramTypeSchema,
   author: Schema.optional(Schema.String),
+  /** ENG-15: scan policy for project writes. Defaults to block. */
+  secretScan: Schema.optional(SecretPolicySchema),
 });
 export type ProjectConfig = Schema.Schema.Type<typeof ProjectConfigSchema>;
 
@@ -216,6 +228,8 @@ export const GlobalConfigSchema = Schema.Struct({
   autoContext: Schema.optional(AutoContextToggleSchema),
   autoContextScope: Schema.optional(AutoContextScopeSchema),
   autoContextLimit: Schema.optional(AutoContextLimitSchema),
+  /** ENG-15: scan policy for personal (global-scope) writes. */
+  personalSecretScan: Schema.optional(SecretPolicySchema),
 });
 export type GlobalConfig = Schema.Schema.Type<typeof GlobalConfigSchema>;
 
@@ -223,6 +237,8 @@ export const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
   version: SUPPORTED_CONFIG_VERSION,
   tracked: true,
   defaultType: "note",
+  /** ENG-15: project writes block by default. */
+  secretScan: DEFAULT_SECRET_SCAN,
 };
 
 export const DEFAULT_AUTO_CONTEXT: AutoContextToggle = "on";
@@ -235,4 +251,6 @@ export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
   autoContext: DEFAULT_AUTO_CONTEXT,
   autoContextScope: DEFAULT_AUTO_CONTEXT_SCOPE,
   autoContextLimit: DEFAULT_AUTO_CONTEXT_LIMIT,
+  /** ENG-15: personal writes warn by default. */
+  personalSecretScan: DEFAULT_PERSONAL_SECRET_SCAN,
 };

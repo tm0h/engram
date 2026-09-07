@@ -28,12 +28,16 @@ import {
   projectReadmeContent,
   projectReadmePath,
   removeGitignoreLine,
+  resolveSecretPolicy,
   searchEngrams,
   searchReport,
   searchPaginationError,
+  type ConfigErrorUnion,
+  type ConfigRepoShape,
   type Engram,
   type EngramPatch,
   type Scope,
+  type ScanOptions,
 } from "@engram/core";
 import { PERSONAL_ONLY_NOTE, projectUninitialized } from "./degraded.js";
 import { MAX_RESULT_CHARS, capText, pageFooter, paginate, type Page } from "./pagination.js";
@@ -74,6 +78,7 @@ const KNOWN_DOMAIN_ERRORS = new Set([
   "ValidationError",
   "FrontmatterParseError",
   "ConfigError",
+  "SecretScanBlockedError",
 ]);
 
 const describeError = (e: unknown): string => {
@@ -100,6 +105,68 @@ const capture = <R>(eff: Effect.Effect<OpResult, unknown, R>): Effect.Effect<OpR
 
 const tagsSuffix = (tags: ReadonlyArray<string>): string =>
   tags.length ? " " + tags.map((t) => `#${t}`).join(" ") : "";
+
+/** ENG-15: resolve the effective scan options for a write (project: block,
+ * personal: warn, explicit configuration wins) and append the redacted
+ * scan outcome to an op's output lines. Matched text is never included. */
+const resolveScan = (
+  cfg: ConfigRepoShape,
+  scope: Scope,
+  root: Option.Option<string>,
+  allowSecrets: boolean | undefined,
+): Effect.Effect<ScanOptions, ConfigErrorUnion> =>
+  Effect.gen(function* () {
+    const project = Option.isSome(root)
+      ? (yield* cfg.loadProject(root.value)).secretScan
+      : undefined;
+    const personal = (yield* cfg.loadGlobal()).personalSecretScan;
+    return {
+      policy: resolveSecretPolicy(scope, { project, personal }),
+      allowSecrets: Boolean(allowSecrets),
+    };
+  });
+
+const scanLines = (scan: {
+  readonly policy: string;
+  readonly findings: ReadonlyArray<{
+    readonly rule: string;
+    readonly category: string;
+    readonly line: number;
+    readonly column: number;
+  }>;
+  readonly overrideUsed: boolean;
+}): string[] => {
+  if (scan.findings.length === 0) return [];
+  const count = `${scan.findings.length} finding${scan.findings.length === 1 ? "" : "s"}`;
+  const lines = [
+    scan.overrideUsed
+      ? `  Secret scan bypassed (allowSecrets): ${count} written anyway.`
+      : `  Secret scan warning: ${count}.`,
+  ];
+  for (const f of scan.findings) {
+    lines.push(`  line ${f.line}, column ${f.column}: ${f.rule} (${f.category})`);
+  }
+  lines.push("  Keep real secrets in a dedicated secret manager.");
+  return lines;
+};
+
+/** ENG-15: map a blocked write to the plan's structured error result. */
+const isSecretScanBlocked = (
+  e: unknown,
+): e is {
+  readonly _tag: "SecretScanBlockedError";
+  readonly file: string;
+  readonly policy: string;
+  readonly findings: ReadonlyArray<{
+    readonly rule: string;
+    readonly category: string;
+    readonly line: number;
+    readonly column: number;
+  }>;
+} =>
+  typeof e === "object" &&
+  e !== null &&
+  (e as { _tag?: unknown })._tag === "SecretScanBlockedError";
 
 /** One digest line: `★ 0012 decision Title #tags` (two-space indent when not pinned). */
 const lineOf = (m: Engram, markScope = false): string =>
@@ -462,20 +529,44 @@ export const addOp = (opts: AddOptions): Effect.Effect<OpResult, never, EngramSt
         new Set((opts.tags ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean)),
       );
 
-      const m = yield* store.add(scope, {
-        title,
-        type,
-        tags,
-        body: opts.body,
-        pinned: Boolean(opts.pinned),
-        author,
-        status: opts.status,
-        supersedes: opts.supersedes,
-        reviewAfter: opts.reviewAfter,
-        expires: opts.expires,
-        sourceType: opts.sourceType,
-        sourceRef: opts.sourceRef,
-      });
+      const scan = yield* resolveScan(cfg, scope, root, opts.allowSecrets);
+      const attempted = yield* Effect.result(
+        store.add(
+          scope,
+          {
+            title,
+            type,
+            tags,
+            body: opts.body,
+            pinned: Boolean(opts.pinned),
+            author,
+            status: opts.status,
+            supersedes: opts.supersedes,
+            reviewAfter: opts.reviewAfter,
+            expires: opts.expires,
+            sourceType: opts.sourceType,
+            sourceRef: opts.sourceRef,
+          },
+          scan,
+        ),
+      );
+      if (Result.isFailure(attempted)) {
+        const e = attempted.failure;
+        if (isSecretScanBlocked(e)) {
+          return err(
+            `Write blocked by the secret scanner (policy: ${e.policy}): ${
+              e.findings.length
+            } finding${e.findings.length === 1 ? "" : "s"}. Remove the secret and keep it in a dedicated secret manager, or retry with allowSecrets.`,
+            {
+              reason: "secret_scan_blocked",
+              policy: e.policy,
+              findings: e.findings,
+            },
+          );
+        }
+        return yield* Effect.fail(e);
+      }
+      const m = attempted.success;
 
       const tracked =
         scope === "project" && Option.isSome(root)
@@ -487,8 +578,19 @@ export const addOp = (opts: AddOptions): Effect.Effect<OpResult, never, EngramSt
         tracked
           ? "  scope: project (git-tracked - commit .engram/ to share with the team)"
           : `  scope: ${m.scope}`,
+        ...scanLines(m.scan),
       ];
-      return ok(lines.join("\n"), { id: m.id, path: m.path, scope: m.scope, type: m.type });
+      return ok(lines.join("\n"), {
+        id: m.id,
+        path: m.path,
+        scope: m.scope,
+        type: m.type,
+        scan: {
+          policy: m.scan.policy,
+          findings: m.scan.findings,
+          overrideUsed: m.scan.overrideUsed,
+        },
+      });
     }),
   );
 
@@ -501,11 +603,15 @@ type PatchDraft = { -readonly [K in keyof EngramPatch]?: EngramPatch[K] };
  * unchanged when omitted, lifecycle fields are three-state (undefined
  * preserves, null clears, a concrete value replaces). Only closed enums
  * fail fast here: timestamp, id, and sourceRef semantics stay at the store
- * write boundary. No config, author discovery, or defaults on edit. */
-export const editOp = (opts: EditOptions): Effect.Effect<OpResult, never, EngramStore> =>
+ * write boundary. No config, author discovery, or defaults on edit -
+ * except the ENG-15 scan policy, which is always resolved per write. */
+export const editOp = (
+  opts: EditOptions,
+): Effect.Effect<OpResult, never, EngramStore | ConfigRepo> =>
   capture(
     Effect.gen(function* () {
       const store = yield* EngramStore;
+      const cfg = yield* ConfigRepo;
       const root = yield* store.projectRoot();
       if (opts.scope === "project" && Option.isNone(root)) {
         return err(projectUninitialized("edit"));
@@ -557,9 +663,42 @@ export const editOp = (opts: EditOptions): Effect.Effect<OpResult, never, Engram
       patch.sourceType = opts.sourceType;
       patch.sourceRef = opts.sourceRef;
 
-      const m = yield* store.update(scope, opts.id, patch);
-      const lines = [`Updated [${m.id}] ${m.title}`, `  ${m.path}`, `  scope: ${m.scope}`];
-      return ok(lines.join("\n"), { id: m.id, path: m.path, scope: m.scope, type: m.type });
+      const scan = yield* resolveScan(cfg, scope, root, opts.allowSecrets);
+      const attempted = yield* Effect.result(store.update(scope, opts.id, patch, scan));
+      if (Result.isFailure(attempted)) {
+        const e = attempted.failure;
+        if (isSecretScanBlocked(e)) {
+          return err(
+            `Write blocked by the secret scanner (policy: ${e.policy}): ${
+              e.findings.length
+            } finding${e.findings.length === 1 ? "" : "s"}. Remove the secret and keep it in a dedicated secret manager, or retry with allowSecrets.`,
+            {
+              reason: "secret_scan_blocked",
+              policy: e.policy,
+              findings: e.findings,
+            },
+          );
+        }
+        return yield* Effect.fail(e);
+      }
+      const m = attempted.success;
+      const lines = [
+        `Updated [${m.id}] ${m.title}`,
+        `  ${m.path}`,
+        `  scope: ${m.scope}`,
+        ...scanLines(m.scan),
+      ];
+      return ok(lines.join("\n"), {
+        id: m.id,
+        path: m.path,
+        scope: m.scope,
+        type: m.type,
+        scan: {
+          policy: m.scan.policy,
+          findings: m.scan.findings,
+          overrideUsed: m.scan.overrideUsed,
+        },
+      });
     }),
   );
 

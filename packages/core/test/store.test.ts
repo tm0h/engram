@@ -6,11 +6,19 @@ import { NodeServices } from "@effect/platform-node";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { EngramStore, EngramStoreLive, lifecycleDiagnostics } from "../src/store.js";
+import {
+  EngramStore,
+  EngramStoreLive,
+  lifecycleDiagnostics,
+  type ScanOptions,
+} from "../src/store.js";
 import { projectConfigPath, projectEngramsDir, globalEngramsDir } from "../src/paths.js";
 import { stringifyFrontmatter } from "../src/frontmatter.js";
 import { slugify } from "../src/util.js";
 import type { Engram, EngramInput, EngramPatch } from "../src/domain.js";
+
+/** ENG-15: these tests exercise legacy CRUD behavior with scanning disabled; the scan gate has its own coverage. */
+const NOSCAN = { policy: "off" as const, allowSecrets: false };
 
 const StoreLive = EngramStoreLive.pipe(Layer.provide(NodeServices.layer));
 
@@ -93,7 +101,7 @@ describe("EngramStore / project scope", () => {
   it.live("add -> list -> get -> remove", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const m = yield* store.add("project", input());
+      const m = yield* store.add("project", input(), NOSCAN);
       expect(m.id).toMatch(ULID);
       expect(m.path).toContain(`${m.id}-replaced-libfoo-with-libbar.md`);
 
@@ -115,9 +123,9 @@ describe("EngramStore / project scope", () => {
   it.live("assigns unique, time-sortable ids (no shared counter)", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const a = yield* store.add("project", input({ title: "A" }));
-      const b = yield* store.add("project", input({ title: "B" }));
-      const c = yield* store.add("project", input({ title: "C" }));
+      const a = yield* store.add("project", input({ title: "A" }), NOSCAN);
+      const b = yield* store.add("project", input({ title: "B" }), NOSCAN);
+      const c = yield* store.add("project", input({ title: "C" }), NOSCAN);
       const ids = [a.id, b.id, c.id];
       expect(new Set(ids).size).toBe(3);
       // lexicographic order == creation order, so listing stays chronological
@@ -131,7 +139,7 @@ describe("EngramStore / project scope", () => {
   it.live("normalizes pinned to false when unspecified", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      yield* store.add("project", input());
+      yield* store.add("project", input(), NOSCAN);
       const [m] = yield* store.list("project");
       expect(m.pinned).toBe(false);
       expect(m.type).toBe("decision");
@@ -152,13 +160,18 @@ describe("EngramStore / project scope", () => {
   it.live("update: patches given fields, preserves the rest, bumps updated", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const m = yield* store.add("project", input());
+      const m = yield* store.add("project", input(), NOSCAN);
       yield* Effect.sleep("5 millis");
 
-      const patched = yield* store.update("project", m.id, {
-        body: "new body text",
-        tags: ["new-tag"],
-      });
+      const patched = yield* store.update(
+        "project",
+        m.id,
+        {
+          body: "new body text",
+          tags: ["new-tag"],
+        },
+        NOSCAN,
+      );
 
       expect(patched.id).toBe(m.id);
       expect(patched.created).toBe(m.created);
@@ -176,12 +189,17 @@ describe("EngramStore / project scope", () => {
   it.live("update: retitle renames the file to the new slug", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const m = yield* store.add("project", input({ title: "Old title" }));
+      const m = yield* store.add("project", input({ title: "Old title" }), NOSCAN);
       expect(fs.existsSync(m.path)).toBe(true);
 
-      const patched = yield* store.update("project", m.id, {
-        title: "A brand new title",
-      });
+      const patched = yield* store.update(
+        "project",
+        m.id,
+        {
+          title: "A brand new title",
+        },
+        NOSCAN,
+      );
 
       expect(patched.path).toContain(`${m.id}-a-brand-new-title.md`);
       expect(fs.existsSync(patched.path)).toBe(true);
@@ -196,13 +214,13 @@ describe("EngramStore / project scope", () => {
   it.live("update: toggles pinned and persists it", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const m = yield* store.add("project", input());
+      const m = yield* store.add("project", input(), NOSCAN);
 
-      yield* store.update("project", m.id, { pinned: true });
+      yield* store.update("project", m.id, { pinned: true }, NOSCAN);
       const [pinned] = yield* store.list("project");
       expect(pinned.pinned).toBe(true);
 
-      yield* store.update("project", m.id, { pinned: false });
+      yield* store.update("project", m.id, { pinned: false }, NOSCAN);
       const [unpinned] = yield* store.list("project");
       expect(unpinned.pinned).toBe(false);
     }).pipe(Effect.provide(StoreLive)),
@@ -211,8 +229,13 @@ describe("EngramStore / project scope", () => {
   it.live("update: resolves id prefixes like get", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const m = yield* store.add("project", input());
-      const patched = yield* store.update("project", m.id.slice(0, 6), { title: "Via prefix" });
+      const m = yield* store.add("project", input(), NOSCAN);
+      const patched = yield* store.update(
+        "project",
+        m.id.slice(0, 6),
+        { title: "Via prefix" },
+        NOSCAN,
+      );
       expect(patched.title).toBe("Via prefix");
     }).pipe(Effect.provide(StoreLive)),
   );
@@ -220,7 +243,7 @@ describe("EngramStore / project scope", () => {
   it.live("update: unknown id fails with EngramNotFoundError", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      return yield* store.update("project", "9999", { title: "nope" });
+      return yield* store.update("project", "9999", { title: "nope" }, NOSCAN);
     }).pipe(
       Effect.provide(StoreLive),
       Effect.flip,
@@ -274,7 +297,7 @@ describe("EngramStore / file parsing", () => {
   it.live("preserves --- separators inside the body across update", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const m = yield* store.add("project", input({ body: "Intro\n\n---\n\nSection two" }));
+      const m = yield* store.add("project", input({ body: "Intro\n\n---\n\nSection two" }), NOSCAN);
       const got = yield* store.get("project", m.id);
       expect(got.body).toBe("Intro\n\n---\n\nSection two");
     }).pipe(Effect.provide(StoreLive)),
@@ -344,7 +367,7 @@ describe("EngramStore / id allocation & duplicates", () => {
     const original = handWrite("0001-replaced-libfoo-with-libbar.md", "0001", "Hand-written");
     return Effect.gen(function* () {
       const store = yield* EngramStore;
-      const m = yield* store.add("project", input());
+      const m = yield* store.add("project", input(), NOSCAN);
       // random id, not 0002 or any reuse of the legacy sequence
       expect(m.id).toMatch(ULID);
       expect(m.path).not.toContain("0001-");
@@ -359,7 +382,7 @@ describe("EngramStore / id allocation & duplicates", () => {
       const store = yield* EngramStore;
       const got = yield* store.get("project", "0");
       expect(got.title).toBe("Legacy note");
-      const patched = yield* store.update("project", "0001", { title: "Renamed" });
+      const patched = yield* store.update("project", "0001", { title: "Renamed" }, NOSCAN);
       expect(patched.id).toBe("0001");
       expect(patched.path).toContain("0001-renamed.md");
     }).pipe(Effect.provide(StoreLive));
@@ -370,7 +393,7 @@ describe("EngramStore / id allocation & duplicates", () => {
       const store = yield* EngramStore;
       const added = yield* Effect.forEach(
         Array.from({ length: 6 }, (_, i) => input({ title: `Concurrent ${i}` })),
-        (inp) => store.add("project", inp),
+        (inp) => store.add("project", inp, NOSCAN),
         { concurrency: "unbounded" },
       );
       const ids = added.map((m) => m.id);
@@ -387,7 +410,7 @@ describe("EngramStore / id allocation & duplicates", () => {
       const store = yield* EngramStore;
       // two exclusive-write race losses — add must retry, each time with a
       // fresh filename (retrying the same path could never succeed)
-      const m = yield* store.add("project", input());
+      const m = yield* store.add("project", input(), NOSCAN);
       expect(m.id).toMatch(ULID);
       expect(fs.existsSync(m.path)).toBe(true);
       expect(wxPaths).toHaveLength(3); // 2 losses + the successful write
@@ -440,7 +463,7 @@ describe("EngramStore / id allocation & duplicates", () => {
   it.live("dedupe leaves a clean store untouched", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      yield* store.add("project", input());
+      yield* store.add("project", input(), NOSCAN);
       const { renumbered } = yield* store.dedupe("project");
       expect(renumbered).toEqual([]);
       expect(yield* store.list("project")).toHaveLength(1);
@@ -489,7 +512,7 @@ describe("EngramStore / personal scope", () => {
   it.live("persists to ~/.engram (overridden HOME)", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const m = yield* store.add("personal", input());
+      const m = yield* store.add("personal", input(), NOSCAN);
       expect(m.id).toMatch(ULID);
       expect(m.path).toContain(".engram");
       const all = yield* store.list("personal");
@@ -548,8 +571,8 @@ describe("EngramStore / scan", () => {
   it.live("a generated v0.4 project store passes unchanged", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      yield* store.add("project", input({ title: "First decision" }));
-      yield* store.add("project", input({ title: "Second note", type: "note" }));
+      yield* store.add("project", input({ title: "First decision" }), NOSCAN);
+      yield* store.add("project", input({ title: "Second note", type: "note" }), NOSCAN);
       writeConsistent("0001", "Legacy note");
 
       const scanned = yield* store.scan("project");
@@ -727,7 +750,7 @@ describe("EngramStore / scan", () => {
     const invalidBefore = fs.readFileSync(invalid, "utf8");
     return Effect.gen(function* () {
       const store = yield* EngramStore;
-      return yield* store.update("project", "0001", { title: "Rewritten" });
+      return yield* store.update("project", "0001", { title: "Rewritten" }, NOSCAN);
     }).pipe(
       Effect.provide(StoreLive),
       Effect.flip,
@@ -972,7 +995,7 @@ describe("EngramStore / scan", () => {
   it.live("no supersedes warning when the claimant exists", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const pred = yield* store.add("project", input({ title: "Predecessor" }));
+      const pred = yield* store.add("project", input({ title: "Predecessor" }), NOSCAN);
       // the referrer has its own id and points back at the predecessor
       write("0002-referrer.md", scanFm({ id: "0002", title: "Referrer", supersedes: pred.id }));
       const scanned = yield* store.scan("project");
@@ -1080,10 +1103,11 @@ describe("EngramStore / lifecycle metadata", () => {
   it.live("add with all six fields survives serialization, read-back, and get", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const pred = yield* store.add("project", input({ title: "Old guidance" }));
+      const pred = yield* store.add("project", input({ title: "Old guidance" }), NOSCAN);
       const m = yield* store.add(
         "project",
         input({ title: "New guidance", ...LIFECYCLE_INPUT, supersedes: pred.id }),
+        NOSCAN,
       );
 
       const fileRaw = fs.readFileSync(m.path, "utf8");
@@ -1121,13 +1145,19 @@ describe("EngramStore / lifecycle metadata", () => {
           sourceType: "file",
           sourceRef: "docs/old.md",
         }),
+        NOSCAN,
       );
 
-      const patched = yield* store.update("project", m.id, {
-        status: "archived",
-        reviewAfter: "2027-01-01T00:00:00.000Z",
-        sourceRef: "docs/new.md",
-      });
+      const patched = yield* store.update(
+        "project",
+        m.id,
+        {
+          status: "archived",
+          reviewAfter: "2027-01-01T00:00:00.000Z",
+          sourceRef: "docs/new.md",
+        },
+        NOSCAN,
+      );
       expect(patched.status).toBe("archived");
       expect(patched.reviewAfter).toBe("2027-01-01T00:00:00.000Z");
       expect(patched.sourceRef).toBe("docs/new.md");
@@ -1148,9 +1178,10 @@ describe("EngramStore / lifecycle metadata", () => {
           status: "superseded",
           expires: "2027-01-01T00:00:00.000Z",
         }),
+        NOSCAN,
       );
 
-      const patched = yield* store.update("project", m.id, { status: null });
+      const patched = yield* store.update("project", m.id, { status: null }, NOSCAN);
       expect(patched.status).toBeUndefined();
       const fileRaw = fs.readFileSync(patched.path, "utf8");
       expect(fileRaw).not.toMatch(/^status:/m);
@@ -1166,7 +1197,7 @@ describe("EngramStore / lifecycle metadata", () => {
     Effect.gen(function* () {
       const store = yield* EngramStore;
       // a real predecessor: R5 lineage validation rejects missing targets
-      const pred = yield* store.add("project", input({ title: "Clear predecessor" }));
+      const pred = yield* store.add("project", input({ title: "Clear predecessor" }), NOSCAN);
       const m = yield* store.add(
         "project",
         input({
@@ -1178,16 +1209,22 @@ describe("EngramStore / lifecycle metadata", () => {
           sourceType: "url",
           sourceRef: "https://example.com/post",
         }),
+        NOSCAN,
       );
 
-      const patched = yield* store.update("project", m.id, {
-        status: null,
-        supersedes: null,
-        reviewAfter: null,
-        expires: null,
-        sourceType: null,
-        sourceRef: null,
-      });
+      const patched = yield* store.update(
+        "project",
+        m.id,
+        {
+          status: null,
+          supersedes: null,
+          reviewAfter: null,
+          expires: null,
+          sourceType: null,
+          sourceRef: null,
+        },
+        NOSCAN,
+      );
       expect(patched.status).toBeUndefined();
       expect(patched.supersedes).toBeUndefined();
       expect(patched.reviewAfter).toBeUndefined();
@@ -1220,13 +1257,19 @@ describe("EngramStore / lifecycle metadata", () => {
           status: "archived",
           sourceType: "file",
         }),
+        NOSCAN,
       );
       yield* Effect.sleep("5 millis");
 
-      const patched = yield* store.update("project", m.id, {
-        status: null,
-        sourceType: null,
-      });
+      const patched = yield* store.update(
+        "project",
+        m.id,
+        {
+          status: null,
+          sourceType: null,
+        },
+        NOSCAN,
+      );
       expect(patched.author).toBe("mo");
       expect(patched.pinned).toBe(true);
       expect(patched.body).toBe(m.body);
@@ -1239,16 +1282,22 @@ describe("EngramStore / lifecycle metadata", () => {
   it.live("an unrelated update preserves all six lifecycle fields", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const pred = yield* store.add("project", input({ title: "Old guidance" }));
+      const pred = yield* store.add("project", input({ title: "Old guidance" }), NOSCAN);
       const m = yield* store.add(
         "project",
         input({ title: "New guidance", ...LIFECYCLE_INPUT, supersedes: pred.id }),
+        NOSCAN,
       );
 
-      const patched = yield* store.update("project", m.id, {
-        body: "an unrelated body edit",
-        tags: ["unrelated"],
-      });
+      const patched = yield* store.update(
+        "project",
+        m.id,
+        {
+          body: "an unrelated body edit",
+          tags: ["unrelated"],
+        },
+        NOSCAN,
+      );
       expect(patched.status).toBe("superseded");
       expect(patched.supersedes).toBe(pred.id);
       expect(patched.reviewAfter).toBe("2026-06-01T00:00:00.000Z");
@@ -1283,7 +1332,12 @@ describe("EngramStore / lifecycle metadata", () => {
         }),
       );
 
-      const patched = yield* store.update("project", "0001", { title: "Legacy note renamed" });
+      const patched = yield* store.update(
+        "project",
+        "0001",
+        { title: "Legacy note renamed" },
+        NOSCAN,
+      );
       const fileRaw = fs.readFileSync(patched.path, "utf8");
       for (const key of [
         "status",
@@ -1309,7 +1363,7 @@ describe("EngramStore / lifecycle metadata", () => {
       const store = yield* EngramStore;
       const before = filesNow();
       const err = yield* Effect.flip(
-        store.add("project", input({ status: "draft" } as unknown as Partial<EngramInput>)),
+        store.add("project", input({ status: "draft" } as unknown as Partial<EngramInput>), NOSCAN),
       );
       expect((err as { _tag: string })._tag).toBe("FrontmatterParseError");
       expect((err as { message: string }).message).toContain("status");
@@ -1325,6 +1379,7 @@ describe("EngramStore / lifecycle metadata", () => {
         store.add(
           "project",
           input({ reviewAfter: "2026-01-01" } as unknown as Partial<EngramInput>),
+          NOSCAN,
         ),
       );
       expect((err as { _tag: string })._tag).toBe("FrontmatterParseError");
@@ -1336,11 +1391,11 @@ describe("EngramStore / lifecycle metadata", () => {
   it.live("update rejects supersedes pointing at the entry itself without mutation", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const m = yield* store.add("project", input({ title: "Self ref target" }));
+      const m = yield* store.add("project", input({ title: "Self ref target" }), NOSCAN);
       const before = fs.readFileSync(m.path, "utf8");
 
       const err = yield* Effect.flip(
-        store.update("project", m.id, { supersedes: m.id } as EngramPatch),
+        store.update("project", m.id, { supersedes: m.id } as EngramPatch, NOSCAN),
       );
       expect((err as { _tag: string })._tag).toBe("FrontmatterParseError");
       expect((err as { message: string }).message).toContain("supersedes");
@@ -1351,11 +1406,11 @@ describe("EngramStore / lifecycle metadata", () => {
   it.live("update rejects an invalid expires without mutation", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const m = yield* store.add("project", input({ title: "Expiry target" }));
+      const m = yield* store.add("project", input({ title: "Expiry target" }), NOSCAN);
       const before = fs.readFileSync(m.path, "utf8");
 
       const err = yield* Effect.flip(
-        store.update("project", m.id, { expires: "2026-01-01" } as EngramPatch),
+        store.update("project", m.id, { expires: "2026-01-01" } as EngramPatch, NOSCAN),
       );
       expect((err as { _tag: string })._tag).toBe("FrontmatterParseError");
       expect(fs.readFileSync(m.path, "utf8")).toBe(before);
@@ -1487,7 +1542,7 @@ describe("EngramStore / supersedes scope resolution", () => {
       return Effect.gen(function* () {
         const store = yield* EngramStore;
         const e = yield* Effect.flip(
-          store.add("project", input({ title: "Project referrer", supersedes: "0001" })),
+          store.add("project", input({ title: "Project referrer", supersedes: "0001" }), NOSCAN),
         );
         expect((e as { _tag: string })._tag).toBe("FrontmatterParseError");
         expect((e as { message: string }).message).toContain("personal");
@@ -1658,8 +1713,8 @@ describe("EngramStore / personal scan", () => {
   it.live("a generated v0.4 personal store passes unchanged", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      yield* store.add("personal", input({ title: "Personal decision" }));
-      yield* store.add("personal", input({ title: "Another personal note" }));
+      yield* store.add("personal", input({ title: "Personal decision" }), NOSCAN);
+      yield* store.add("personal", input({ title: "Another personal note" }), NOSCAN);
       const scanned = yield* store.scan("personal");
       expect(scanned.scope).toBe("personal");
       expect(scanned.directory).toBe(globalEngramsDir());
@@ -1862,9 +1917,13 @@ describe("EngramStore / supersession side effect (ENG-17 R1)", () => {
   it.live("add with supersedes marks the predecessor superseded in the same operation", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const a = yield* store.add("project", input({ title: "Old decision" }));
+      const a = yield* store.add("project", input({ title: "Old decision" }), NOSCAN);
       yield* Effect.sleep("10 millis");
-      const b = yield* store.add("project", input({ title: "New decision", supersedes: a.id }));
+      const b = yield* store.add(
+        "project",
+        input({ title: "New decision", supersedes: a.id }),
+        NOSCAN,
+      );
 
       expect(b.supersedes).toBe(a.id);
       expect(b.status).toBeUndefined();
@@ -1878,9 +1937,9 @@ describe("EngramStore / supersession side effect (ENG-17 R1)", () => {
   it.live("the predecessor's updated bumps to the operation time (documented convention)", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const a = yield* store.add("project", input({ title: "Old decision" }));
+      const a = yield* store.add("project", input({ title: "Old decision" }), NOSCAN);
       yield* Effect.sleep("10 millis");
-      yield* store.add("project", input({ title: "New decision", supersedes: a.id }));
+      yield* store.add("project", input({ title: "New decision", supersedes: a.id }), NOSCAN);
       const aAfter = yield* store.get("project", a.id);
       expect(aAfter.updated > a.updated).toBe(true);
     }).pipe(Effect.provide(StoreLive)),
@@ -1889,8 +1948,8 @@ describe("EngramStore / supersession side effect (ENG-17 R1)", () => {
   it.live("add without supersedes leaves every other entry untouched", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const a = yield* store.add("project", input({ title: "Old decision" }));
-      yield* store.add("project", input({ title: "Unrelated note" }));
+      const a = yield* store.add("project", input({ title: "Old decision" }), NOSCAN);
+      yield* store.add("project", input({ title: "Unrelated note" }), NOSCAN);
       const aAfter = yield* store.get("project", a.id);
       expect(aAfter.status).toBeUndefined();
       expect(aAfter.updated).toBe(a.updated);
@@ -1900,9 +1959,13 @@ describe("EngramStore / supersession side effect (ENG-17 R1)", () => {
   it.live("clearing supersedes does not reactivate the predecessor", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const a = yield* store.add("project", input({ title: "Old decision" }));
-      const b = yield* store.add("project", input({ title: "New decision", supersedes: a.id }));
-      yield* store.update("project", b.id, { supersedes: null });
+      const a = yield* store.add("project", input({ title: "Old decision" }), NOSCAN);
+      const b = yield* store.add(
+        "project",
+        input({ title: "New decision", supersedes: a.id }),
+        NOSCAN,
+      );
+      yield* store.update("project", b.id, { supersedes: null }, NOSCAN);
       const bAfter = yield* store.get("project", b.id);
       const aAfter = yield* store.get("project", a.id);
       expect(bAfter.supersedes).toBeUndefined();
@@ -1913,8 +1976,8 @@ describe("EngramStore / supersession side effect (ENG-17 R1)", () => {
   it.live("get by id stays status-blind after supersession", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const a = yield* store.add("project", input({ title: "Old decision" }));
-      yield* store.add("project", input({ title: "New decision", supersedes: a.id }));
+      const a = yield* store.add("project", input({ title: "Old decision" }), NOSCAN);
+      yield* store.add("project", input({ title: "New decision", supersedes: a.id }), NOSCAN);
       const got = yield* store.get("project", a.id);
       expect(got.id).toBe(a.id);
       expect(got.body).toBe("libfoo had an engram leak under load");
@@ -1939,9 +2002,9 @@ describe("EngramStore / supersedes update transitions (ENG-17 R1)", () => {
   it.live("unset -> X establishes the link and marks the target", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const a = yield* store.add("project", input({ title: "Target" }));
-      const b = yield* store.add("project", input({ title: "Editor" }));
-      const bAfter = yield* store.update("project", b.id, { supersedes: a.id });
+      const a = yield* store.add("project", input({ title: "Target" }), NOSCAN);
+      const b = yield* store.add("project", input({ title: "Editor" }), NOSCAN);
+      const bAfter = yield* store.update("project", b.id, { supersedes: a.id }, NOSCAN);
       expect(bAfter.supersedes).toBe(a.id);
       const aAfter = yield* store.get("project", a.id);
       expect(aAfter.status).toBe("superseded");
@@ -1951,12 +2014,17 @@ describe("EngramStore / supersedes update transitions (ENG-17 R1)", () => {
   it.live("X -> X is an idempotent no-op (no self-rejection, other patches apply)", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const a = yield* store.add("project", input({ title: "Target" }));
-      const b = yield* store.add("project", input({ title: "Editor", supersedes: a.id }));
-      const bAfter = yield* store.update("project", b.id, {
-        supersedes: a.id,
-        body: "patched body",
-      });
+      const a = yield* store.add("project", input({ title: "Target" }), NOSCAN);
+      const b = yield* store.add("project", input({ title: "Editor", supersedes: a.id }), NOSCAN);
+      const bAfter = yield* store.update(
+        "project",
+        b.id,
+        {
+          supersedes: a.id,
+          body: "patched body",
+        },
+        NOSCAN,
+      );
       expect(bAfter.supersedes).toBe(a.id);
       expect(bAfter.body).toBe("patched body");
       const aAfter = yield* store.get("project", a.id);
@@ -1967,8 +2035,8 @@ describe("EngramStore / supersedes update transitions (ENG-17 R1)", () => {
   it.live("unset -> null is a no-op", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const b = yield* store.add("project", input({ title: "Plain" }));
-      const bAfter = yield* store.update("project", b.id, { supersedes: null });
+      const b = yield* store.add("project", input({ title: "Plain" }), NOSCAN);
+      const bAfter = yield* store.update("project", b.id, { supersedes: null }, NOSCAN);
       expect(bAfter.supersedes).toBeUndefined();
     }).pipe(Effect.provide(StoreLive)),
   );
@@ -1976,11 +2044,11 @@ describe("EngramStore / supersedes update transitions (ENG-17 R1)", () => {
   it.live("X -> Y (repoint) is rejected with byte-identical files", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const a = yield* store.add("project", input({ title: "First target" }));
-      const b = yield* store.add("project", input({ title: "Editor", supersedes: a.id }));
-      const c = yield* store.add("project", input({ title: "Second target" }));
+      const a = yield* store.add("project", input({ title: "First target" }), NOSCAN);
+      const b = yield* store.add("project", input({ title: "Editor", supersedes: a.id }), NOSCAN);
+      const c = yield* store.add("project", input({ title: "Second target" }), NOSCAN);
       const before = snapshot(engramsDir());
-      const e = yield* Effect.flip(store.update("project", b.id, { supersedes: c.id }));
+      const e = yield* Effect.flip(store.update("project", b.id, { supersedes: c.id }, NOSCAN));
       expectFrontmatterParseError(e);
       expect((e as { message: string }).message).toContain("clear");
       expect(snapshot(engramsDir())).toBe(before);
@@ -2020,7 +2088,11 @@ describe("EngramStore / lineage validation (ENG-17 R5)", () => {
       const store = yield* EngramStore;
       const before = snapshot(engramsDir());
       const e = yield* Effect.flip(
-        store.add("project", input({ title: "Orphan", supersedes: "zzzzzzzzzzzzzzzzzzzzzzzzzz" })),
+        store.add(
+          "project",
+          input({ title: "Orphan", supersedes: "zzzzzzzzzzzzzzzzzzzzzzzzzz" }),
+          NOSCAN,
+        ),
       );
       expectFrontmatterParseError(e);
       expect(failMessage(e)).toContain("zzzzzzzzzzzzzzzzzzzzzzzzzz");
@@ -2031,10 +2103,10 @@ describe("EngramStore / lineage validation (ENG-17 R5)", () => {
   it.live("update: missing target rejects with byte-identical files", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const b = yield* store.add("project", input({ title: "Editor" }));
+      const b = yield* store.add("project", input({ title: "Editor" }), NOSCAN);
       const before = snapshot(engramsDir());
       const e = yield* Effect.flip(
-        store.update("project", b.id, { supersedes: "zzzzzzzzzzzzzzzzzzzzzzzzzz" }),
+        store.update("project", b.id, { supersedes: "zzzzzzzzzzzzzzzzzzzzzzzzzz" }, NOSCAN),
       );
       expectFrontmatterParseError(e);
       expect(snapshot(engramsDir())).toBe(before);
@@ -2044,9 +2116,9 @@ describe("EngramStore / lineage validation (ENG-17 R5)", () => {
   it.live("update: self-reference rejects", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const b = yield* store.add("project", input({ title: "Self ref" }));
+      const b = yield* store.add("project", input({ title: "Self ref" }), NOSCAN);
       const before = snapshot(engramsDir());
-      const e = yield* Effect.flip(store.update("project", b.id, { supersedes: b.id }));
+      const e = yield* Effect.flip(store.update("project", b.id, { supersedes: b.id }, NOSCAN));
       expectFrontmatterParseError(e);
       expect(failMessage(e)).toContain("itself");
       expect(snapshot(engramsDir())).toBe(before);
@@ -2056,11 +2128,11 @@ describe("EngramStore / lineage validation (ENG-17 R5)", () => {
   it.live("add: an already-superseded target rejects", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const a = yield* store.add("project", input({ title: "Target" }));
-      yield* store.add("project", input({ title: "First successor", supersedes: a.id }));
+      const a = yield* store.add("project", input({ title: "Target" }), NOSCAN);
+      yield* store.add("project", input({ title: "First successor", supersedes: a.id }), NOSCAN);
       const before = snapshot(engramsDir());
       const e = yield* Effect.flip(
-        store.add("project", input({ title: "Second successor", supersedes: a.id })),
+        store.add("project", input({ title: "Second successor", supersedes: a.id }), NOSCAN),
       );
       expectFrontmatterParseError(e);
       expect(failMessage(e)).toContain("already superseded");
@@ -2071,11 +2143,11 @@ describe("EngramStore / lineage validation (ENG-17 R5)", () => {
   it.live("add: an archived target rejects", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const a = yield* store.add("project", input({ title: "Target" }));
-      yield* store.update("project", a.id, { status: "archived" });
+      const a = yield* store.add("project", input({ title: "Target" }), NOSCAN);
+      yield* store.update("project", a.id, { status: "archived" }, NOSCAN);
       const before = snapshot(engramsDir());
       const e = yield* Effect.flip(
-        store.add("project", input({ title: "Successor", supersedes: a.id })),
+        store.add("project", input({ title: "Successor", supersedes: a.id }), NOSCAN),
       );
       expectFrontmatterParseError(e);
       expect(failMessage(e)).toContain("archived");
@@ -2096,7 +2168,7 @@ describe("EngramStore / lineage validation (ENG-17 R5)", () => {
       );
       const before = snapshot(engramsDir());
       const e = yield* Effect.flip(
-        store.add("project", input({ title: "Successor", supersedes: "0001" })),
+        store.add("project", input({ title: "Successor", supersedes: "0001" }), NOSCAN),
       );
       expectFrontmatterParseError(e);
       expect(failMessage(e)).toContain("multiple files");
@@ -2113,7 +2185,7 @@ describe("EngramStore / lineage validation (ENG-17 R5)", () => {
       );
       const before = snapshot(engramsDir());
       const e = yield* Effect.flip(
-        store.add("project", input({ title: "Successor", supersedes: "0001" })),
+        store.add("project", input({ title: "Successor", supersedes: "0001" }), NOSCAN),
       );
       expectFrontmatterParseError(e);
       expect(failMessage(e)).toContain("not a valid readable entry");
@@ -2130,7 +2202,7 @@ describe("EngramStore / lineage validation (ENG-17 R5)", () => {
       );
       const before = snapshot(engramsDir());
       const e = yield* Effect.flip(
-        store.add("project", input({ title: "Successor", supersedes: "0001" })),
+        store.add("project", input({ title: "Successor", supersedes: "0001" }), NOSCAN),
       );
       expectFrontmatterParseError(e);
       expect(failMessage(e)).toContain("personal");
@@ -2141,10 +2213,10 @@ describe("EngramStore / lineage validation (ENG-17 R5)", () => {
   it.live("add: a prefix id is not an exact target and rejects", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const a = yield* store.add("project", input({ title: "Target" }));
+      const a = yield* store.add("project", input({ title: "Target" }), NOSCAN);
       const before = snapshot(engramsDir());
       const e = yield* Effect.flip(
-        store.add("project", input({ title: "Successor", supersedes: a.id.slice(0, 8) })),
+        store.add("project", input({ title: "Successor", supersedes: a.id.slice(0, 8) }), NOSCAN),
       );
       expectFrontmatterParseError(e);
       expect(snapshot(engramsDir())).toBe(before);
@@ -2154,15 +2226,15 @@ describe("EngramStore / lineage validation (ENG-17 R5)", () => {
   it.live("update: closing a transitive cycle rejects with byte-identical files", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
-      const a = yield* store.add("project", input({ title: "A" }));
-      const b = yield* store.add("project", input({ title: "B" }));
-      const c = yield* store.add("project", input({ title: "C" }));
-      yield* store.update("project", c.id, { supersedes: b.id }); // C -> B (B superseded)
-      yield* store.update("project", a.id, { supersedes: c.id }); // A -> C (C superseded)
+      const a = yield* store.add("project", input({ title: "A" }), NOSCAN);
+      const b = yield* store.add("project", input({ title: "B" }), NOSCAN);
+      const c = yield* store.add("project", input({ title: "C" }), NOSCAN);
+      yield* store.update("project", c.id, { supersedes: b.id }, NOSCAN); // C -> B (B superseded)
+      yield* store.update("project", a.id, { supersedes: c.id }, NOSCAN); // A -> C (C superseded)
       // Editing B (superseded entries stay editable) to supersede A would
       // close the cycle B -> A -> C -> B.
       const before = snapshot(engramsDir());
-      const e = yield* Effect.flip(store.update("project", b.id, { supersedes: a.id }));
+      const e = yield* Effect.flip(store.update("project", b.id, { supersedes: a.id }, NOSCAN));
       expectFrontmatterParseError(e);
       expect(failMessage(e)).toContain("cycle");
       expect(snapshot(engramsDir())).toBe(before);
@@ -2198,7 +2270,7 @@ describe("EngramStore / supersession atomicity (ENG-17 R2)", () => {
     return Effect.gen(function* () {
       const store = yield* EngramStore;
       const e = yield* Effect.flip(
-        store.add("project", input({ title: "Successor", supersedes: "0001" })),
+        store.add("project", input({ title: "Successor", supersedes: "0001" }), NOSCAN),
       );
       expect((e as { _tag: string })._tag).toBe("PlatformError");
       expect(snapshot(engramsDir())).toBe(before);
@@ -2211,7 +2283,7 @@ describe("EngramStore / supersession atomicity (ENG-17 R2)", () => {
     return Effect.gen(function* () {
       const store = yield* EngramStore;
       const e = yield* Effect.flip(
-        store.add("project", input({ title: "Successor", supersedes: "0001" })),
+        store.add("project", input({ title: "Successor", supersedes: "0001" }), NOSCAN),
       );
       expect((e as { _tag: string })._tag).toBe("PlatformError");
       // every involved file byte-identical: the new file is gone, the target unchanged
@@ -2225,7 +2297,7 @@ describe("EngramStore / supersession atomicity (ENG-17 R2)", () => {
     const before = snapshot(engramsDir());
     return Effect.gen(function* () {
       const store = yield* EngramStore;
-      const e = yield* Effect.flip(store.update("project", "0002", { supersedes: "0001" }));
+      const e = yield* Effect.flip(store.update("project", "0002", { supersedes: "0001" }, NOSCAN));
       expect((e as { _tag: string })._tag).toBe("PlatformError");
       expect(snapshot(engramsDir())).toBe(before);
     }).pipe(Effect.provide(failWriteStoreLive((p) => p.includes("0001-"))));
@@ -2238,7 +2310,7 @@ describe("EngramStore / supersession atomicity (ENG-17 R2)", () => {
     return Effect.gen(function* () {
       const store = yield* EngramStore;
       const e = yield* Effect.flip(
-        store.update("project", "0002", { supersedes: "0001", body: "new body" }),
+        store.update("project", "0002", { supersedes: "0001", body: "new body" }, NOSCAN),
       );
       expect((e as { _tag: string })._tag).toBe("PlatformError");
       // the compensation rewrites 0001's original bytes, so the whole
@@ -2260,7 +2332,7 @@ describe("EngramStore / supersession atomicity (ENG-17 R2)", () => {
       return Effect.gen(function* () {
         const store = yield* EngramStore;
         const e = yield* Effect.flip(
-          store.update("project", "0002", { supersedes: "0001", title: "Renamed editor" }),
+          store.update("project", "0002", { supersedes: "0001", title: "Renamed editor" }, NOSCAN),
         );
         expect((e as { _tag: string })._tag).toBe("PlatformError");
         // no half-applied state: predecessor unmarked, renamed successor
@@ -2279,7 +2351,7 @@ describe("EngramStore / supersession atomicity (ENG-17 R2)", () => {
       return Effect.gen(function* () {
         const store = yield* EngramStore;
         const e = yield* Effect.flip(
-          store.update("project", "0002", { supersedes: "0001", title: "Renamed editor" }),
+          store.update("project", "0002", { supersedes: "0001", title: "Renamed editor" }, NOSCAN),
         );
         expect((e as { _tag: string })._tag).toBe("PlatformError");
         // the write created the destination before reporting failure; the
@@ -2298,7 +2370,7 @@ describe("EngramStore / supersession atomicity (ENG-17 R2)", () => {
     return Effect.gen(function* () {
       const store = yield* EngramStore;
       const e = yield* Effect.flip(
-        store.add("project", input({ title: "Successor", supersedes: "0001" })),
+        store.add("project", input({ title: "Successor", supersedes: "0001" }), NOSCAN),
       );
       expect((e as { _tag: string })._tag).toBe("FrontmatterParseError");
       const message = (e as { message: string }).message;
@@ -2333,7 +2405,7 @@ describe("EngramStore / supersession atomicity (ENG-17 R2)", () => {
     return Effect.gen(function* () {
       const store = yield* EngramStore;
       const e = yield* Effect.flip(
-        store.update("project", "0002", { supersedes: "0001", body: "new body" }),
+        store.update("project", "0002", { supersedes: "0001", body: "new body" }, NOSCAN),
       );
       expect((e as { _tag: string })._tag).toBe("FrontmatterParseError");
       const message = (e as { message: string }).message;
@@ -2355,4 +2427,186 @@ describe("EngramStore / supersession atomicity (ENG-17 R2)", () => {
       ),
     );
   });
+});
+
+describe("EngramStore / secret-scan gate (ENG-15)", () => {
+  let orig = "";
+  let tmp = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    tmp = mkProject();
+    process.chdir(tmp);
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const SECRET = "S3cr3t-V4lue!";
+  const secretInput = (over: Partial<EngramInput> = {}): EngramInput =>
+    input({ body: `rotated the db password: "${SECRET}" after the incident`, ...over });
+  const BLOCK: ScanOptions = { policy: "block", allowSecrets: false };
+  const OVERRIDE: ScanOptions = { policy: "block", allowSecrets: true };
+  const WARN: ScanOptions = { policy: "warn", allowSecrets: false };
+  const OFF: ScanOptions = { policy: "off", allowSecrets: false };
+
+  /** Like mkProject but without the engrams directory, so a blocked write
+   * can prove it creates nothing at all (N1). */
+  const mkBare = (): string => {
+    const t = fs.mkdtempSync(path.join(os.tmpdir(), "amem-bare-"));
+    fs.mkdirSync(path.join(t, ".engram"), { recursive: true });
+    fs.writeFileSync(
+      projectConfigPath(t),
+      JSON.stringify({ version: 1, tracked: true, defaultType: "note" }),
+    );
+    return t;
+  };
+
+  /** Every file under `.engram/` as path -> exact bytes. Blocked writes
+   * must leave this map unchanged (file existence AND bytes, R3: not the
+   * directory tree). */
+  const snapshot = (): string => {
+    const root = path.join(tmp, ".engram");
+    if (!fs.existsSync(root)) return "[]";
+    const rel = fs.readdirSync(root, { recursive: true }).map(String).sort();
+    const entries: string[] = [];
+    for (const f of rel) {
+      const full = path.join(root, f);
+      if (fs.statSync(full).isFile()) {
+        entries.push(`${f}:${fs.readFileSync(full).toString("base64")}`);
+      }
+    }
+    return JSON.stringify(entries);
+  };
+
+  it.live("blocked add fails before any filesystem side effect", () =>
+    Effect.gen(function* () {
+      // a store whose engrams directory has never been created
+      tmp = mkBare();
+      process.chdir(tmp);
+      const store = yield* EngramStore;
+      const before = snapshot();
+      const failure = yield* Effect.flip(store.add("project", secretInput(), BLOCK));
+      expect((failure as { _tag: string })._tag).toBe("SecretScanBlockedError");
+      // byte-identical storage AND, because the gate precedes directory
+      // creation, no `.engram/engrams` directory was created either (N1)
+      expect(snapshot()).toBe(before);
+      expect(fs.existsSync(projectEngramsDir(tmp))).toBe(false);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("blocked personal add fails under block policy", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const failure = yield* Effect.flip(store.add("personal", secretInput(), BLOCK));
+      expect((failure as { _tag: string })._tag).toBe("SecretScanBlockedError");
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("warn writes and surfaces redacted findings", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const written = yield* store.add("project", secretInput(), WARN);
+      expect(written.scan.policy).toBe("warn");
+      expect(written.scan.blocked).toBe(false);
+      expect(written.scan.overrideUsed).toBe(false);
+      expect(written.scan.findings).toHaveLength(1);
+      expect(written.scan.findings[0].rule).toBe("SEC-CRED-ASSIGNMENT");
+      expect(written.scan.findings[0].line).toBeGreaterThan(0);
+      // zero-leak: the stored scan result never contains the matched text
+      expect(JSON.stringify(written.scan)).not.toContain(SECRET);
+      const [m] = yield* store.list("project");
+      expect(m.id).toBe(written.id);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("block with allowSecrets writes and reports the override", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const written = yield* store.add("project", secretInput(), OVERRIDE);
+      expect(written.scan.blocked).toBe(false);
+      expect(written.scan.overrideUsed).toBe(true);
+      expect(written.scan.findings).toHaveLength(1);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("off surfaces no findings", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const written = yield* store.add("project", secretInput(), OFF);
+      expect(written.scan.policy).toBe("off");
+      expect(written.scan.findings).toHaveLength(0);
+      expect(written.scan.overrideUsed).toBe(false);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("blocked update leaves storage byte-identical", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const added = yield* store.add("project", input(), OFF);
+      const before = snapshot();
+      const failure = yield* Effect.flip(
+        store.update("project", added.id, { body: secretInput().body }, BLOCK),
+      );
+      expect((failure as { _tag: string })._tag).toBe("SecretScanBlockedError");
+      expect(snapshot()).toBe(before);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("title-only edits scan the complete resulting entry (legacy content)", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      // legacy entry stored with scanning off: its body holds a secret
+      const legacy = yield* store.add("project", secretInput(), OFF);
+      const failure = yield* Effect.flip(
+        store.update("project", legacy.id, { title: "Renamed entry" }, BLOCK),
+      );
+      expect((failure as { _tag: string })._tag).toBe("SecretScanBlockedError");
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("edits that remove the secret succeed", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const legacy = yield* store.add("project", secretInput(), OFF);
+      const fixed = yield* store.update(
+        "project",
+        legacy.id,
+        { body: "rotated the credential in the secret manager" },
+        BLOCK,
+      );
+      expect(fixed.scan.blocked).toBe(false);
+      expect(fixed.scan.findings).toHaveLength(0);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("establishing supersedes scans the new entry but still marks the predecessor", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const pred = yield* store.add("project", input({ title: "Old way" }), BLOCK);
+      const written = yield* store.add(
+        "project",
+        secretInput({ title: "New way", supersedes: pred.id }),
+        WARN,
+      );
+      expect(written.scan.findings).toHaveLength(1);
+      const marked = yield* store.get("project", pred.id);
+      expect(marked.status).toBe("superseded");
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("a blocked supersedes add marks nothing", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const pred = yield* store.add("project", input({ title: "Old way" }), BLOCK);
+      const before = snapshot();
+      yield* Effect.flip(
+        store.add("project", secretInput({ title: "New way", supersedes: pred.id }), BLOCK),
+      );
+      expect(snapshot()).toBe(before);
+      const unmarked = yield* store.get("project", pred.id);
+      // active is the implicit default: no status key was ever written
+      expect(unmarked.status).toBeUndefined();
+    }).pipe(Effect.provide(StoreLive)),
+  );
 });

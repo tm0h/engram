@@ -47,6 +47,20 @@ export class IntegrityCheckFailedError extends Data.TaggedError("IntegrityCheckF
   readonly message: string;
 }> {}
 
+/** ENG-15: a write was rejected because the secret scanner found findings
+ * under a blocking policy. Findings are redacted by construction: they name
+ * rule, line, and column, never the matched text. */
+export class SecretScanBlockedError extends Data.TaggedError("SecretScanBlockedError")<{
+  readonly file: string;
+  readonly policy: string;
+  readonly findings: ReadonlyArray<{
+    readonly rule: string;
+    readonly category: string;
+    readonly line: number;
+    readonly column: number;
+  }>;
+}> {}
+
 /** Union of all expected domain errors. */
 export type DomainError =
   | ProjectNotInitializedError
@@ -57,7 +71,8 @@ export type DomainError =
   | ValidationError
   | FrontmatterParseError
   | ConfigError
-  | IntegrityCheckFailedError;
+  | IntegrityCheckFailedError
+  | SecretScanBlockedError;
 
 /** Render a domain error to a human-friendly string. */
 export function formatDomainError(err: DomainError): string {
@@ -97,5 +112,13 @@ export function formatDomainError(err: DomainError): string {
       return err.message;
     case "IntegrityCheckFailedError":
       return err.message;
+    case "SecretScanBlockedError":
+      return (
+        `Write blocked by the secret scanner (policy: ${err.policy}) for "${err.file}".\n` +
+        err.findings
+          .map((f) => `  line ${f.line}, column ${f.column}: ${f.rule} (${f.category})`)
+          .join("\n") +
+        `\nRemove the secret and keep it in a dedicated secret manager, or retry the write with the per-write override (--allow-secrets / allowSecrets).`
+      );
   }
 }

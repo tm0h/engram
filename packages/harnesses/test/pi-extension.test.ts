@@ -139,6 +139,7 @@ describe("engram extension / registration", () => {
       "expires",
       "sourceType",
       "sourceRef",
+      "allowSecrets",
     ]);
     expect(Object.keys(byName.get("engram_edit")!.parameters.properties!)).toEqual([
       "id",
@@ -155,7 +156,23 @@ describe("engram extension / registration", () => {
       "expires",
       "sourceType",
       "sourceRef",
+      "allowSecrets",
     ]);
+    // ENG-15: allowSecrets validates as a strict boolean
+    expect(
+      Value.Check(byName.get("engram_add")!.parameters, {
+        title: "t",
+        body: "b",
+        allowSecrets: true,
+      }),
+    ).toBe(true);
+    expect(
+      Value.Check(byName.get("engram_add")!.parameters, {
+        title: "t",
+        body: "b",
+        allowSecrets: "yes",
+      }),
+    ).toBe(false);
   });
 });
 

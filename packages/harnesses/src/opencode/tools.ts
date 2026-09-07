@@ -192,6 +192,12 @@ export const engramAddTool = {
       .describe(
         "Source reference: path, URL, command, or conversation note. Optional; validated when saved.",
       ),
+    allowSecrets: z
+      .boolean()
+      .optional()
+      .describe(
+        "Write even if the secret scanner flags this content (project writes block by default). Optional.",
+      ),
   },
   async execute(
     args: {
@@ -207,6 +213,7 @@ export const engramAddTool = {
       expires?: string;
       sourceType?: SourceType;
       sourceRef?: string;
+      allowSecrets?: boolean;
     },
     context: OpenCodeToolContext,
   ) {
@@ -277,6 +284,12 @@ export const engramEditTool = {
       .describe(
         "Source reference: path, URL, command, or conversation note. Null clears; omit to preserve. Validated when saved.",
       ),
+    allowSecrets: z
+      .boolean()
+      .optional()
+      .describe(
+        "Write even if the secret scanner flags the resulting entry (project writes block by default). Optional.",
+      ),
   },
   async execute(
     args: {
@@ -294,6 +307,7 @@ export const engramEditTool = {
       expires?: string | null;
       sourceType?: SourceType | null;
       sourceRef?: string | null;
+      allowSecrets?: boolean;
     },
     context: OpenCodeToolContext,
   ) {
