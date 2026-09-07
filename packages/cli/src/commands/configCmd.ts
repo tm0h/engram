@@ -12,17 +12,25 @@ import {
   AUTO_CONTEXT_SCOPES,
 } from "@engram/core";
 import { DEFAULT_AUTO_CONTEXT_LIMIT, DEFAULT_AUTO_CONTEXT_SCOPE } from "@engram/core";
-import type { AutoContextScope, EngramType } from "@engram/core";
+import { DEFAULT_PERSONAL_SECRET_SCAN, DEFAULT_SECRET_SCAN, SECRET_POLICIES } from "@engram/core";
+import type { AutoContextScope, EngramType, SecretPolicy } from "@engram/core";
 import { ValidationError } from "@engram/core";
 import { findGitRoot } from "@engram/core";
 import { ensureGitignoreLine, removeGitignoreLine } from "@engram/core";
 import { globalConfigPath, projectConfigPath } from "@engram/core";
 import { out } from "../io.js";
 
-const isProjectKey = (k: string): boolean => k === "tracked" || k === "defaultType";
+const isProjectKey = (k: string): boolean =>
+  k === "tracked" || k === "defaultType" || k === "secretScan";
 
 const isAutoContextKey = (k: string): boolean =>
   k === "autoContext" || k === "autoContextScope" || k === "autoContextLimit";
+
+/** ENG-15: the global personal-policy key. */
+const isPersonalSecretScanKey = (k: string): boolean => k === "personalSecretScan";
+
+const parseSecretPolicy = (value: string): SecretPolicy | undefined =>
+  SECRET_POLICIES.find((p) => p === value.toLowerCase());
 
 export const configCommand = (action?: string, key?: string, value?: string) =>
   Effect.gen(function* () {
@@ -43,6 +51,9 @@ export const configCommand = (action?: string, key?: string, value?: string) =>
         `  autoContextScope: ${chalk.cyan(g.autoContextScope ?? DEFAULT_AUTO_CONTEXT_SCOPE)}`,
       );
       yield* out(`  autoContextLimit: ${g.autoContextLimit ?? DEFAULT_AUTO_CONTEXT_LIMIT}`);
+      yield* out(
+        `  personalSecretScan: ${chalk.cyan(g.personalSecretScan ?? DEFAULT_PERSONAL_SECRET_SCAN)}`,
+      );
       if (Option.isSome(projectRootOpt)) {
         const p = yield* cfg.loadProject(projectRootOpt.value);
         yield* out("");
@@ -52,6 +63,7 @@ export const configCommand = (action?: string, key?: string, value?: string) =>
         yield* out(`  tracked:     ${p.tracked ? chalk.green("on") : chalk.yellow("off")}`);
         yield* out(`  defaultType: ${chalk.cyan(p.defaultType ?? "note")}`);
         yield* out(`  author:      ${chalk.cyan(p.author ?? "(inherits global)")}`);
+        yield* out(`  secretScan:  ${chalk.cyan(p.secretScan ?? DEFAULT_SECRET_SCAN)}`);
       }
       return;
     }
@@ -72,6 +84,10 @@ export const configCommand = (action?: string, key?: string, value?: string) =>
           );
         }
         const p = yield* cfg.loadProject(projectRootOpt.value);
+        if (key === "secretScan") {
+          yield* out(p.secretScan ?? DEFAULT_SECRET_SCAN);
+          return;
+        }
         yield* out(key === "tracked" ? (p.tracked ? "on" : "off") : (p.defaultType ?? "note"));
         return;
       }
@@ -83,6 +99,8 @@ export const configCommand = (action?: string, key?: string, value?: string) =>
         yield* out(g.autoContextScope ?? DEFAULT_AUTO_CONTEXT_SCOPE);
       else if (key === "autoContextLimit")
         yield* out(String(g.autoContextLimit ?? DEFAULT_AUTO_CONTEXT_LIMIT));
+      else if (key === "personalSecretScan")
+        yield* out(g.personalSecretScan ?? DEFAULT_PERSONAL_SECRET_SCAN);
       else return yield* Effect.fail(new ValidationError({ message: `Unknown key "${key}".` }));
       return;
     }
@@ -105,6 +123,20 @@ export const configCommand = (action?: string, key?: string, value?: string) =>
         }
         const root = projectRootOpt.value;
         const p = yield* cfg.loadProject(root);
+
+        if (key === "secretScan") {
+          const policy = parseSecretPolicy(value);
+          if (policy === undefined) {
+            return yield* Effect.fail(
+              new ValidationError({
+                message: `secretScan must be one of: ${SECRET_POLICIES.join(", ")}`,
+              }),
+            );
+          }
+          yield* cfg.saveProject(root, { ...p, secretScan: policy });
+          yield* out(chalk.green("✓ set ") + `project.${key} = ${policy}`);
+          return;
+        }
 
         if (key === "tracked") {
           const on = /^(1|true|on|yes)$/i.test(value);
@@ -140,14 +172,29 @@ export const configCommand = (action?: string, key?: string, value?: string) =>
         return;
       }
 
-      // global keys (author, editor, autoContext*)
+      // global keys (author, editor, autoContext*, personalSecretScan)
       const g = yield* cfg.loadGlobal();
-      if (key !== "author" && key !== "editor" && !isAutoContextKey(key)) {
+      if (
+        key !== "author" &&
+        key !== "editor" &&
+        !isAutoContextKey(key) &&
+        !isPersonalSecretScanKey(key)
+      ) {
         return yield* Effect.fail(new ValidationError({ message: `Unknown key "${key}".` }));
       }
 
       let updated: typeof g;
-      if (key === "author") {
+      if (key === "personalSecretScan") {
+        const policy = parseSecretPolicy(value);
+        if (policy === undefined) {
+          return yield* Effect.fail(
+            new ValidationError({
+              message: `personalSecretScan must be one of: ${SECRET_POLICIES.join(", ")}`,
+            }),
+          );
+        }
+        updated = { ...g, personalSecretScan: policy };
+      } else if (key === "author") {
         updated = { ...g, author: value };
       } else if (key === "editor") {
         updated = { ...g, editor: value === "" ? undefined : value };

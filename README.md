@@ -374,6 +374,43 @@ engram edit 01jb3 --status superseded --supersedes 0001 --review-after 2026-08-0
 engram edit 01jb3 --clear-review-after --clear-expires --clear-source-type
 ```
 
+### Secret and prompt-injection scanning
+
+Every write through `engram add` and `engram edit` (and the Pi/OpenCode
+`engram_add`/`engram_edit` tools) scans the complete serialized entry for
+credentials, high-entropy tokens, private-key markers, invisible Unicode,
+prompt-injection instructions, and credential-exfiltration instructions.
+Findings are deterministic and redacted: diagnostics name a rule id, line,
+and column, and never contain the matched text.
+
+Policy is per scope, defaulting to `block` for project writes and `warn` for
+personal writes:
+
+```sh
+engram config set secretScan block|warn|off            # project writes
+engram config set personalSecretScan block|warn|off    # personal writes
+```
+
+`block` rejects the write before any file changes, so a blocked write leaves
+storage byte-identical. `warn` writes and prints the findings. `off` disables
+scanning. `--allow-secrets` (CLI) / `allowSecrets` (tools) overrides a block
+for that one write; the bypass is reported in the output. Bare hashes, UUIDs,
+and ULID-style ids are never flagged. Internal lifecycle marking (superseding
+a predecessor) bypasses scanning because it introduces no user content;
+`engram dedupe` rewrites existing content unchanged and is likewise
+unguarded.
+
+`engram check` also scans every readable raw Markdown file in the store,
+including files with malformed frontmatter, reporting `secret_detected`
+diagnostics: errors under `block`, warnings under `warn`, nothing under
+`off`. If a scope's config cannot be loaded, that scope's scan is skipped and
+reported uncheckable (fail closed).
+
+Deferred integration contract: the import pipeline (ENG-35) and candidate
+approval (ENG-30) do not exist yet. When they are built, they must run this
+same scanner at their write boundaries, with policy resolved the same way and
+redacted findings only, instead of bypassing it.
+
 ---
 
 ## Development

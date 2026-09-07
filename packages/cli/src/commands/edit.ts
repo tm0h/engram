@@ -2,11 +2,13 @@
 import { Effect } from "effect";
 import chalk from "chalk";
 import { EngramStore } from "@engram/core";
+import { ConfigRepo } from "@engram/core";
 import { resolveScope } from "@engram/core";
 import { ENGRAM_TYPES } from "@engram/core";
 import type { Engram, EngramPatch, EngramType } from "@engram/core";
 import { InvalidTypeError, ValidationError } from "@engram/core";
 import { isInteractive, openEditor } from "../interactive.js";
+import { resolveScanOptions, reportScanOutcome } from "../scanPolicy.js";
 import { parseTags } from "@engram/core";
 import { readStdin, out } from "../io.js";
 import { checkLifecycleConflicts, checkLifecycleValues } from "../lifecycle.js";
@@ -25,6 +27,8 @@ export interface EditOptions extends LifecycleValueFlags, LifecycleClearFlags {
   readonly pinned?: boolean;
   readonly author?: string;
   readonly content?: string;
+  /** ENG-15: explicit per-write override for a blocking scan policy. */
+  readonly allowSecrets?: boolean;
 }
 
 const checkType = (t?: string): Effect.Effect<EngramType | undefined, InvalidTypeError> => {
@@ -93,6 +97,7 @@ const lifecyclePatchFromEditor = (
 export const editCommand = (id: string, opts: EditOptions) =>
   Effect.gen(function* () {
     const store = yield* EngramStore;
+    const cfg = yield* ConfigRepo;
     const projectRoot = yield* store.projectRoot();
     const scope = resolveScope(opts.scope, projectRoot);
 
@@ -170,7 +175,9 @@ export const editCommand = (id: string, opts: EditOptions) =>
       return yield* Effect.fail(new ValidationError({ message: "Title cannot be empty." }));
     }
 
-    const updated = yield* store.update(scope, mem.id, patch);
+    const scan = yield* resolveScanOptions(cfg, scope, projectRoot, Boolean(opts.allowSecrets));
+    const updated = yield* store.update(scope, mem.id, patch, scan);
     yield* out(chalk.green("✓ Updated ") + chalk.bold(`[${updated.id}]`) + ` ${updated.title}`);
     yield* out(chalk.gray(`  ${updated.path}`));
+    yield* reportScanOutcome(updated.scan);
   });

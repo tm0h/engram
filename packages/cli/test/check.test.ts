@@ -26,6 +26,9 @@ import {
 } from "@engram/core";
 import { checkCommand } from "../src/commands/check.js";
 
+/** ENG-15: these tests exercise legacy CRUD behavior with scanning disabled; the scan gate has its own coverage. */
+const NOSCAN = { policy: "off" as const, allowSecrets: false };
+
 /* ------------------------------ helpers ------------------------------ */
 
 const fm = (over: Record<string, unknown> = {}, omit: ReadonlyArray<string> = []): string => {
@@ -217,13 +220,13 @@ describe("engram check", () => {
   const errors = (): string => errLines.join("\n");
 
   const run = (
-    eff: Effect.Effect<unknown, unknown, EngramStore | ConfigRepo>,
+    eff: Effect.Effect<unknown, unknown, EngramStore | ConfigRepo | FileSystem>,
     layer?: Layer.Layer<EngramStore | ConfigRepo, never, never>,
   ): Promise<void> =>
     Effect.runPromise(Effect.provide(eff as never, layer ?? MainLive)) as Promise<void>;
 
   const runFail = (
-    eff: Effect.Effect<unknown, unknown, EngramStore | ConfigRepo>,
+    eff: Effect.Effect<unknown, unknown, EngramStore | ConfigRepo | FileSystem>,
     layer?: Layer.Layer<EngramStore | ConfigRepo, never, never>,
   ): Promise<FailInfo> =>
     Effect.runPromise(
@@ -235,14 +238,18 @@ describe("engram check", () => {
       Effect.provide(
         Effect.gen(function* () {
           const store = yield* EngramStore;
-          return yield* store.add("personal", {
-            title,
-            type: "note",
-            tags: [],
-            body: "b",
-            pinned: false,
-            author: undefined,
-          });
+          return yield* store.add(
+            "personal",
+            {
+              title,
+              type: "note",
+              tags: [],
+              body: "b",
+              pinned: false,
+              author: undefined,
+            },
+            NOSCAN,
+          );
         }),
         MainLive,
       ),
@@ -253,14 +260,18 @@ describe("engram check", () => {
       Effect.provide(
         Effect.gen(function* () {
           const store = yield* EngramStore;
-          return yield* store.add("project", {
-            title,
-            type: "note",
-            tags: [],
-            body: "b",
-            pinned: false,
-            author: undefined,
-          });
+          return yield* store.add(
+            "project",
+            {
+              title,
+              type: "note",
+              tags: [],
+              body: "b",
+              pinned: false,
+              author: undefined,
+            },
+            NOSCAN,
+          );
         }),
         MainLive,
       ),
@@ -690,5 +701,160 @@ describe("engram check", () => {
     expect(doc.scopes).toEqual(["personal"]);
     expect(doc.uncheckableScopes.map((u) => u.scope)).toEqual(["project"]);
     expect(doc.validEntries).toBe(1);
+  });
+});
+
+describe("engram check / secret-scan diagnostics (ENG-15)", () => {
+  let origCwd = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  let outLines: string[] = [];
+  let errLines: string[] = [];
+  let spies: Array<ReturnType<typeof vi.spyOn>> = [];
+
+  const SECRET = "S3cr3t-V4lue!";
+
+  beforeEach(() => {
+    origCwd = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = mkHome();
+    process.chdir(tmp);
+    process.env.HOME = home;
+    outLines = [];
+    errLines = [];
+    spies = [
+      vi.spyOn(console, "log").mockImplementation(((...args: unknown[]) => {
+        outLines.push(args.map(String).join(" "));
+        return undefined;
+      }) as typeof console.log),
+      vi.spyOn(console, "error").mockImplementation(((...args: unknown[]) => {
+        errLines.push(args.map(String).join(" "));
+        return undefined;
+      }) as typeof console.error),
+    ];
+  });
+  afterEach(() => {
+    for (const s of spies) s.mockRestore();
+    process.chdir(origCwd);
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const output = (): string => outLines.join("\n");
+
+  const run = (
+    eff: Effect.Effect<unknown, unknown, EngramStore | ConfigRepo | FileSystem>,
+  ): Promise<void> => Effect.runPromise(Effect.provide(eff as never, MainLive)) as Promise<void>;
+
+  const runFail = (
+    eff: Effect.Effect<unknown, unknown, EngramStore | ConfigRepo | FileSystem>,
+  ): Promise<FailInfo> =>
+    Effect.runPromise(Effect.provide(Effect.flip(eff) as never, MainLive)) as Promise<FailInfo>;
+
+  const json = (): {
+    ok: boolean;
+    diagnostics: Array<{
+      code: string;
+      severity: string;
+      file: string;
+      message: string;
+    }>;
+  } => JSON.parse(output()) as never;
+
+  it("block policy: a readable raw file with malformed frontmatter fails the check with redacted diagnostics", async () => {
+    seed(
+      tmp,
+      "9999-broken.md",
+      `---\nid: 9999\ntitle: Broken\ntype: not-a-type\n---\n\nrotated the db password: "${SECRET}" last night\n`,
+    );
+    const failure = await runFail(checkCommand({ scope: "project" }));
+    expect(failure._tag).toBe("IntegrityCheckFailedError");
+    expect(output()).toContain("secret_detected");
+    expect(output()).toContain("SEC-CRED-ASSIGNMENT");
+    expect(output()).not.toContain(SECRET);
+  });
+
+  it("json mode stays parseable and redacted", async () => {
+    seed(tmp, "9999-broken.md", `body only, no frontmatter\npassword: "${SECRET}"\n`);
+    await runFail(checkCommand({ scope: "project", json: true }));
+    const doc = json();
+    expect(doc.ok).toBe(false);
+    const found = doc.diagnostics.filter((d) => d.code === "secret_detected");
+    expect(found.length).toBeGreaterThanOrEqual(1);
+    expect(found.every((d) => d.severity === "error")).toBe(true);
+    expect(output()).not.toContain(SECRET);
+  });
+
+  it("warn policy (personal default) reports a warning and still passes", async () => {
+    seed(
+      home,
+      "8888-leaky.md",
+      stringifyFrontmatter(`password: "${SECRET}"\n`, {
+        id: "8888",
+        title: "Leaky",
+        type: "note",
+        tags: [],
+        scope: "personal",
+        created: "2025-08-15T10:00:00.000Z",
+        updated: "2025-08-15T11:00:00.000Z",
+      }),
+    );
+    await run(checkCommand({ scope: "personal" }));
+    expect(output()).toContain("secret_detected");
+    expect(output()).toContain("warning");
+    expect(output()).not.toContain(SECRET);
+  });
+
+  it("off policy emits no secret diagnostics", async () => {
+    fs.writeFileSync(
+      projectConfigPath(tmp),
+      JSON.stringify({ version: 1, tracked: true, defaultType: "note", secretScan: "off" }),
+    );
+    seed(
+      tmp,
+      "9999-leaky.md",
+      stringifyFrontmatter(`password: "${SECRET}"\n`, {
+        id: "9999",
+        title: "Leaky",
+        type: "note",
+        tags: [],
+        scope: "project",
+        created: "2025-08-15T10:00:00.000Z",
+        updated: "2025-08-15T11:00:00.000Z",
+      }),
+    );
+    await run(checkCommand({ scope: "project" }));
+    expect(output()).not.toContain("secret_detected");
+  });
+
+  it("a schema-invalid secretScan key lands in the diagnostics path and the raw scan is skipped (N3)", async () => {
+    fs.writeFileSync(
+      projectConfigPath(tmp),
+      JSON.stringify({ version: 1, tracked: true, defaultType: "note", secretScan: "banana" }),
+    );
+    seed(tmp, "9999-leaky.md", `password: "${SECRET}"\n`);
+    await runFail(checkCommand({ scope: "project" }));
+    expect(output()).toContain("config_schema_invalid");
+    expect(output()).not.toContain("secret_detected");
+    // the command did not crash: the report rendered
+    expect(output()).toContain("project:");
+  });
+
+  it("findings render deterministically across runs", async () => {
+    seed(tmp, "9991-a.md", `password: "${SECRET}"\n`);
+    seed(tmp, "9992-b.md", `token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef12\n`);
+    await runFail(checkCommand({ scope: "project", json: true }));
+    const first = output();
+    outLines = [];
+    await runFail(checkCommand({ scope: "project", json: true }));
+    expect(output()).toBe(first);
+    const doc = json();
+    const codes = doc.diagnostics.filter((d) => d.code === "secret_detected");
+    const files = codes.map((d) => d.file);
+    expect([...files].sort()).toEqual(files);
   });
 });

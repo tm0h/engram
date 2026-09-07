@@ -48,6 +48,7 @@ const DOMAIN_TAGS = new Set([
   "FrontmatterParseError",
   "ConfigError",
   "IntegrityCheckFailedError",
+  "SecretScanBlockedError",
 ]);
 
 function isDomainError(e: unknown): e is DomainError {
@@ -112,6 +113,10 @@ program
   .option("--expires <ts>", "ISO 8601 timestamp with zone, e.g. 2027-01-01T00:00:00.000Z.")
   .option("--source-type <type>", "conversation | file | url | command | other.")
   .option("--source-ref <ref>", "Source reference: path, URL, command, or conversation.")
+  .option(
+    "--allow-secrets",
+    "Write even if the secret scanner flags this content (project policy may block by default).",
+  )
   .action((content: string | undefined, opts: Record<string, string | boolean | undefined>) =>
     run(
       Add.addCommand({
@@ -129,6 +134,7 @@ program
         expires: opts.expires as string | undefined,
         sourceType: opts.sourceType as string | undefined,
         sourceRef: opts.sourceRef as string | undefined,
+        allowSecrets: Boolean(opts.allowSecrets),
       }),
     ),
   );
@@ -212,6 +218,10 @@ program
   .option("--expires <ts>", "ISO 8601 timestamp with zone, e.g. 2027-01-01T00:00:00.000Z.")
   .option("--source-type <type>", "conversation | file | url | command | other.")
   .option("--source-ref <ref>", "Source reference: path, URL, command, or conversation.")
+  .option(
+    "--allow-secrets",
+    "Write even if the secret scanner flags the resulting entry (project policy may block by default).",
+  )
   .option("--clear-status", "Remove the lifecycle status.")
   .option("--clear-supersedes", "Remove the supersedes reference.")
   .option("--clear-review-after", "Remove the review timestamp.")
@@ -236,6 +246,7 @@ program
           expires: opts.expires as string | undefined,
           sourceType: opts.sourceType as string | undefined,
           sourceRef: opts.sourceRef as string | undefined,
+          allowSecrets: Boolean(opts.allowSecrets),
           clearStatus: opts.clearStatus as boolean | undefined,
           clearSupersedes: opts.clearSupersedes as boolean | undefined,
           clearReviewAfter: opts.clearReviewAfter as boolean | undefined,

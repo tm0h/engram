@@ -50,7 +50,11 @@ export type StoreDiagnosticCode =
   | "config_unreadable"
   | "config_json_invalid"
   | "config_schema_invalid"
-  | "config_version_unsupported";
+  | "config_version_unsupported"
+  /* ENG-15 secret/injection scan (packages/cli/src/commands/check.ts).
+   * Severity follows the scope's resolved policy: block renders as error,
+   * warn as warning, off produces no diagnostic at all. */
+  | "secret_detected";
 
 /** Diagnostic weight. "error" marks a defect that makes a check fail;
  * "warning" is advisory (ENG-13 lifecycle conditions): reported in every
@@ -93,10 +97,15 @@ export interface StoreScan {
   readonly omittedFiles: number;
 }
 
-/** Deterministic diagnostic order (scope, then file path, then code) so
- * human output, JSON output, and tests all agree. */
+/** Deterministic diagnostic order (scope, then file path, then code, then
+ * message) so human output, JSON output, and tests all agree. The message
+ * tiebreak keeps a file's multiple findings (e.g. several ENG-15
+ * secret_detected rows) in one stable order. */
 export const compareDiagnostics = (a: StoreDiagnostic, b: StoreDiagnostic): number =>
-  a.scope.localeCompare(b.scope) || a.file.localeCompare(b.file) || a.code.localeCompare(b.code);
+  a.scope.localeCompare(b.scope) ||
+  a.file.localeCompare(b.file) ||
+  a.code.localeCompare(b.code) ||
+  a.message.localeCompare(b.message);
 
 /** The single bounded warning emitted when a read had to skip candidate
  * files: fail-open but loud. Its length is constant apart from the count;

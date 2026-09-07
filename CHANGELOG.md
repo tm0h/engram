@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Secret and prompt-injection scanning on every write (ENG-15).** `engram
+add`, `engram edit`, and the Pi/OpenCode `engram_add`/`engram_edit` tools
+  scan the complete serialized entry for credentials, high-entropy tokens,
+  private-key markers, invisible Unicode, prompt-injection instructions, and
+  credential-exfiltration instructions. Findings are deterministic and
+  redacted (rule id, line, column; never the matched text). Project writes
+  block by default, personal writes warn; new config keys `secretScan`
+  (project, default `block`) and `personalSecretScan` (global, default
+  `warn`) tune this, and `--allow-secrets` / `allowSecrets` override a block
+  for a single write (the bypass is reported). Blocked writes leave storage
+  byte-identical; bare hashes, UUIDs, and ULID-style ids are never flagged.
+  `engram check` also scans every readable raw Markdown file, including
+  malformed frontmatter, emitting `secret_detected` diagnostics (block:
+  error, warn: warning, off: none) and failing closed when a scope's config
+  cannot be loaded.
 - Search JSON output and ranking explanations, with scope-qualified results,
   pagination metadata, and equivalent structured metadata in Pi and OpenCode.
 

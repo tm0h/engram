@@ -1062,3 +1062,94 @@ describe("shared ops / inactive filtering (ENG-17 R3)", () => {
     expect(res.details).toMatchObject({ total: 2 });
   });
 });
+
+describe("shared ops / secret-scan gate (ENG-15)", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject("note");
+    home = mkHome();
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const SECRET = "S3cr3t-V4lue!";
+  const SECRET_BODY = `rotated the db password: "${SECRET}" after the incident`;
+
+  it("project add blocks by default as a structured error result, leaving storage untouched", async () => {
+    const res = await run(addOp({ title: "Leaky note", body: SECRET_BODY }));
+    expect(res.isError).toBe(true);
+    expect(res.details).toMatchObject({ reason: "secret_scan_blocked", policy: "block" });
+    expect(res.details.findings).toHaveLength(1);
+    expect(res.text).not.toContain(SECRET);
+    expect(fs.readdirSync(projectEngramsDir(tmp))).toEqual([]);
+  });
+
+  it("personal add warns by default and still writes", async () => {
+    const res = await run(addOp({ title: "Leaky private", body: SECRET_BODY, scope: "personal" }));
+    expect(res.isError).toBe(false);
+    expect(res.text).toContain("Secret scan warning");
+    expect(res.text).toContain("SEC-CRED-ASSIGNMENT");
+    expect(res.text).not.toContain(SECRET);
+    const scan = res.details.scan as { policy: string; overrideUsed: boolean };
+    expect(scan).toMatchObject({ policy: "warn", overrideUsed: false });
+  });
+
+  it("allowSecrets overrides a project block and reports the bypass", async () => {
+    const res = await run(addOp({ title: "Leaky note", body: SECRET_BODY, allowSecrets: true }));
+    expect(res.isError).toBe(false);
+    expect(res.text).toContain("Secret scan bypassed (allowSecrets)");
+    expect(res.text).not.toContain(SECRET);
+    const scan = res.details.scan as { policy: string; overrideUsed: boolean; findings: unknown[] };
+    expect(scan.policy).toBe("block");
+    expect(scan.overrideUsed).toBe(true);
+    expect(scan.findings).toHaveLength(1);
+  });
+
+  it("project policy off disables scanning on the add surface", async () => {
+    fs.writeFileSync(
+      projectConfigPath(tmp),
+      JSON.stringify({ version: 1, tracked: true, defaultType: "note", secretScan: "off" }),
+    );
+    const res = await run(addOp({ title: "Leaky note", body: SECRET_BODY }));
+    expect(res.isError).toBe(false);
+    const scan = res.details.scan as { policy: string; findings: unknown[] };
+    expect(scan.policy).toBe("off");
+    expect(scan.findings).toHaveLength(0);
+  });
+
+  it("edit blocks under the project default and never rewrites the file", async () => {
+    const seeded = seed(tmp, "0001", { title: "Clean entry", body: "b" });
+    const before = fs.readFileSync(seeded, "utf8");
+    const res = await run(editOp({ id: "0001", body: SECRET_BODY }));
+    expect(res.isError).toBe(true);
+    expect(res.details).toMatchObject({ reason: "secret_scan_blocked", policy: "block" });
+    expect(res.text).not.toContain(SECRET);
+    expect(fs.readFileSync(seeded, "utf8")).toBe(before);
+  });
+
+  it("edit with allowSecrets writes and reports the bypass; removing the secret needs no override", async () => {
+    // seed a legacy entry whose body holds a secret (scanning was off then);
+    // project policy is the default block
+    const seeded = seed(tmp, "0002", { title: "Legacy entry", body: SECRET_BODY });
+    const bypass = await run(editOp({ id: "0002", title: "Renamed legacy", allowSecrets: true }));
+    expect(bypass.isError).toBe(false);
+    expect(bypass.text).toContain("Secret scan bypassed (allowSecrets)");
+    // removing the secret from the body succeeds under plain block
+    const fixed = await run(editOp({ id: "0002", body: "secret moved to the vault" }));
+    expect(fixed.isError).toBe(false);
+    expect(fs.readFileSync(fixed.details.path as string, "utf8")).toContain(
+      "secret moved to the vault",
+    );
+  });
+});
