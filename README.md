@@ -2,6 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/engram-cli?label=engram-cli)](https://www.npmjs.com/package/engram-cli)
 [![Node](https://img.shields.io/node/v/engram-cli)](https://www.npmjs.com/package/engram-cli)
+[![CI](https://github.com/tm0h/engram/actions/workflows/ci.yml/badge.svg)](https://github.com/tm0h/engram/actions/workflows/ci.yml)
 
 > An engram CLI for AI agents: durable, human-readable memory for any
 > AI-assisted workflow. Works with any harness (Pi, Claude Code, Cursor,
@@ -10,38 +11,16 @@
 > An **engram** is the physical trace a memory leaves in the brain. This tool
 > gives agents one that survives the session.
 
-## Why
+## Why engram
 
-Every fresh agent session starts from zero. That's wasteful and dangerous:
-a team that **replaced package X with Y for good reasons** will watch a fresh
-agent reintroduce X. Recording the _why_, once, means local sessions _and_
-cloud review bots stop making the same mistakes.
+Every fresh agent session starts without the decisions, constraints, and
+debugging lessons learned before it. Engram records that context once so local
+agents, teammates, and cloud review bots can load it again.
 
-`engram` gives agents a place to record what should survive the session:
-decisions and their rationale, facts, gotchas, conventions, preferences.
-Record once, load back on demand.
-
-Engrams are **plain Markdown files with YAML frontmatter**, readable by humans
-and by any agent even without this CLI installed. A `project` scope lives in
-your working directory and can be committed to git so a whole team (and every
-cloud session) shares the same context. A `personal` scope lives in your home
-directory and is never committed.
-
-The flagship use case is coding agents working in repositories, but engram is
-useful in any recurring AI-assisted workflow: research, writing, ops, data
-analysis. If a session keeps re-learning the same things, that belongs in your
-engram.
-
-```sh
-engram init --tracked
-engram add --title "Replaced moment with date-fns" --type decision --tags deps,date \
-  "moment.js is frozen/in-maintenance and ships a large bundle. date-fns is \
-tree-shakeable and actively maintained. Migrated all call sites in PR #142."
-git add .engram && git commit -m "engram: replaced moment with date-fns"
-```
-
-Now every teammate's agent, and the cloud code-review bot that clones the repo,
-runs `engram context` and immediately knows the decision and its rationale.
+Entries are plain Markdown with YAML frontmatter. Project memory can be
+committed with the repository and shared by the team. Personal memory stays in
+your home directory and is never committed. The files remain readable even
+without the CLI.
 
 ---
 
@@ -79,13 +58,28 @@ engram add --title "Use pnpm, not npm" --type preference --tags tooling \
 engram list
 engram context            # agent-ready digest (paste into a session)
 
-# 4. Commit so the team inherits it
-git add .engram && git commit -m "engram: tooling preferences"
+# 4. Search and validate it
+engram search "tag:tooling"
+engram check
 
-# 5. Search later
-engram search "tooling"
-engram show 01jb3            # id or unique prefix
+# 5. Commit project memory so the team inherits it
+git add .engram && git commit -m "engram: tooling preferences"
 ```
+
+`engram add` prints the new id. Use that id, or a unique prefix, with
+`engram show` and `engram edit`.
+
+## Features
+
+- **Portable memory:** plain Markdown in personal or project scope.
+- **Native agent integrations:** five typed tools for Pi and OpenCode,
+  automatic context loading, and a Claude Code plugin.
+- **Search that explains itself:** field-weighted BM25, phrases, filters,
+  pagination, and structured output.
+- **Memory maintenance:** lifecycle metadata, review queues, integrity checks,
+  and deterministic duplicate repair.
+- **Safer writes:** redacted secret and prompt-injection scanning before
+  content reaches disk.
 
 ---
 
@@ -102,8 +96,9 @@ engram show 01jb3            # id or unique prefix
 - `engram init --untracked` → `.engram/` is gitignored → stays local to you.
 - Toggle later with `engram config set tracked on|off` (it keeps `.gitignore` in sync).
 
-Most commands accept `--scope personal|project|all`. The default is `project` when
-inside an initialized project, otherwise `personal`.
+Read commands commonly accept `--scope personal|project|all`. Writes accept one
+scope. The default is `project` inside an initialized project and `personal`
+otherwise.
 
 ---
 
@@ -140,7 +135,7 @@ so agents there should not duplicate the startup call.
 - **Pi**: `pi install npm:engram-cli`. Ships native tools, an `/engram`
   command, a skill, and automatic session-start context loading. See
   [Pi extension](#pi-extension).
-- **OpenCode**: add `"plugin": ["engram-cli"]` to `opencode.json`. Ships four
+- **OpenCode**: add `"plugin": ["engram-cli"]` to `opencode.json`. Ships five
   native tools with typed, validated parameters plus experimental automatic
   session-start context loading. See [OpenCode plugin](#opencode-plugin).
 - **Claude Code**: `/plugin marketplace add tm0h/engram`, then
@@ -158,19 +153,19 @@ so agents there should not duplicate the startup call.
 The published `engram-cli` npm package doubles as a
 [Pi](https://github.com/earendil-works/pi) package. Installing it
 gives the agent native engram tools (`engram_context`, `engram_search`,
-`engram_show`, `engram_add`) with typed, validated parameters, plus an
-`/engram` command, an `engram` skill, and automatic session-start context
+`engram_show`, `engram_add`, `engram_edit`) with typed, validated parameters,
+plus an `/engram` command, an `engram` skill, and automatic session-start context
 loading: every session begins with a compact digest of recorded memory in
 the system prompt (bounded, fail-open, configurable via
 `engram config set autoContext off`). No CLI-on-PATH shelling out, no
-prompt pasting.
+prompt pasting. Successful adds and edits refresh the cached digest.
 
 ```sh
 pi install npm:engram-cli          # global (personal memory everywhere)
 ```
 
-Per-project setup, the full tool reference, and behavior notes (pagination,
-result caps, scope fallbacks): see
+For per-project setup and behavior notes such as pagination, result caps, and
+scope fallbacks, see
 [packages/harnesses/src/pi/README.md](packages/harnesses/src/pi/README.md).
 
 ---
@@ -179,9 +174,11 @@ result caps, scope fallbacks): see
 
 The same `engram-cli` npm package is an
 [OpenCode](https://opencode.ai) plugin. Add it to `opencode.json` to give the
-agent the native `engram_context`, `engram_search`, `engram_show`, and
-`engram_add` tools, plus experimental automatic session-start context loading
-(best-effort through OpenCode's `experimental.chat.system.transform` hook):
+agent the native `engram_context`, `engram_search`, `engram_show`, `engram_add`,
+and `engram_edit` tools, plus experimental automatic session-start context
+loading (best-effort through OpenCode's
+`experimental.chat.system.transform` hook). Successful adds and edits refresh
+the calling session's cached digest:
 
 ```json
 {
@@ -191,8 +188,8 @@ agent the native `engram_context`, `engram_search`, `engram_show`, and
 ```
 
 OpenCode installs the npm package and its dependencies automatically with Bun
-at startup, then runs the tools in-process. Configuration locations, version
-pinning, scope behavior, and the full tool reference: see
+at startup, then runs the tools in-process. For configuration locations,
+version pinning, and scope behavior, see
 [packages/harnesses/src/opencode/README.md](packages/harnesses/src/opencode/README.md).
 
 ---
@@ -275,27 +272,47 @@ You can edit these by hand (they're just files), but never invent an id:
 
 ## Commands
 
-| Command                                                   | Description                                                                                                                                                                                                                                                                                                                                                                               |
-| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `engram init [--tracked\|--untracked]`                    | Initialize `.engram/` and choose git tracking.                                                                                                                                                                                                                                                                                                                                            |
-| `engram add [content]`                                    | Record an engram. Body from arg, `--stdin`, or `$EDITOR`.                                                                                                                                                                                                                                                                                                                                 |
-| `engram list [--scope] [--type] [--tag] [--all]`          | List engrams. Inactive entries (superseded, archived, expired) are hidden unless `--all`.                                                                                                                                                                                                                                                                                                 |
-| `engram search <query> [options]`                         | Relevance search (tags > title > type > body). Supports JSON, score explanations, and pagination. Inactive entries are hidden unless `--all`.                                                                                                                                                                                                                                             |
-| `engram show <id>`                                        | Show one engram in full (id or unique prefix). Status-blind: historical entries stay addressable.                                                                                                                                                                                                                                                                                         |
-| `engram edit <id> [content]`                              | Edit an engram: flags replace fields, no flags opens `$EDITOR`, `--stdin`/content replaces the body.                                                                                                                                                                                                                                                                                      |
-| `engram remove <id> [-y]`                                 | Delete an engram.                                                                                                                                                                                                                                                                                                                                                                         |
-| `engram context [-q query] [--full] [-n] [--all]`         | Emit an agent-ready digest. Inactive entries hidden unless `--all`.                                                                                                                                                                                                                                                                                                                       |
-| `engram review [--scope personal\|project\|all] [--json]` | Surface entries needing attention: superseded, archived, expired (`expires` <= now), review-due (`reviewAfter` <= now), broken `supersedes`. Read-only; exits 0 on findings. `--json` emits one versioned report document with stable reason codes (`superseded`, `archived`, `expired`, `review_due`, `broken_supersedes`), one finding per entry, and candidate-level scan diagnostics. |
-| `engram check [--scope personal\|project\|all] [--json]`  | Validate store integrity (frontmatter, required fields, id uniqueness, filename consistency, configs). Read-only. Advisory lifecycle warnings exit 0; errors or unchecked scopes exit nonzero. `--json` emits one report document with per-file codes, severities, messages, hints, and uncheckable scopes.                                                                               |
-| `engram config [get\|set] [key] [value]`                  | Keys: `tracked`, `defaultType`, `author`, `editor`, plus the automatic-context user settings: `autoContext` (`on`/`off`, default `on`), `autoContextScope` (`project`/`personal`/`both`, default `project`), `autoContextLimit` (integer `1..100`, default `25`).                                                                                                                         |
-| `engram inject`                                           | Print the agent-injection snippet.                                                                                                                                                                                                                                                                                                                                                        |
-| `engram where`                                            | Show resolved paths and the current default scope.                                                                                                                                                                                                                                                                                                                                        |
+| Command                                                   | Purpose                                                                                     |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `engram init [--tracked\|--untracked]`                    | Initialize project memory and choose whether git tracks it.                                 |
+| `engram add [content]`                                    | Record an entry from an argument, standard input, or `$EDITOR`.                             |
+| `engram list [options]`                                   | List entries, with scope, type, tag, and lifecycle filters.                                 |
+| `engram search <query> [options]`                         | Run BM25 search with query syntax, JSON output, explanations, and pagination.               |
+| `engram show <id>`                                        | Show one entry by id or unique prefix.                                                      |
+| `engram edit <id> [content]`                              | Replace selected fields or edit the entry interactively.                                    |
+| `engram remove <id> [-y]`                                 | Delete an entry.                                                                            |
+| `engram context [options]`                                | Emit an agent-ready digest, optionally with full bodies or a focused query.                 |
+| `engram review [--scope personal\|project\|all] [--json]` | Find superseded, archived, expired, review-due, or broken-lineage entries.                  |
+| `engram check [--scope personal\|project\|all] [--json]`  | Check store integrity, configuration, lifecycle warnings, and secret-scan findings.         |
+| `engram dedupe [--scope personal\|project]`               | Replace duplicate ids with fresh globally unique ids.                                       |
+| `engram config [get\|set] [key] [value]`                  | Manage tracking, defaults, automatic context, and project or personal secret-scan policies. |
+| `engram inject`                                           | Print generic agent instructions for a system prompt or project rule.                       |
+| `engram where`                                            | Show resolved storage paths and the current default scope.                                  |
 
 ### Structured search
 
+Search uses field-weighted Okapi BM25. Tags carry the most weight, followed by
+titles, types, and bodies. Ranking also rewards rarer terms, normalizes field
+length, and gives pinned entries a small boost.
+
+The query language supports quoted phrases, bounded prefixes, field filters,
+and explicit Boolean groups:
+
+```sh
+engram search '"release checklist"'                    # boost a contiguous phrase
+engram search 'kuber*'                                 # match a token prefix
+engram search 'tag:auth AND body:rotation'             # require both terms
+engram search 'title:deploy OR type:decision'          # match either term
+```
+
+Whitespace has the same meaning as `OR`. Uppercase `AND` binds more tightly
+than `OR`; lowercase `and` and `or` remain ordinary terms. Filters accept
+`tag:`, `title:`, `type:`, and `body:`. Quoted phrases add a contiguous-match
+boost rather than excluding results that match only part of the phrase.
+
 `engram search "auth" --json --explain --limit 10 --offset 0` emits one JSON
 document. `--json` alone omits explanations. `--explain` alone emits plain-text
-score contributions instead of the normal snippet output.
+score contributions instead of snippets.
 
 ```json
 {
@@ -314,10 +331,17 @@ score contributions instead of the normal snippet output.
       "tags": [],
       "updated": "2026-01-01T00:00:00.000Z",
       "pinned": false,
-      "score": 3,
+      "score": 0.39229373516151933,
       "explanation": {
         "mode": "relevance",
-        "contributions": [{ "field": "title", "token": "auth", "score": 3 }]
+        "contributions": [
+          {
+            "field": "title",
+            "token": "auth",
+            "score": 0.39229373516151933,
+            "component": "bm25"
+          }
+        ]
       }
     }
   ]
@@ -332,21 +356,17 @@ requires `--json` or `--explain`. An offset beyond the end returns an empty page
 with the requested offset and unchanged total. `nextOffset: null` means no more
 results. Default text mode retains scope grouping and its per-scope limit.
 
-Each result is identified by both `scope` and `id`. Summaries allow only the
-fields shown above. They omit bodies, filesystem paths, author, and source
-references. Match tokens come from the normalized query, never excerpts from
-the matched field. `tag`, `title`, `type`, and `body` contributions retain the
-existing scoring weights; `pinned` contributes 0.5 with `token: null`. A pinned
-result can match without a lexical hit. Empty or punctuation-only queries use
-recency ordering, score 0, and empty contributions (`mode: "recency"`).
-No trigger or path-metadata matching is introduced by this change. Code/path
-query tokens are explained by the existing fields they match.
+Each result is identified by both `scope` and `id`. Summaries omit bodies,
+filesystem paths, authors, and source references. Contributions contain a
+normalized query token, score, field, and component (`bm25`, `phrase`,
+`prefix`, or `pinned`). Their scores sum to the result score. A pinned entry can
+surface without a lexical match. Empty or punctuation-only queries use recency
+ordering with score 0.
 
 Pi and OpenCode `engram_search` expose the same versioned report as result
-details/metadata, with `explain: true` enabling contributions. Their existing
-text and default 10-result pagination remain unchanged. Errors retain each
-surface's existing error channel; CLI errors exit nonzero with no JSON on
-stdout. `--all` continues to include inactive entries in CLI search.
+metadata, with `explain: true` enabling contributions. Their text responses
+retain 10-result pagination. CLI errors exit nonzero and keep stdout free of
+partial JSON. Use `--all` to include inactive entries in CLI search.
 
 `add` highlights:
 
@@ -406,23 +426,19 @@ diagnostics: errors under `block`, warnings under `warn`, nothing under
 `off`. If a scope's config cannot be loaded, that scope's scan is skipped and
 reported uncheckable (fail closed).
 
-Deferred integration contract: the import pipeline (ENG-35) and candidate
-approval (ENG-30) do not exist yet. When they are built, they must run this
-same scanner at their write boundaries, with policy resolved the same way and
-redacted findings only, instead of bypassing it.
-
 ---
 
-## Development
+## Help and contributing
 
-See [AGENTS.md](AGENTS.md) for the repository layout, architecture notes, and
-the exact install/build/test/check commands.
+Run `engram --help` or `engram <command> --help` for CLI help. Report bugs and
+request features in [GitHub Issues](https://github.com/tm0h/engram/issues).
 
----
+Contributors should start with [AGENTS.md](AGENTS.md) for the repository layout,
+coding conventions, and verification commands. Search and corpus changes must
+also follow [corpus/README.md](corpus/README.md). Release maintainers should use
+[RELEASING.md](RELEASING.md).
 
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md).
+See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## License
 
