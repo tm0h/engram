@@ -7,3 +7,4 @@ export * from "./pagination.js";
 export * from "./degraded.js";
 export * from "./run.js";
 export * from "./ops.js";
+export * from "./installer.js";
