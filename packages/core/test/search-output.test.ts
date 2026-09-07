@@ -23,19 +23,26 @@ const entry = (over: Partial<Engram> = {}): Engram => ({
 describe("search explanations and public reports", () => {
   it("accounts for every score contribution without exposing field contents", () => {
     const [r] = searchEngrams([entry()], "café note", undefined, { explain: true });
-    expect(r.explanation).toEqual({
-      mode: "relevance",
-      contributions: [
-        { field: "tag", token: "cafe", score: 5 },
-        { field: "title", token: "cafe", score: 3 },
-        { field: "body", token: "cafe", score: 1 },
-        { field: "title", token: "note", score: 3 },
-        { field: "type", token: "note", score: 2 },
-        { field: "pinned", token: null, score: 0.5 },
-      ],
-    });
-    expect(r.score).toBe(14.5);
-    expect(r.explanation?.contributions.reduce((s, c) => s + c.score, 0)).toBe(r.score);
+    const contributions = r.explanation?.contributions ?? [];
+    // token-major order, fields tag/title/type/body, pinned last
+    expect(contributions.map((c) => [c.field, c.token, c.component])).toEqual([
+      ["tag", "cafe", "bm25"],
+      ["title", "cafe", "bm25"],
+      ["body", "cafe", "bm25"],
+      ["title", "note", "bm25"],
+      ["type", "note", "bm25"],
+      ["pinned", null, "pinned"],
+    ]);
+    // single-entry corpus: idf = ln(4/3), tfNorm = 1/2.2, points = weight * both
+    const unit = 0.1307645783871722;
+    expect(contributions[0]?.score).toBeCloseTo(5 * unit, 5);
+    expect(contributions[1]?.score).toBeCloseTo(3 * unit, 5);
+    expect(contributions[2]?.score).toBeCloseTo(1 * unit, 5);
+    expect(contributions[3]?.score).toBeCloseTo(3 * unit, 5);
+    expect(contributions[4]?.score).toBeCloseTo(2 * unit, 5);
+    expect(contributions[5]?.score).toBe(0.5);
+    expect(r.score).toBeCloseTo(14 * unit + 0.5, 5);
+    expect(contributions.reduce((s, c) => s + c.score, 0)).toBe(r.score);
     const report = searchReport([r], "café note", 0, 10);
     expect(JSON.stringify(report)).not.toMatch(
       /PRIVATE_BODY|private author|private\/location|PRIVATE_SOURCE/,
@@ -59,7 +66,7 @@ describe("search explanations and public reports", () => {
     });
     expect(searchEngrams([entry()], "zzzz", undefined, { explain: true })[0].explanation).toEqual({
       mode: "relevance",
-      contributions: [{ field: "pinned", token: null, score: 0.5 }],
+      contributions: [{ field: "pinned", token: null, score: 0.5, component: "pinned" }],
     });
   });
 

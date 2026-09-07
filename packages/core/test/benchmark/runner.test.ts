@@ -22,7 +22,7 @@ const EXPECTED_RANKINGS: ReadonlyArray<readonly [string, ReadonlyArray<string>]>
   ["case-superseded-01", ["01js9x5e0000000000000000ab"]],
   ["case-superseded-02", ["01js9x5e0000000000000000ab"]],
   ["case-temporal-01", ["01js9x5e0000000000000000af"]],
-  ["case-temporal-02", ["01js9x5e0000000000000000ae", "01js9x5e0000000000000000af"]],
+  ["case-temporal-02", ["01js9x5e0000000000000000af", "01js9x5e0000000000000000ae"]],
 ];
 
 describe("runBenchmark over the benchmark-internal fixture", () => {

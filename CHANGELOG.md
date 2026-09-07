@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Search JSON output and ranking explanations, with scope-qualified results,
   pagination metadata, and equivalent structured metadata in Pi and OpenCode.
+- **BM25-style lexical ranker (ENG-18).** `searchEngrams` now scores the
+  title, tag, type, and body fields with per-field Okapi BM25 (weights
+  5/3/2/1, k1 = 1.2, b = 0.75, Lucene-variant idf) plus a pinned boost,
+  replacing the fixed-points scorer, which remains callable as
+  `searchEngramsLegacy` for same-corpus benchmark comparison. New query
+  syntax: `"exact phrase"` (contiguous occurrence bonus), `stem*` bounded
+  prefix matching (folded stem of at least 2 characters; word tokens of at
+  least 3 characters also prefix-fall back so variants like
+  keybinding/keybindings keep matching), `tag:`/`title:`/`type:`/`body:`
+  field filters, and explicit `AND` groups (`OR`/whitespace stay the
+  OR-compatible default). Explanations gain a `component` discriminator
+  (`bm25`, `phrase`, `prefix`, `pinned`); scores are now fractional.
+  On the golden retrieval corpus the wired ranker passes 184/187 cases
+  (legacy: 183) with no forbidden hits and fewer stale hits; latency over a
+  1,000-entry corpus is at parity (p95 25.4 ms vs 28.4 ms for the legacy
+  ranker in the same harness). New `benchmark:shadow` command reports the
+  legacy-vs-wired delta and latency percentiles.
 
 ## [0.4.0] - 2026-08-28
 

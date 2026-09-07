@@ -50,29 +50,41 @@ issues list, exactly like loadCorpus output.
 | case-distractors-01  | distractor outranks required id (Recall@1 = 0, pass still holds) |
 | case-abstention-01   | expectEmpty: query tokens appear nowhere, zero results           |
 
-# Hand-computed search scores (pinned procedure over searchEngrams)
+# Hand-computed search outcomes (ENG-18 BM25 ranker)
 
-Weights: tag exact +5, title contains +3, type match +2, body contains +1,
-pinned +0.5. Ties break by id ascending.
+Per-field Okapi BM25 (tag/title/type/body weights 5/3/2/1, k1 = 1.2,
+b = 0.75, Lucene-variant idf) with bounded prefix fallback for word tokens
+of 3+ characters, OR of words by default, and id-ascending ties. The
+legacy fixed-points scoring this fixture used before ENG-18 is retained in
+`searchEngramsLegacy` and is not documented here.
 
-- "dev server port" -> 0001: 12 (title 9 + body 3); expired fixture
-  would score 1 via "mothlight.dev" but is expiry-filtered at defaultNow.
-- "keybinding remapping" -> 0002: 1 (body only).
-- "build pipeline" -> ab: 12 (title 6 + body 1 + tag 5); aa excluded
-  by status (would also score 12).
-- "esbuild speed" -> ab: 5 (title 3 + body 2); aa scores 0 by design.
-- "tls certificate" -> af: 7 (title 6 + body 1); ae would tie at 7 but
+- "dev server port" -> 0001 matches on title and body tokens; no other
+  candidate matches.
+- "keybinding remapping" -> 0002: "keybinding" prefix-fallback matches
+  "keybindings" in the body; "remapping" matches nothing, so the single
+  matching word carries the alternative.
+- "build pipeline" -> ab (title + tag + body); aa is excluded by status
+  and would also match.
+- "esbuild speed" -> ab ("esbuild" in title and body); aa scores zero by
+  design and is status-filtered anyway.
+- "tls certificate" -> af (title + body tokens); ae would match too but
   is expiry-filtered at now 2026-03-15.
-- "tls certificate audit" -> ae: 7 and af: 7, tie broken ae < af; ae is
-  returned under includeInactive and counted stale.
-- "cache" -> ac: 9 and ad: 9, tie broken ac < ad.
-- "sitemap generation" -> ah: 9 (title 3 + body 1 + tag 5) outranks
-  ag: 7 (title 6 + body 1); ai would score 13 but is status-filtered.
+- "tls certificate audit" -> af then ae (includeInactive): both match on
+  title + body; af has the shorter body, so BM25 length normalization
+  ranks it first. ae (the required id) stays present, so the case passes
+  with one stale row.
+- "cache" -> ac and ad: symmetric title + tag + body matches produce
+  equal scores, broken id-ascending (ac < ad).
+- "sitemap generation" -> ah then ag: ah matches "sitemap" in tag, title,
+  and body (weights 5 + 3 + 1), which outranks ag's title + body (3 + 1)
+  plus "generation" (3). The required id ag is present, so Recall@1 = 0
+  with the case still passing.
 - "kubernetes cluster autoscaling" -> nothing.
 
 Aggregate hand-checks (k = [1, 3, 5]): eligible = 9, returned = 13,
-Recall@1 = 7/9 (case-ambiguity-02 and case-distractors-01 have their first
-relevant id at rank 2), Recall@3 = Recall@5 = 1, Precision@1 = 7/9,
-Precision@3 = 1/3, Precision@5 = 1/5, MRR = (7 x 1 + 2 x 1/2) / 9 = 8/9,
+Recall@1 = 6/9 (case-ambiguity-02, case-distractors-01, and
+case-temporal-02 each have their first relevant id at rank 2),
+Recall@3 = Recall@5 = 1, Precision@1 = 6/9, Precision@3 = 1/3,
+Precision@5 = 1/5, MRR = (6 x 1 + 3 x 1/2) / 9 = 7.5/9 = 0.833333,
 passRate = 10/10, stale = 1/13, forbidden = 0/13, abstention = 1/1,
 falseAbstain = 0/9.

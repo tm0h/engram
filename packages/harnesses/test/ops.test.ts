@@ -352,6 +352,8 @@ describe("shared ops / searchOp", () => {
     const res = await run(
       searchOp({ query: "auth", scope: "project", explain: true, limit: 1, offset: 1 }),
     );
+    // ENG-18 BM25 body points for 0002: 1 x ln(2) x tfNorm(len 3, avgdl 2.5)
+    const bodyPoints = 0.2912383111596409;
     expect(res.details).toMatchObject({
       schemaVersion: 1,
       query: "auth",
@@ -361,11 +363,18 @@ describe("shared ops / searchOp", () => {
         {
           id: "0002",
           scope: "project",
-          score: 1,
-          explanation: { contributions: [{ field: "body", token: "auth", score: 1 }] },
+          explanation: { contributions: [{ field: "body", token: "auth" }] },
         },
       ],
     });
+    const first = (
+      res.details.results as Array<{
+        score: number;
+        explanation: { contributions: Array<{ score: number }> };
+      }>
+    )[0];
+    expect(first.score).toBeCloseTo(bodyPoints, 5);
+    expect(first.explanation.contributions[0]?.score).toBeCloseTo(bodyPoints, 5);
     expect(JSON.stringify(res)).not.toMatch(/PRIVATE_BODY|PRIVATE_DETAIL/);
     expect(JSON.stringify(res)).not.toContain(tmp);
     const plain = await run(searchOp({ query: "auth", scope: "project" }));
