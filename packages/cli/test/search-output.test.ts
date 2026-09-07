@@ -58,7 +58,22 @@ describe("search JSON and explanations", () => {
   it("emits one JSON document with pagination and no memory bodies or filesystem paths", async () => {
     await run({ json: true, explain: true, limit: 1, offset: 1 });
     expect(lines).toHaveLength(1);
-    expect(JSON.parse(lines[0])).toMatchObject({
+    const parsed = JSON.parse(lines[0]) as {
+      schemaVersion: number;
+      query: string;
+      total: number;
+      offset: number;
+      limit: number;
+      nextOffset: null;
+      results: Array<{
+        id: string;
+        score: number;
+        explanation: { contributions: Array<{ field: string; token: string; score: number }> };
+      }>;
+    };
+    // ENG-18 BM25 body points for 0002: 1 x ln(2) x tfNorm(len 3, avgdl 2.5)
+    const bodyPoints = 0.2912383111596409;
+    expect(parsed).toMatchObject({
       schemaVersion: 1,
       query: "auth",
       total: 2,
@@ -68,11 +83,12 @@ describe("search JSON and explanations", () => {
       results: [
         {
           id: "0002",
-          score: 1,
-          explanation: { contributions: [{ field: "body", token: "auth", score: 1 }] },
+          explanation: { contributions: [{ field: "body", token: "auth" }] },
         },
       ],
     });
+    expect(parsed.results[0]?.score).toBeCloseTo(bodyPoints, 5);
+    expect(parsed.results[0]?.explanation.contributions[0]?.score).toBeCloseTo(bodyPoints, 5);
     expect(lines[0]).not.toContain("private detail");
     expect(lines[0]).not.toContain(root);
   });
@@ -84,7 +100,8 @@ describe("search JSON and explanations", () => {
   it("renders score reasons only with explain", async () => {
     await run({ explain: true, limit: 1 });
     expect(lines.join("\n")).toContain("title");
-    expect(lines.join("\n")).toContain("score=3");
+    // ENG-18 BM25 title points for 0001: 3 x ln(2) x tfNorm(len 2, avgdl 1.5)
+    expect(lines.join("\n")).toMatch(/score=0\.831776/);
     expect(lines.join("\n")).not.toContain("private body");
   });
   it("preserves default text output and does not add explanations", async () => {

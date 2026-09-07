@@ -99,11 +99,14 @@ describe("engram check (process level)", () => {
       home,
     );
     expect(result.status).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({
-      schemaVersion: 1,
-      query: "auth",
-      results: [{ id: "0001", score: 3 }],
-    });
+    const parsed = JSON.parse(result.stdout) as {
+      schemaVersion: number;
+      query: string;
+      results: Array<{ id: string; score: number }>;
+    };
+    expect(parsed).toMatchObject({ schemaVersion: 1, query: "auth", results: [{ id: "0001" }] });
+    // ENG-18 BM25 title points: 3 x ln(4/3) x tfNorm(len 1, avgdl 1)
+    expect(parsed.results[0]?.score).toBeCloseTo(0.3922937351615193, 5);
     for (const arg of ["1x", "1.5", "-1", "Infinity", "9007199254740992"]) {
       const invalid = runCli(["search", "auth", "--json", "--limit", arg], proj, home);
       expect(invalid.status).not.toBe(0);
