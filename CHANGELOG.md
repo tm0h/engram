@@ -9,6 +9,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`engram check` and store integrity diagnostics (ENG-14).** A read-only
+  audit of one or both scopes: malformed entries surface with exact paths,
+  machine-readable codes, and repair hints instead of disappearing silently,
+  and configuration is validated alongside storage. The command exits
+  nonzero on errors or scopes that could not be checked, with a versioned
+  `--json` report. `engram list` stays fail-open but prints one bounded
+  stderr warning for skipped files, and `engram context` (plus the automatic
+  session digest) prepends the same warning. ([#19])
+- **Optional lifecycle and provenance metadata (ENG-13).** Entries gain six
+  optional frontmatter fields: `status` (`active`/`superseded`/`archived`),
+  `supersedes`, `reviewAfter`, `expires`, `sourceType`
+  (`conversation`/`file`/`url`/`command`/`other`), and `sourceRef` (a
+  free-form reference such as a path, URL, command, or conversation note).
+  Timestamps are ISO 8601 with an explicit zone. `engram add` and
+  `engram edit` accept `--status`, `--supersedes`, `--review-after`,
+  `--expires`, `--source-type`, and `--source-ref`, and `engram edit`
+  clears them with paired `--clear-*` flags. Existing stores need no
+  migration: absent fields carry no lifecycle meaning. `engram check`
+  reports advisory lifecycle conditions (`supersedes_not_found`,
+  `review_due`, `expired`) as warnings that never fail the run. ([#20])
+- **Edit surface for Pi and OpenCode (ENG-38).** Harness agents gain a
+  native `engram_edit` tool that updates an existing entry by id (unique
+  prefixes work): ordinary fields (title, type, tags, body, pinned, author)
+  are replaced when passed and preserved when omitted, while the six
+  lifecycle fields are three-state (a value replaces, null clears,
+  omission preserves). Pi also gains `/engram edit` slash support, and
+  successful adds and edits refresh the cached automatic digest. ([#21])
+- **Supersession, expiry, and review workflows (ENG-17).** Superseding via
+  `engram add --supersedes` (or the edit surface) marks the predecessor
+  atomically under hard lineage validation: missing, self, cycle,
+  cross-scope, duplicate-claimed, and inactive targets all reject, rejected
+  mutations leave files byte-identical, and a partially surfaced failure
+  rolls back with incomplete-rollback error reporting. Entries that are
+  superseded, archived, or past `expires` are inactive and hidden from
+  `search`, `list`, and `context` by default (`--all` opts back in; `show`
+  stays status-blind). New `engram review` reports superseded, archived,
+  expired, review-due, and broken-lineage entries in versioned human or
+  JSON output. ([#22])
+- **Code-aware search tokens and a golden retrieval corpus.** Query terms
+  are now emitted exact-first and then expanded into code-aware subtokens
+  (split on separator runs, camelCase/PascalCase and acronym boundaries,
+  dotted path basenames), so a query like `parseAuthHeader` also matches
+  entries containing `parse`, `auth`, or `header`, while a shared Unicode
+  fold keeps ASCII matching behavior unchanged. Retrieval changes are
+  gated by a synthetic, versioned corpus of labeled cases shipped through
+  the `@engram/core` `./corpus` export and the
+  `pnpm --filter @engram/core benchmark` command. ([#24])
 - **Secret and prompt-injection scanning on every write (ENG-15).** `engram
 add`, `engram edit`, and the Pi/OpenCode `engram_add`/`engram_edit` tools
   scan the complete serialized entry for credentials, high-entropy tokens,
@@ -23,9 +70,10 @@ add`, `engram edit`, and the Pi/OpenCode `engram_add`/`engram_edit` tools
   `engram check` also scans every readable raw Markdown file, including
   malformed frontmatter, emitting `secret_detected` diagnostics (block:
   error, warn: warning, off: none) and failing closed when a scope's config
-  cannot be loaded.
+  cannot be loaded. ([#28])
 - Search JSON output and ranking explanations, with scope-qualified results,
   pagination metadata, and equivalent structured metadata in Pi and OpenCode.
+  ([#25])
 - **BM25-style lexical ranker (ENG-18).** `searchEngrams` now scores the
   title, tag, type, and body fields with per-field Okapi BM25 (weights
   5/3/2/1, k1 = 1.2, b = 0.75, Lucene-variant idf) plus a pinned boost,
@@ -42,7 +90,25 @@ add`, `engram edit`, and the Pi/OpenCode `engram_add`/`engram_edit` tools
   (legacy: 183) with no forbidden hits and fewer stale hits; latency over a
   1,000-entry corpus is at parity (p95 25.4 ms vs 28.4 ms for the legacy
   ranker in the same harness). New `benchmark:shadow` command reports the
-  legacy-vs-wired delta and latency percentiles.
+  legacy-vs-wired delta and latency percentiles. ([#27])
+
+### Fixed
+
+- **EPIPE on closed stdout or stderr no longer crashes the CLI.** Piping
+  output to a consumer that exits early (`engram list | head`) used to
+  raise an unhandled write error after the command's work was already done,
+  so exit codes lied. The CLI now exits 141 (the conventional SIGPIPE
+  exit code) without throwing. ([#23])
+
+[#28]: https://github.com/tm0h/engram/pull/28
+[#27]: https://github.com/tm0h/engram/pull/27
+[#25]: https://github.com/tm0h/engram/pull/25
+[#24]: https://github.com/tm0h/engram/pull/24
+[#23]: https://github.com/tm0h/engram/pull/23
+[#22]: https://github.com/tm0h/engram/pull/22
+[#21]: https://github.com/tm0h/engram/pull/21
+[#20]: https://github.com/tm0h/engram/pull/20
+[#19]: https://github.com/tm0h/engram/pull/19
 
 ## [0.4.0] - 2026-08-28
 
