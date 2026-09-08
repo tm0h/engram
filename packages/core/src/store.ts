@@ -959,7 +959,26 @@ const makeEngramStoreLive = (
           }
 
           yield* fs.writeFileString(file, serialize(next));
-          if (file !== mem.path) yield* fs.remove(mem.path);
+          /* ENG-62: a retitle renames the file. When the renamed destination
+           * landed but removing the original path failed, the store would
+           * keep two files claiming one id, so compensate by removing the
+           * renamed successor. A successful rollback leaves the directory
+           * byte-identical to the pre-operation state (the write went to
+           * the new path; the original file is untouched). A failing
+           * compensation surfaces an incomplete-rollback error naming both
+           * failures, matching the supersedes path (ENG-17 R2). */
+          if (file !== mem.path) {
+            const removed = yield* Effect.result(fs.remove(mem.path));
+            if (Result.isFailure(removed)) {
+              const step = yield* rollbackStep(
+                file,
+                `the renamed successor "${file}"`,
+                removed.failure,
+                fs.remove(file, { force: true }),
+              );
+              return yield* Effect.fail(step ?? removed.failure);
+            }
+          }
           return { ...next, path: file, scan: evaluation };
         });
 
