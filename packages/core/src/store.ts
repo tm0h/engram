@@ -794,9 +794,24 @@ const makeEngramStoreLive = (
             cursor = byId.get(cursor)?.supersedes;
           }
           if (cursor !== undefined) {
+            if (cursor === entryId) {
+              return yield* Effect.fail(
+                reject(
+                  `supersedes cycle: ${[...chain, cursor].join(" -> ")} would loop back to "${entryId}"`,
+                ),
+              );
+            }
+            /* ENG-63: the walk re-entered a node other than the entry
+             * gaining the link, so the store already contains a
+             * hand-edited cycle the new link does not join. Report the
+             * true cycle - from the first occurrence of the repeated
+             * node back to itself - and the node whose link closes it
+             * (the last walked node), never the new entry. */
+            const segment = [...chain.slice(chain.indexOf(cursor)), cursor];
+            const closer = chain[chain.length - 1];
             return yield* Effect.fail(
               reject(
-                `supersedes cycle: ${[...chain, cursor].join(" -> ")} would loop back to "${entryId}"`,
+                `supersedes cycle: ${segment.join(" -> ")} already exists, closed by "${closer}"`,
               ),
             );
           }

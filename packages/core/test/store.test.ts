@@ -2240,6 +2240,63 @@ describe("EngramStore / lineage validation (ENG-17 R5)", () => {
       expect(snapshot(engramsDir())).toBe(before);
     }).pipe(Effect.provide(StoreLive)),
   );
+
+  it.live("update: a pre-existing hand-edited cycle rejects naming its closer, not the entry", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      // Hand-edited pre-existing cycle: 0001 -> 0002 -> 0001, both active.
+      // The entry being edited is not part of the loop at all.
+      fs.writeFileSync(
+        path.join(engramsDir(), "0001-first.md"),
+        scanFm({ id: "0001", title: "First", supersedes: "0002" }),
+      );
+      fs.writeFileSync(
+        path.join(engramsDir(), "0002-second.md"),
+        scanFm({ id: "0002", title: "Second", supersedes: "0001" }),
+      );
+      const e = yield* store.add("project", input({ title: "Editor" }), NOSCAN);
+      const before = snapshot(engramsDir());
+      const err = yield* Effect.flip(store.update("project", e.id, { supersedes: "0001" }, NOSCAN));
+      expectFrontmatterParseError(err);
+      // The true cycle is 0001 -> 0002 -> 0001, closed by 0002's link; the
+      // edited entry must not be named as the loop-back target (ENG-63).
+      expect(failMessage(err)).toContain("cycle");
+      expect(failMessage(err)).toContain("0001 -> 0002 -> 0001");
+      expect(failMessage(err)).toContain('closed by "0002"');
+      expect(failMessage(err)).not.toContain(e.id);
+      expect(snapshot(engramsDir())).toBe(before);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("add: a tail leading into a pre-existing cycle rejects naming the cycle's closer", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      // Rho shape: the walk from target 0001 runs 0001 -> 0002 -> 0003 ->
+      // 0004 -> 0002. The cycle itself is 0002 -> 0003 -> 0004 -> 0002,
+      // closed by 0004; the tail and the new probe id are in no cycle.
+      const seed = (id: string, title: string, supersedes: string): void => {
+        fs.writeFileSync(
+          path.join(engramsDir(), `${id}-${slugify(title)}.md`),
+          scanFm({ id, title, supersedes }),
+        );
+      };
+      seed("0001", "Tail", "0002");
+      seed("0002", "Loop b", "0003");
+      seed("0003", "Loop c", "0004");
+      seed("0004", "Loop d", "0002");
+      const before = snapshot(engramsDir());
+      const err = yield* Effect.flip(
+        store.add("project", input({ title: "Successor", supersedes: "0001" }), NOSCAN),
+      );
+      expectFrontmatterParseError(err);
+      // The rendered cycle starts at the repeated node, not at the target,
+      // and names the node whose link closes it (ENG-63).
+      expect(failMessage(err)).toContain("0002 -> 0003 -> 0004 -> 0002");
+      expect(failMessage(err)).toContain('closed by "0004"');
+      expect(failMessage(err)).not.toContain("0001 -> 0002");
+      expect(snapshot(engramsDir())).toBe(before);
+    }).pipe(Effect.provide(StoreLive)),
+  );
 });
 
 describe("EngramStore / supersession atomicity (ENG-17 R2)", () => {
