@@ -2429,6 +2429,73 @@ describe("EngramStore / supersession atomicity (ENG-17 R2)", () => {
   });
 });
 
+describe("EngramStore / plain-path retitle rollback (ENG-62)", () => {
+  let orig = "";
+  let tmp = "";
+  const engramsDir = (): string => projectEngramsDir(tmp);
+  const seedEntry = (id: string, title: string): string => {
+    const file = path.join(engramsDir(), `${id}-${slugify(title)}.md`);
+    fs.writeFileSync(file, scanFm({ id, title }));
+    return file;
+  };
+  beforeEach(() => {
+    orig = process.cwd();
+    tmp = mkProject();
+    process.chdir(tmp);
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it.live("update retitle: failure removing the original file rolls the rename back", () => {
+    seedEntry("0002", "Editor");
+    const before = snapshot(engramsDir());
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const e = yield* Effect.flip(
+        store.update("project", "0002", { title: "Renamed editor" }, NOSCAN),
+      );
+      expect((e as { _tag: string })._tag).toBe("PlatformError");
+      // no two-files-one-id: the renamed successor is removed again, the
+      // original file is untouched. The directory is byte-identical
+      expect(snapshot(engramsDir())).toBe(before);
+    }).pipe(Effect.provide(failIoStoreLive({ remove: (p) => p.includes("0002-editor.md") })));
+  });
+
+  it.live(
+    "update retitle: failed rollback after a failed removal reports an incomplete rollback",
+    () => {
+      seedEntry("0002", "Editor");
+      return Effect.gen(function* () {
+        const store = yield* EngramStore;
+        const e = yield* Effect.flip(
+          store.update("project", "0002", { title: "Renamed editor" }, NOSCAN),
+        );
+        expect((e as { _tag: string })._tag).toBe("FrontmatterParseError");
+        const message = (e as { message: string }).message;
+        expect(message).toContain("incomplete rollback");
+        expect(message).toContain("Primary failure:");
+        expect(message).toContain("Rollback failure:");
+        // exact resulting state: the original file is byte-identical, and the
+        // renamed successor could NOT be removed, so it is still on disk
+        expect(fs.readFileSync(path.join(engramsDir(), "0002-editor.md"), "utf8")).toBe(
+          scanFm({ id: "0002", title: "Editor" }),
+        );
+        const files = fs.readdirSync(engramsDir());
+        expect(files).toHaveLength(2);
+        expect(files).toContain("0002-renamed-editor.md");
+      }).pipe(
+        Effect.provide(
+          failIoStoreLive({
+            remove: (p) => p.includes("0002-editor.md") || p.includes("0002-renamed-editor.md"),
+          }),
+        ),
+      );
+    },
+  );
+});
+
 describe("EngramStore / secret-scan gate (ENG-15)", () => {
   let orig = "";
   let tmp = "";
