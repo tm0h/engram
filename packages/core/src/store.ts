@@ -1027,7 +1027,7 @@ const makeEngramStoreLive = (
           const renumbered: Array<{ from: string; to: string; title: string }> = [];
           // Source paths already removed in this run: the per-record commit
           // record, used to name the remaining claimants of a duplicated id
-          // when a later record's successor write fails after earlier
+          // when a later record's successor write or source removal fails after earlier
           // renumberings committed.
           const removedSources = new Set<string>();
           for (const group of byId.values()) {
@@ -1093,7 +1093,42 @@ const makeEngramStoreLive = (
                   }),
                 );
               }
-              yield* fs.remove(m.path);
+              // A record commits when its source removal succeeds. If the
+              // removal fails, the just-written successor is an orphan copy
+              // of a still duplicated record, and every retry would mint
+              // another one, so the write is compensated before the failure
+              // surfaces. Write-then-remove order is load-bearing: removing
+              // first would turn a failed successor write into data loss.
+              const removed = yield* Effect.result(fs.remove(m.path));
+              if (Result.isFailure(removed)) {
+                const step = yield* rollbackStep(
+                  file,
+                  `the fresh-id successor "${file}" for the still duplicated id "${m.id}"`,
+                  removed.failure,
+                  fs.remove(file, { force: true }),
+                );
+                if (step !== null) return yield* Effect.fail(step);
+                if (renumbered.length === 0) return yield* Effect.fail(removed.failure);
+                // Committed renumberings stand: un-renumbering them would
+                // rewrite files under the same degraded I/O condition that
+                // caused the failure, while a retry converges. The error
+                // must report the partial state instead of hiding it.
+                const claimants = scanned.entries
+                  .filter((e) => e.id === m.id && !removedSources.has(e.path))
+                  .map((e) => e.path);
+                return yield* Effect.fail(
+                  new FrontmatterParseError({
+                    file: m.path,
+                    message:
+                      `partial dedupe repair: ${renumbered.length} earlier record(s) were ` +
+                      `renumbered before a source removal failed, so this run stopped early. ` +
+                      `Primary failure: ${describeError(removed.failure)}. ` +
+                      `The duplicate id "${m.id}" is still claimed by ${claimants.length} ` +
+                      `file(s): ${claimants.join(", ")}. The committed renumberings stand ` +
+                      `and no orphan files were left behind; retry the dedupe to finish.`,
+                  }),
+                );
+              }
               removedSources.add(m.path);
               renumbered.push({ from: m.id, to: id, title: m.title });
             }
