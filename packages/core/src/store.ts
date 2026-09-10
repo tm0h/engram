@@ -1025,6 +1025,11 @@ const makeEngramStoreLive = (
           const byId = new Map<string, Engram[]>();
           for (const m of scanned.entries) byId.set(m.id, [...(byId.get(m.id) ?? []), m]);
           const renumbered: Array<{ from: string; to: string; title: string }> = [];
+          // Source paths already removed in this run: the per-record commit
+          // record, used to name the remaining claimants of a duplicated id
+          // when a later record's successor write fails after earlier
+          // renumberings committed.
+          const removedSources = new Set<string>();
           for (const group of byId.values()) {
             if (group.length < 2) continue;
             // The oldest record keeps the disputed id; equal `created` values
@@ -1042,10 +1047,54 @@ const makeEngramStoreLive = (
               // repairs for why the winner rule alone is not enough).
               const id = newId();
               const file = path.join(dir, `${id}-${slugify(m.title)}.md`);
-              yield* fs.writeFileString(file, serialize({ ...m, id, updated: nowISO() }), {
-                flag: "wx",
-              });
+              // A failed successor write must leave neither debris nor
+              // silence. The `wx` open can create the destination before the
+              // write reports failure, and a half-written file is worse than
+              // an unfinished repair: it carries a fresh id no later dedupe
+              // pass renumbers, and once it fails the next scan as an
+              // unreadable file, the omitted-file refusal blocks dedupe on
+              // the store outright. So: drop a partially created successor
+              // (force: a no-op when the write failed before creating
+              // anything), report it when the cleanup itself fails, and make
+              // partial progress explicit when earlier records committed.
+              // Write-then-remove order is load-bearing: removing the source
+              // first would turn a failed successor write into data loss.
+              const written = yield* Effect.result(
+                fs.writeFileString(file, serialize({ ...m, id, updated: nowISO() }), {
+                  flag: "wx",
+                }),
+              );
+              if (Result.isFailure(written)) {
+                const step = yield* rollbackStep(
+                  file,
+                  `the partially created successor "${file}" for the still duplicated id "${m.id}"`,
+                  written.failure,
+                  fs.remove(file, { force: true }),
+                );
+                if (step !== null) return yield* Effect.fail(step);
+                if (renumbered.length === 0) return yield* Effect.fail(written.failure);
+                // Committed renumberings stand: un-renumbering them would
+                // rewrite files under the same degraded I/O condition that
+                // caused the failure, while a retry converges. The error
+                // must report the partial state instead of hiding it.
+                const claimants = scanned.entries
+                  .filter((e) => e.id === m.id && !removedSources.has(e.path))
+                  .map((e) => e.path);
+                return yield* Effect.fail(
+                  new FrontmatterParseError({
+                    file: m.path,
+                    message:
+                      `partial dedupe repair: ${renumbered.length} earlier record(s) were ` +
+                      `renumbered before a successor write failed, so this run stopped early. ` +
+                      `Primary failure: ${describeError(written.failure)}. ` +
+                      `The duplicate id "${m.id}" is still claimed by ${claimants.length} ` +
+                      `file(s): ${claimants.join(", ")}. The committed renumberings stand ` +
+                      `and no orphan files were left behind; retry the dedupe to finish.`,
+                  }),
+                );
+              }
               yield* fs.remove(m.path);
+              removedSources.add(m.path);
               renumbered.push({ from: m.id, to: id, title: m.title });
             }
           }
