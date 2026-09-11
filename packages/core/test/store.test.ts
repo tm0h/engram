@@ -2741,6 +2741,218 @@ describe("EngramStore / dedupe write-failure recovery", () => {
   });
 });
 
+/* ------------------------------------------------------------------ */
+/* plain retitle and dedupe mutation atomicity (failure recovery)     */
+/* ------------------------------------------------------------------ */
+
+describe("EngramStore / retitle & dedupe atomicity", () => {
+  let orig = "";
+  let tmp = "";
+  const engramsDir = (): string => projectEngramsDir(tmp);
+  /** Seed one fully valid entry file directly, with frontmatter overrides. */
+  const seedFile = (name: string, over: Record<string, unknown> = {}): string => {
+    const file = path.join(engramsDir(), name);
+    fs.writeFileSync(file, scanFm(over));
+    return file;
+  };
+  /** Basename of the fresh-id successors dedupe mints: `<ULID>-<slug>.md`. */
+  const freshSuccessorName = (slug: string): RegExp =>
+    new RegExp(`^[0-9a-hjkmnp-tv-z]{26}-${slug}\\.md$`);
+  /** Seed one claimant of a duplicated id; `created` also stamps `updated`
+   * (equality is valid, and a later `created` than `updated` would be an
+   * error-severity diagnostic that makes dedupe refuse the store). */
+  const seedDuplicate = (name: string, id: string, title: string, created: string): string =>
+    seedFile(name, { id, title, created, updated: created });
+  beforeEach(() => {
+    orig = process.cwd();
+    tmp = mkProject();
+    process.chdir(tmp);
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it.live("plain retitle: failed old-file removal rolls the rename back byte-identically", () => {
+    const file = seedFile("0002-editor.md", { id: "0002", title: "Editor" });
+    const before = snapshot(engramsDir());
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const e = yield* Effect.flip(
+        store.update("project", "0002", { title: "Renamed editor" }, NOSCAN),
+      );
+      expect((e as { _tag: string })._tag).toBe("PlatformError");
+      // the old file is untouched and the compensating removal dropped the
+      // renamed successor: the store is byte-identical to the pre-operation
+      // snapshot
+      expect(snapshot(engramsDir())).toBe(before);
+      // exactly one file claims the id
+      expect(fs.readdirSync(engramsDir())).toEqual(["0002-editor.md"]);
+      expect(fs.readFileSync(file, "utf8")).toContain('id: "0002"');
+    }).pipe(
+      Effect.provide(failIoStoreLive({ remove: (p) => path.basename(p) === "0002-editor.md" })),
+    );
+  });
+
+  it.live(
+    "plain retitle: failed cleanup after a failed removal reports an incomplete rollback",
+    () => {
+      seedFile("0002-editor.md", { id: "0002", title: "Editor" });
+      return Effect.gen(function* () {
+        const store = yield* EngramStore;
+        const e = yield* Effect.flip(
+          store.update("project", "0002", { title: "Renamed editor" }, NOSCAN),
+        );
+        expect((e as { _tag: string })._tag).toBe("FrontmatterParseError");
+        const message = (e as { message: string }).message;
+        expect(message).toContain("incomplete rollback");
+        expect(message).toContain("Primary failure:");
+        expect(message).toContain("Rollback failure:");
+        // the deterministic successor path is named as the leftover
+        expect(message).toContain(path.join(engramsDir(), "0002-renamed-editor.md"));
+        // the old file remains byte-identical; the successor could not be
+        // removed either, so both files claim the id
+        expect(fs.readFileSync(path.join(engramsDir(), "0002-editor.md"), "utf8")).toBe(
+          scanFm({ id: "0002", title: "Editor" }),
+        );
+        expect(fs.readdirSync(engramsDir()).sort()).toEqual([
+          "0002-editor.md",
+          "0002-renamed-editor.md",
+        ]);
+      }).pipe(
+        Effect.provide(
+          failIoStoreLive({
+            remove: (p) =>
+              path.basename(p) === "0002-editor.md" ||
+              path.basename(p) === "0002-renamed-editor.md",
+          }),
+        ),
+      );
+    },
+  );
+
+  it.live(
+    "dedupe: failed source removal with a clean rollback restores the pre-repair duplicate",
+    () => {
+      seedDuplicate("0001-a.md", "0001", "A", "2025-08-15T09:00:00.000Z");
+      seedDuplicate("0001-b.md", "0001", "B", "2025-08-16T09:00:00.000Z");
+      const before = snapshot(engramsDir());
+      return Effect.gen(function* () {
+        const store = yield* EngramStore;
+        const e = yield* Effect.flip(store.dedupe("project"));
+        expect((e as { _tag: string })._tag).toBe("PlatformError");
+        // byte-identical: the deliberately duplicated pre-operation state is
+        // preserved (a clean rollback keeps the duplicate, it does not repair
+        // it), the fresh-id successor is gone, and no orphan remains
+        expect(snapshot(engramsDir())).toBe(before);
+        expect(fs.readdirSync(engramsDir()).sort()).toEqual(["0001-a.md", "0001-b.md"]);
+      }).pipe(Effect.provide(failIoStoreLive({ remove: (p) => path.basename(p) === "0001-b.md" })));
+    },
+  );
+
+  it.live(
+    "dedupe: failed cleanup after a failed source removal reports an incomplete rollback",
+    () => {
+      seedDuplicate("0001-a.md", "0001", "A", "2025-08-15T09:00:00.000Z");
+      seedDuplicate("0001-b.md", "0001", "B", "2025-08-16T09:00:00.000Z");
+      return Effect.gen(function* () {
+        const store = yield* EngramStore;
+        const e = yield* Effect.flip(store.dedupe("project"));
+        expect((e as { _tag: string })._tag).toBe("FrontmatterParseError");
+        const message = (e as { message: string }).message;
+        expect(message).toContain("incomplete rollback");
+        expect(message).toContain("Primary failure:");
+        expect(message).toContain("Rollback failure:");
+        // the leftover names the fresh-id successor path and the duplicated id
+        const files = fs.readdirSync(engramsDir()).sort();
+        const successor = files.find((f) => freshSuccessorName("b").test(f));
+        expect(successor).toBeDefined();
+        expect(message).toContain(path.join(engramsDir(), successor!));
+        expect(message).toContain('"0001"');
+        // the winner and the un-removed source still claim the id on disk
+        expect(files.filter((f) => f.startsWith("0001-"))).toEqual(["0001-a.md", "0001-b.md"]);
+        expect(fs.readFileSync(path.join(engramsDir(), "0001-a.md"), "utf8")).toContain(
+          'id: "0001"',
+        );
+        expect(fs.readFileSync(path.join(engramsDir(), "0001-b.md"), "utf8")).toContain(
+          'id: "0001"',
+        );
+      }).pipe(
+        Effect.provide(
+          failIoStoreLive({
+            remove: (p) =>
+              path.basename(p) === "0001-b.md" || freshSuccessorName("b").test(path.basename(p)),
+          }),
+        ),
+      );
+    },
+  );
+
+  it.live(
+    "dedupe: mid-run failure after committed progress reports it explicitly and stands",
+    () => {
+      // distinct created timestamps force the displacement order: A wins,
+      // B is displaced first, C second
+      const winner = seedDuplicate("0001-a.md", "0001", "A", "2025-08-15T09:00:00.000Z");
+      const first = seedDuplicate("0001-b.md", "0001", "B", "2025-08-16T09:00:00.000Z");
+      const second = seedDuplicate("0001-c.md", "0001", "C", "2025-08-17T09:00:00.000Z");
+      return Effect.gen(function* () {
+        const store = yield* EngramStore;
+        const e = yield* Effect.flip(store.dedupe("project"));
+        expect((e as { _tag: string })._tag).toBe("FrontmatterParseError");
+        const message = (e as { message: string }).message;
+        expect(message).toContain("Primary failure:");
+        // the still duplicated id and its remaining claimants are named
+        expect(message).toContain('"0001"');
+        expect(message).toContain(winner);
+        expect(message).toContain(second);
+        expect(message).not.toContain("0001-b.md");
+        // the first loser is fully renumbered: source gone, fresh-id file present
+        expect(fs.existsSync(first)).toBe(false);
+        const files = fs.readdirSync(engramsDir()).sort();
+        expect(files.some((f) => freshSuccessorName("b").test(f))).toBe(true);
+        // the second loser and the winner still claim the id; no orphans:
+        // the file count equals the pre-operation count
+        expect(files).toHaveLength(3);
+        expect(files.filter((f) => f.startsWith("0001-"))).toEqual(["0001-a.md", "0001-c.md"]);
+        // a follow-up scan reports duplicate_id for exactly that group
+        const scanned = yield* store.scan("project");
+        expect(scanned.duplicateIds).toEqual([{ id: "0001", files: [winner, second] }]);
+      }).pipe(Effect.provide(failIoStoreLive({ remove: (p) => path.basename(p) === "0001-c.md" })));
+    },
+  );
+
+  it.live("dedupe: a retry after a compensated failure converges with no orphans", () => {
+    seedDuplicate("0001-a.md", "0001", "A", "2025-08-15T09:00:00.000Z");
+    seedDuplicate("0001-b.md", "0001", "B", "2025-08-16T09:00:00.000Z");
+    const before = snapshot(engramsDir());
+    // fail only the FIRST removal of the loser's source, so the first run
+    // fails (compensated) and the retry runs without the fault
+    let removals = 0;
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const e = yield* Effect.flip(store.dedupe("project"));
+      expect((e as { _tag: string })._tag).toBe("PlatformError");
+      // the compensated failure left the store byte-identical
+      expect(snapshot(engramsDir())).toBe(before);
+      // the retry completes the repair
+      const { renumbered } = yield* store.dedupe("project");
+      expect(renumbered).toEqual([{ from: "0001", to: expect.stringMatching(ULID), title: "B" }]);
+      const all = yield* store.list("project");
+      // final ids unique, file count preserved, no orphans
+      expect(new Set(all.map((m) => m.id)).size).toBe(all.length);
+      expect(all).toHaveLength(2);
+      expect(all.map((m) => m.title).sort()).toEqual(["A", "B"]);
+    }).pipe(
+      Effect.provide(
+        failIoStoreLive({
+          remove: (p) => path.basename(p) === "0001-b.md" && ++removals === 1,
+        }),
+      ),
+    );
+  });
+});
+
 describe("EngramStore / secret-scan gate (ENG-15)", () => {
   let orig = "";
   let tmp = "";
