@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vite-plus/test";
 import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const repoRoot = resolve(new URL("../../..", import.meta.url).pathname);
+const resolveFileUrl = (url: URL): string => resolve(fileURLToPath(url));
+const repoRoot = resolveFileUrl(new URL("../../..", import.meta.url));
 const readRepoFile = (path: string): string => readFileSync(resolve(repoRoot, path), "utf8");
 
 describe("Docker E2E runner", () => {
+  it("decodes encoded checkout paths", () => {
+    expect(resolveFileUrl(new URL("file:///tmp/engram%20checkout/"))).toBe("/tmp/engram checkout");
+  });
+
   it("builds an isolated image containing the packaged CLI", () => {
     const dockerfile = readRepoFile("Dockerfile.e2e");
 
