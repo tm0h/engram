@@ -59,3 +59,18 @@ jobs:
       - name: Build CLI
         # The canonical CLI build command (AGENTS.md).
         run: pnpm --filter engram-cli build
+
+  docker-e2e:
+    # Keep the slower container audit behind the fast diagnostic job.
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        # actions/checkout v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Run isolated E2E audit
+        run: bash scripts/run-e2e-container.sh
