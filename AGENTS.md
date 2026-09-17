@@ -19,6 +19,7 @@ TMPDIR=/var/tmp pnpm test                 # run all Vitest suites in isolation
 pnpm exec vp test run packages/core/test/search.test.ts
 pnpm --filter @engram/core benchmark      # evaluate the retrieval corpus
 pnpm --filter engram-cli build            # canonical CLI build
+pnpm test:e2e:docker                       # isolated release and CLI audit
 ```
 
 Use `pnpm exec vp check --fix` for safe formatter and lint fixes. Review its diff because automated rewrites can alter code-point counting.
@@ -31,6 +32,8 @@ Write strict TypeScript ESM with two-space indentation. Let Vite Plus format and
 
 Use TDD: add a failing test, then implement. Test services with real `NodeServices` and isolated temporary directories. Keep pure logic deterministic. Core behavior needs regression coverage. Retrieval changes must preserve the checked-in benchmark gate; never edit corpus labels to make a ranker pass.
 
+Run `pnpm test:e2e:docker` before a release and after changes to CLI commands, packaging, harness integration, or the container audit. It accepts only a clean committed snapshot. The runner builds that snapshot, then tests the packaged CLI without network access or host-directory mounts. CI runs this audit after the faster `check` job passes.
+
 ## Commit and Pull Request Guidelines
 
-Branch before editing and never commit directly to `main`. Use Conventional Commits such as `feat(core):`, `fix(cli):`, and `docs:`. PRs need a concise public description, linked issue when applicable, and exact verification commands. CI requires `pnpm check`, `pnpm test`, and the canonical CLI build. Follow `RELEASING.md` for releases. Never commit credentials or real personal engrams.
+Branch before editing and never commit directly to `main`. Use Conventional Commits such as `feat(core):`, `fix(cli):`, and `docs:`. PRs need a concise public description, linked issue when applicable, and exact verification commands. CI requires `pnpm check`, `pnpm test`, the canonical CLI build, and the Docker E2E audit. Follow `RELEASING.md` for releases. Never commit credentials or real personal engrams.

@@ -1,0 +1,44 @@
+FROM node:24-bookworm-slim
+
+ARG CANDIDATE_SHA=unknown
+
+LABEL org.opencontainers.image.title="engram-e2e"
+LABEL org.opencontainers.image.revision="${CANDIDATE_SHA}"
+
+ENV CI=1
+ENV TMPDIR=/var/tmp
+ENV COREPACK_HOME=/opt/corepack
+ENV ENGRAM_E2E_CANDIDATE_SHA="${CANDIDATE_SHA}"
+ENV ENGRAM_E2E_BIN=/opt/engram/bin/engram
+
+RUN apt-get update \
+  && apt-get install --yes --no-install-recommends ca-certificates git \
+  && rm -rf /var/lib/apt/lists/* \
+  && mkdir -p /workspace /opt/engram /opt/engram-package /opt/corepack /opt/pnpm-cache /opt/pnpm-store \
+  && corepack enable \
+  && corepack install --global pnpm@11.21.0 \
+  && chown -R node:node /workspace /opt/engram-package /opt/pnpm-cache /opt/pnpm-store
+
+WORKDIR /workspace
+COPY --chown=node:node . .
+
+USER node
+RUN pnpm install --frozen-lockfile --cache-dir /opt/pnpm-cache --store-dir /opt/pnpm-store
+RUN pnpm --filter engram-cli build \
+  && pnpm --filter engram-cli pack --pack-destination /opt/engram-package
+RUN mkdir -p /opt/engram-package/install-warm \
+  && pnpm --dir /opt/engram-package/install-warm install --ignore-scripts \
+    /opt/engram-package/engram-cli-*.tgz \
+    --cache-dir /opt/pnpm-cache \
+    --store-dir /opt/pnpm-store
+
+USER root
+RUN npm install --global --prefix /opt/engram /opt/engram-package/engram-cli-*.tgz \
+  && rm -rf /opt/engram-package
+
+ENV PNPM_CONFIG_OFFLINE=true
+ENV PNPM_CONFIG_CACHE_DIR=/opt/pnpm-cache
+ENV PNPM_CONFIG_STORE_DIR=/opt/pnpm-store
+
+USER node
+ENTRYPOINT ["bash", "/workspace/scripts/e2e-cli.sh"]

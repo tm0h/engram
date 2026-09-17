@@ -1,0 +1,15 @@
+.git
+.engram
+**/.engram
+.env
+.env.*
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+node_modules
+**/node_modules
+**/dist
+coverage
+**/coverage
+*.log
