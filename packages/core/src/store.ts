@@ -42,7 +42,7 @@ import { findProjectRoot } from "./location.js";
 import { evaluateScan, scanContent } from "./secrets.js";
 import type { ScanEvaluation, SecretFinding, SecretPolicy } from "./secrets.js";
 import { nowISO, slugify, newId, parseEntryFilename, parseTimestamp } from "./util.js";
-import { validateEntry, stringifyFrontmatter } from "./frontmatter.js";
+import { validateEntry, stringifyFrontmatter, mergeUnknownFields } from "./frontmatter.js";
 import type { PartialFrontmatter } from "./frontmatter.js";
 
 /** Errors the store can surface. */
@@ -128,7 +128,12 @@ export class EngramStore extends Context.Service<EngramStore, EngramStoreShape>(
 
 /* ----------------------------- helpers ----------------------------- */
 
-const toEngram = (fm: Frontmatter, body: string, file: string): Engram => ({
+const toEngram = (
+  fm: Frontmatter,
+  body: string,
+  file: string,
+  metadata: Readonly<Record<string, unknown>>,
+): Engram => ({
   id: fm.id,
   title: fm.title,
   type: fm.type,
@@ -146,6 +151,7 @@ const toEngram = (fm: Frontmatter, body: string, file: string): Engram => ({
   sourceRef: fm.sourceRef,
   body,
   path: file,
+  metadata,
 });
 
 function serialize(m: Engram): string {
@@ -168,7 +174,10 @@ function serialize(m: Engram): string {
   if (m.expires !== undefined) data.expires = m.expires;
   if (m.sourceType !== undefined) data.sourceType = m.sourceType;
   if (m.sourceRef !== undefined) data.sourceRef = m.sourceRef;
-  return stringifyFrontmatter(m.body ? m.body + "\n" : "", data);
+  /* Unknown user metadata is appended under the canonical fields; the merge
+   * refuses to emit any key the schema knows, so it can never override or
+   * forge a known field. */
+  return stringifyFrontmatter(m.body ? m.body + "\n" : "", mergeUnknownFields(data, m.metadata));
 }
 
 /** Three-state lifecycle patch merge: `undefined` preserves the current
@@ -371,7 +380,7 @@ const makeEngramStoreLive = (
                     engram:
                       v.frontmatter === undefined
                         ? undefined
-                        : toEngram(v.frontmatter, v.content.trim(), file),
+                        : toEngram(v.frontmatter, v.content.trim(), file, v.metadata),
                     id: v.partial.id,
                     title: v.partial.title,
                     scope: v.partial.scope,

@@ -1,6 +1,14 @@
 import { describe, it, expect } from "@effect/vitest";
 import { Option, Result } from "effect";
-import { parseFrontmatter, stringifyFrontmatter, validateEntry } from "../src/frontmatter.js";
+import {
+  parseFrontmatter,
+  stringifyFrontmatter,
+  validateEntry,
+  mergeUnknownFields,
+  unknownFrontmatterFields,
+  KNOWN_FRONTMATTER_KEYS,
+} from "../src/frontmatter.js";
+import { FrontmatterSchema } from "../src/domain.js";
 
 /** Success value of parsing `raw`, or undefined when it failed. */
 const ok = (raw: string) => Option.getOrUndefined(Result.getSuccess(parseFrontmatter(raw)));
@@ -441,5 +449,112 @@ describe("validateEntry / lifecycle metadata", () => {
   it("stringifyFrontmatter and parseFrontmatter round-trip all six lifecycle values", () => {
     const data = { ...VALID, ...LIFECYCLE };
     expect(ok(stringifyFrontmatter("Body\n", data))).toEqual({ data, content: "Body\n" });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* ENG-40: unknown-field preservation                                  */
+/* ------------------------------------------------------------------ */
+
+describe("unknown frontmatter preservation", () => {
+  const UNKNOWN = {
+    confidence: "high",
+    "next-review": "2026-01-01",
+    owner: { name: "mohammad", team: { squad: "core" } },
+    labels: ["a", "b", { deep: [1, 2] }],
+    reviewed: true,
+    weight: 3.5,
+    empty: null,
+    quoted: "yes",
+  };
+
+  it("validateEntry exposes unknown top-level values in metadata", () => {
+    const v = validateEntry(raw(UNKNOWN));
+    expect(v.issues).toEqual([]);
+    expect(v.metadata).toEqual(UNKNOWN);
+  });
+
+  it("validateEntry metadata never contains known keys", () => {
+    const v = validateEntry(raw({ ...UNKNOWN, author: "mohammad", pinned: true }));
+    expect(v.metadata).toEqual(UNKNOWN);
+    expect(Object.keys(v.metadata)).not.toContain("author");
+    expect(Object.keys(v.metadata)).not.toContain("title");
+  });
+
+  it("unknownFrontmatterFields drops every key the schema knows", () => {
+    expect(unknownFrontmatterFields({ ...VALID, extra: 1 })).toEqual({ extra: 1 });
+    expect(unknownFrontmatterFields({ status: "active", expires: "x", extra: 1 })).toEqual({
+      extra: 1,
+    });
+  });
+
+  it("mergeUnknownFields appends unknown keys under canonical fields", () => {
+    const merged = mergeUnknownFields({ id: "0001", title: "Hello" }, UNKNOWN);
+    expect(merged).toEqual({ id: "0001", title: "Hello", ...UNKNOWN });
+  });
+
+  it("mergeUnknownFields never lets metadata override or forge a known field", () => {
+    const merged = mergeUnknownFields(
+      { id: "0001", title: "Hello" },
+      {
+        title: "poisoned",
+        id: "9999",
+        status: "archived",
+        extra: "kept",
+      },
+    );
+    expect(merged).toEqual({ id: "0001", title: "Hello", extra: "kept" });
+  });
+
+  it("a rewrite round-trip preserves equivalent parsed metadata values", () => {
+    const v = validateEntry(raw(UNKNOWN));
+    const rewritten = stringifyFrontmatter(
+      "New body\n",
+      mergeUnknownFields({ ...VALID }, v.metadata),
+    );
+    expect(ok(rewritten)).toEqual({ data: { ...VALID, ...UNKNOWN }, content: "New body\n" });
+  });
+
+  it("mergeUnknownFields keeps a __proto__ key as an own property without mutating the prototype", () => {
+    // Computed key: a literal `__proto__:` would set the prototype, not an
+    // own property, and js-yaml hands us the key exactly this way.
+    const metadata: Record<string, unknown> = {};
+    Object.defineProperty(metadata, "__proto__", {
+      value: { squad: "core" },
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+
+    const merged = mergeUnknownFields({ id: "0001", title: "Hello" }, metadata);
+
+    expect(Object.getPrototypeOf(merged)).toBe(Object.prototype);
+    expect(Object.getOwnPropertyDescriptor(merged, "__proto__")?.value).toEqual({
+      squad: "core",
+    });
+    expect(Object.keys(merged)).toEqual(["id", "title", "__proto__"]);
+  });
+
+  it("a rewrite round-trip preserves a top-level __proto__ key losslessly", () => {
+    const v = validateEntry(raw({ ["__proto__"]: "kept-value" }));
+    expect(v.issues).toEqual([]);
+    expect(Object.getPrototypeOf(v.metadata)).toBe(Object.prototype);
+    expect(Object.getOwnPropertyDescriptor(v.metadata, "__proto__")?.value).toBe("kept-value");
+
+    const rewritten = stringifyFrontmatter(
+      "New body\n",
+      mergeUnknownFields({ ...VALID }, v.metadata),
+    );
+    expect(rewritten).toContain("__proto__:");
+
+    const reparsed = ok(rewritten) as { data: Record<string, unknown>; content: string };
+    expect(Object.getPrototypeOf(reparsed.data)).toBe(Object.prototype);
+    expect(Object.getOwnPropertyDescriptor(reparsed.data, "__proto__")?.value).toBe("kept-value");
+  });
+
+  it("KNOWN_FRONTMATTER_KEYS mirrors the FrontmatterSchema field set", () => {
+    expect([...KNOWN_FRONTMATTER_KEYS].sort()).toEqual(
+      Object.keys(FrontmatterSchema.fields).sort(),
+    );
   });
 });
