@@ -44,6 +44,23 @@ no memory bodies, source references, or filesystem paths. Use `engram show`
 to read the selected memory. Identify entries by scope and id.
 JSON pagination uses `--limit` and `--offset`; `nextOffset: null` marks the end.
 
+### Precise search
+
+Search supports quoted phrases, bounded prefixes, field filters, and explicit
+Boolean groups:
+
+```bash
+engram search '"release checklist"'
+engram search 'kuber*'
+engram search 'tag:auth AND body:rotation'
+engram search 'title:deploy OR type:decision'
+```
+
+Whitespace behaves like `OR`. Uppercase `AND` binds more tightly than `OR`.
+The field filters are `tag:`, `title:`, `type:`, and `body:`. Search, list,
+and context exclude inactive entries by default. Pass `--all` only when you
+need superseded, archived, or expired entries.
+
 Record:
 
 - Decisions — with rationale and rejected alternatives in the body
@@ -90,6 +107,18 @@ engram add --title "Replaced moment with date-fns" --type decision \
   --status superseded --source-type conversation "date-fns is tree-shakeable"
 ```
 
+## Review and integrity maintenance
+
+Run `engram review --scope all` to find superseded, archived, expired,
+review-due, and broken-lineage entries. Add `--json` for structured output.
+The command is read-only.
+
+Run `engram check --scope all` when reads warn about skipped files, before a
+release, or after resolving merge conflicts in `.engram/`. It checks entry
+frontmatter, filenames, duplicate ids, configuration, lifecycle references,
+and stored secret-scan findings. Add `--json` for a structured report. Errors
+and unchecked scopes return a nonzero status. Lifecycle advisories are warnings.
+
 ## Secret scanning on writes
 
 Every `engram add`/`engram edit` write is scanned for secrets, private keys,
@@ -99,6 +128,13 @@ never the matched text. Remove the secret and keep it in a dedicated secret
 manager. Pass `--allow-secrets` only when the user explicitly asks to record
 flagged content anyway; the bypass is reported. `engram check` reports the
 same redacted findings for existing files.
+
+Change scan policy only when the user intends to change it:
+
+```bash
+engram config set secretScan block|warn|off
+engram config set personalSecretScan block|warn|off
+```
 
 Authority caveat: these fields are unauthenticated claims anyone can write.
 Engram does not verify sources or establish truth; always weigh current

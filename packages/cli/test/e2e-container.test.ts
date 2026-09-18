@@ -63,6 +63,30 @@ describe("Docker E2E runner", () => {
     expect(e2e).toContain("engram remove");
   });
 
+  it("pins packaged CLI coverage for every post-0.4.0 command surface", () => {
+    const e2e = readRepoFile("scripts/e2e-cli.sh");
+
+    for (const scenario of [
+      "Integrity failure diagnostics",
+      "Lifecycle clearing and validation",
+      "BM25 query syntax and pagination",
+      "Secret scanner policies",
+      "Duplicate repair",
+      "Pipe closure",
+    ]) {
+      expect(e2e).toContain(`step "${scenario}"`);
+    }
+
+    expect(e2e).toContain("--clear-review-after");
+    expect(e2e).toContain("--clear-supersedes");
+    expect(e2e).toContain("--clear-source-ref");
+    expect(e2e).toContain("SEC-INJECT-OVERRIDE");
+    expect(e2e).toContain("--allow-secrets");
+    expect(e2e).toContain("tag:ops AND title:alpha");
+    expect(e2e).toContain("engram dedupe --scope project");
+    expect(e2e).toContain("head -c 1");
+  });
+
   it("exposes executable entry points through the workspace package", () => {
     const packageJson = JSON.parse(readRepoFile("package.json")) as {
       scripts: Record<string, string>;

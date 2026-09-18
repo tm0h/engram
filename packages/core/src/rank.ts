@@ -12,9 +12,9 @@
  *   points     = FIELD_WEIGHTS[f] * idf * tfNorm
  *
  * Field weights keep the legacy ranker's preference order (tag > title >
- * type > body). Entries get the legacy +0.5 pinned boost when pinned, so
- * pinned entries surface for any query that passes the group requirements,
- * exactly like the legacy ranker's behavior (preflight F3).
+ * type > body). Entries get the legacy +0.5 pinned boost when pinned. The
+ * boost may surface an otherwise unrelated entry for a plain query, but it
+ * cannot bypass explicit field filters or AND requirements.
  *
  * Matching:
  * - word terms match a field by exact token equality, or, when the folded
@@ -32,10 +32,10 @@
  * - phrase bonus: FIELD_WEIGHTS[f] * PHRASE_WEIGHT when the field's folded
  *   text contains the folded phrase contiguously;
  * - boolean semantics (query.ts): an entry is INCLUDED when every term of
- *   at least one OR-alternative matches (or it is pinned: the legacy
- *   ranker's pinned quirk, kept for parity, preflight F3); SCORING always
- *   sums every matching term of every alternative, in fixed order, so
- *   ranking stays evidence-complete across the whole query.
+ *   at least one OR-alternative matches. The legacy pinned inclusion quirk is
+ *   kept only for plain, unscoped alternatives. SCORING always sums every
+ *   matching term of every alternative, in fixed order, so ranking stays
+ *   evidence-complete across the whole query.
  *
  * Explanations (contributions) are token-major, fields in the fixed order
  * tag, title, type, body, pinned last, and sum exactly to the score. They
@@ -300,10 +300,11 @@ function scoreTerm(
   return matched;
 }
 
-/** Rank candidates against a parsed query: an entry is returned when it is
- * pinned (legacy parity) or when every term of at least one OR-alternative
- * matches; results sort score-desc with id-ascending ties. Lifecycle
- * filtering is the caller's job (searchEngrams). */
+/** Rank candidates against a parsed query: an entry is returned when every
+ * term of at least one OR-alternative matches. For legacy parity, pinning can
+ * also include an entry for plain unscoped alternatives, but never for field
+ * filters or AND requirements. Results sort score-desc with id-ascending
+ * ties. Lifecycle filtering is the caller's job (searchEngrams). */
 export function rankEntries(
   candidates: ReadonlyArray<Engram>,
   parsed: ParsedQuery,
@@ -327,9 +328,13 @@ export function rankEntries(
     // Contribution objects are only materialized when explaining.
     const pointsList: number[] = [];
     const contributions: ScoreContribution[] = [];
-    let matched = m.pinned === true;
+    let matched = false;
     for (const alternative of parsed.alternatives) {
       // Inclusion gate: the alternative matches when every term matches.
+      // A pinned entry also satisfies a plain, single-term alternative, but
+      // never a field-scoped or AND alternative. Eligibility is local to the
+      // alternative so a constrained OR branch cannot disable a plain one.
+      const pinnedEligible = alternative.length === 1 && alternative[0]?.field === undefined;
       // Scoring is unconditional: every matching term of every alternative
       // contributes, in fixed alternative-then-term order.
       let all = true;
@@ -337,7 +342,7 @@ export function rankEntries(
         if (!scoreTerm(term, index, stats, dfMemo, pointsList, explain ? contributions : undefined))
           all = false;
       }
-      if (all) matched = true;
+      if (all || (m.pinned === true && pinnedEligible)) matched = true;
     }
     if (!matched) continue;
     // Pinned is pushed and accumulated LAST so the score is exactly the

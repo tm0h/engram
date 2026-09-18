@@ -6,7 +6,7 @@ Engram is a git-native memory tool for AI agents. It stores personal or project 
 
 - `packages/core/` contains the Effect-based engine: storage, lifecycle and integrity checks, secret scanning, BM25 search, structured output, and retrieval benchmarks.
 - `packages/cli/` contains the published `engram-cli` command surface. Commands live in `src/commands/`; Pi and OpenCode bundle entry points live beside `src/index.ts`.
-- `packages/harnesses/` contains shared serializable operations, the host-neutral installer, and Pi, OpenCode, and Claude Code integrations. Keep the Pi and Claude `SKILL.md` guidance synchronized.
+- `packages/harnesses/` contains shared serializable operations, the host-neutral installer, and Pi, OpenCode, and Claude Code integrations. Keep the Pi and Claude `SKILL.md` guidance synchronized. Update both skills and their guidance tests when adding user-facing CLI features.
 - Tests are colocated under each package's `test/` directory. `corpus/` holds synthetic retrieval fixtures and labeled cases. Follow `corpus/README.md` when changing them.
 
 ## Build, Test, and Development Commands

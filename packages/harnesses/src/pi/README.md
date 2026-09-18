@@ -15,11 +15,11 @@ Or per-project (committed, teammates get it automatically after trust), in
 `.pi/settings.json`. Pin a tested version so everyone loads the same code:
 
 ```json
-{ "packages": ["npm:engram-cli@0.4.0"] }
+{ "packages": ["npm:engram-cli@0.5.0"] }
 ```
 
 A git install also works; pin a tag or commit:
-`pi install git:github.com/tm0h/engram@v0.4.0`.
+`pi install git:github.com/tm0h/engram@v0.5.0`.
 
 Memory scope is independent of install scope: these tools read and write the
 same scopes as the CLI (`project` inside an initialized repo, `personal`
