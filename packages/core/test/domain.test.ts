@@ -236,6 +236,7 @@ describe("effectiveStatus (ENG-17)", () => {
     updated: "2026-01-01T00:00:00.000Z",
     author: undefined,
     pinned: false,
+    schemaVersion: 1,
     body: "",
     path: "",
   };

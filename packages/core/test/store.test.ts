@@ -1433,6 +1433,7 @@ describe("lifecycleDiagnostics", () => {
     updated: "2025-08-15T11:00:00.000Z",
     author: undefined,
     pinned: false,
+    schemaVersion: 1,
     body: "",
     path: "/store/0001-lifecycled.md",
     ...over,

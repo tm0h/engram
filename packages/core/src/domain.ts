@@ -112,9 +112,11 @@ export interface Engram {
   readonly sourceType?: SourceType | undefined;
   readonly sourceRef?: string | undefined;
   /* ENG-41: effective entry format version (1 when the file has no
-   * schemaVersion key). Kept out of EngramInput and EngramPatch: users and
-   * harnesses cannot select or mutate format versions through add/edit. */
-  readonly schemaVersion?: number | undefined;
+   * schemaVersion key). Required: every Engram construction site must
+   * normalize, so no read path can leak an undefined version. Kept out of
+   * EngramInput and EngramPatch: users and harnesses cannot select or
+   * mutate format versions through add/edit. */
+  readonly schemaVersion: number;
   readonly body: string;
   /** absolute path to the source file */
   readonly path: string;

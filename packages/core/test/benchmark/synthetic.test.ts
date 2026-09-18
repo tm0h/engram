@@ -12,6 +12,7 @@ const base: Engram = {
   updated: "2026-01-10T00:00:00.000Z",
   author: undefined,
   pinned: false,
+  schemaVersion: 1,
   body: "the dev server listens on port 4747 by default",
   path: "engrams/0001.md",
 };
