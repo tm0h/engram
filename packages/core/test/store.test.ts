@@ -3261,3 +3261,271 @@ describe("EngramStore / unknown frontmatter preservation (ENG-40)", () => {
     }).pipe(Effect.provide(StoreLive)),
   );
 });
+
+/* ------------------------------------------------------------------ */
+/* ENG-41: entry schemaVersion compatibility                           */
+/* ------------------------------------------------------------------ */
+
+describe("EngramStore / entry schemaVersion (ENG-41)", () => {
+  let orig = "";
+  let tmp = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    tmp = mkProject();
+    process.chdir(tmp);
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const dir = (): string => projectEngramsDir(tmp);
+
+  const BASE = {
+    id: "0001",
+    title: "Versioned note",
+    type: "note",
+    tags: ["a"],
+    scope: "project",
+    created: "2025-08-15T10:00:00.000Z",
+    updated: "2025-08-15T11:00:00.000Z",
+  };
+
+  /** Unknown top-level values seeded alongside schemaVersion to prove the
+   * two features compose (ENG-40 + ENG-41). */
+  const METADATA = {
+    confidence: "high",
+    owner: { name: "mohammad", team: { squad: "core" } },
+    labels: ["a", "b"],
+  };
+
+  const seed = (name: string, fm: Record<string, unknown>, body = "Body\n"): string => {
+    const file = path.join(dir(), name);
+    fs.writeFileSync(file, stringifyFrontmatter(body, fm));
+    return file;
+  };
+
+  const readData = (file: string): Record<string, unknown> =>
+    Option.getOrUndefined(Result.getSuccess(parseFrontmatter(fs.readFileSync(file, "utf8"))))
+      ?.data as Record<string, unknown>;
+
+  const rawText = (file: string): string => fs.readFileSync(file, "utf8");
+
+  /* ----------------------------- read path ----------------------------- */
+
+  it.live("scan, list, and get normalize an unversioned entry to version 1", () =>
+    Effect.gen(function* () {
+      const file = seed("0001-versioned-note.md", { ...BASE });
+      const store = yield* EngramStore;
+
+      const scanned = yield* store.scan("project");
+      expect(scanned.diagnostics).toEqual([]);
+      expect(scanned.omittedFiles).toBe(0);
+      expect(scanned.entries).toHaveLength(1);
+      expect(scanned.entries[0].schemaVersion).toBe(1);
+      expect(scanned.entries[0].path).toBe(file);
+
+      const listed = yield* store.list("project");
+      expect(listed[0].schemaVersion).toBe(1);
+
+      const got = yield* store.get("project", "0001");
+      expect(got.schemaVersion).toBe(1);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("an unsupported integer stays in entries with a warning and no omission", () =>
+    Effect.gen(function* () {
+      const file = seed("0001-versioned-note.md", { ...BASE, schemaVersion: 2, ...METADATA });
+      const store = yield* EngramStore;
+
+      const scanned = yield* store.scan("project");
+      expect(scanned.omittedFiles).toBe(0);
+      expect(scanned.entries).toHaveLength(1);
+      expect(scanned.entries[0].schemaVersion).toBe(2);
+      expect(scanned.entries[0].metadata).toMatchObject(METADATA);
+      expect(scanned.diagnostics).toHaveLength(1);
+      expect(scanned.diagnostics[0]).toMatchObject({
+        code: "schema_version_unsupported",
+        severity: "warning",
+        scope: "project",
+        file,
+      });
+
+      const listed = yield* store.list("project");
+      expect(listed).toHaveLength(1);
+      expect(listed[0].schemaVersion).toBe(2);
+
+      const got = yield* store.get("project", "0001");
+      expect(got.schemaVersion).toBe(2);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("an invalid version shape is omitted with an error", () =>
+    Effect.gen(function* () {
+      const file = seed("0001-versioned-note.md", { ...BASE, schemaVersion: "2" });
+      const store = yield* EngramStore;
+
+      const scanned = yield* store.scan("project");
+      expect(scanned.entries).toEqual([]);
+      expect(scanned.omittedFiles).toBe(1);
+      expect(scanned.diagnostics).toHaveLength(1);
+      expect(scanned.diagnostics[0]).toMatchObject({
+        code: "schema_version_invalid",
+        severity: "error",
+        scope: "project",
+        file,
+      });
+      expect(yield* store.list("project")).toEqual([]);
+
+      // a direct get names the parse failure instead of reporting "missing"
+      const e = yield* Effect.flip(store.get("project", "0001"));
+      expect((e as { _tag: string })._tag).toBe("FrontmatterParseError");
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  /* ---------------------------- write path ----------------------------- */
+
+  it.live("add emits no schemaVersion key and reads back as version 1", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const m = yield* store.add("project", input(), NOSCAN);
+      expect(readData(m.path)).not.toHaveProperty("schemaVersion");
+      const got = yield* store.get("project", m.id);
+      expect(got.schemaVersion).toBe(1);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("rewriting an unversioned entry stays unversioned", () =>
+    Effect.gen(function* () {
+      const file = seed("0001-versioned-note.md", { ...BASE, ...METADATA });
+      const store = yield* EngramStore;
+
+      const patched = yield* store.update("project", "0001", { body: "Edited\n" }, NOSCAN);
+
+      const data = readData(patched.path);
+      expect(data).not.toHaveProperty("schemaVersion");
+      expect(data).toMatchObject(METADATA);
+      expect(patched.schemaVersion).toBe(1);
+      void file;
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("rewriting an explicit version 1 removes the redundant key", () =>
+    Effect.gen(function* () {
+      seed("0001-versioned-note.md", { ...BASE, schemaVersion: 1 });
+      const store = yield* EngramStore;
+
+      const patched = yield* store.update("project", "0001", { body: "Edited\n" }, NOSCAN);
+
+      expect(readData(patched.path)).not.toHaveProperty("schemaVersion");
+      expect(patched.schemaVersion).toBe(1);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("update preserves and re-emits an unsupported integer next to unknown fields", () =>
+    Effect.gen(function* () {
+      seed("0001-versioned-note.md", { ...BASE, schemaVersion: 2, ...METADATA });
+      const store = yield* EngramStore;
+
+      const patched = yield* store.update("project", "0001", { body: "Edited\n" }, NOSCAN);
+
+      const data = readData(patched.path);
+      expect(data.schemaVersion).toBe(2);
+      expect(data).toMatchObject(METADATA);
+      // exactly one schemaVersion YAML key survives the rewrite
+      expect(rawText(patched.path).match(/^schemaVersion:/gm)).toHaveLength(1);
+      expect(patched.schemaVersion).toBe(2);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("retitle preserves an unsupported integer", () =>
+    Effect.gen(function* () {
+      seed("0001-versioned-note.md", { ...BASE, schemaVersion: 3 });
+      const store = yield* EngramStore;
+
+      const patched = yield* store.update("project", "0001", { title: "Renamed" }, NOSCAN);
+
+      expect(patched.path).toContain("0001-renamed.md");
+      expect(readData(patched.path).schemaVersion).toBe(3);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("supersedes predecessor marking preserves an unsupported integer", () =>
+    Effect.gen(function* () {
+      const predFile = seed("0001-versioned-note.md", { ...BASE, schemaVersion: 2, ...METADATA });
+      const store = yield* EngramStore;
+
+      yield* store.add("project", input({ title: "Newer", supersedes: "0001" }), NOSCAN);
+
+      const data = readData(predFile);
+      expect(data.status).toBe("superseded");
+      expect(data.schemaVersion).toBe(2);
+      expect(data).toMatchObject(METADATA);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("dedupe renumbering preserves unsupported integers on both files", () =>
+    Effect.gen(function* () {
+      const winner = seed("0001-older-copy.md", {
+        ...BASE,
+        title: "Older copy",
+        created: "2025-08-14T10:00:00.000Z",
+        updated: "2025-08-14T11:00:00.000Z",
+        schemaVersion: 2,
+      });
+      seed("0001-versioned-note.md", { ...BASE, schemaVersion: 2, ...METADATA });
+      const store = yield* EngramStore;
+
+      const result = yield* store.dedupe("project");
+
+      expect(result.renumbered).toHaveLength(1);
+      const fresh = path.join(dir(), `${result.renumbered[0].to}-${slugify("Versioned note")}.md`);
+      expect(readData(winner).schemaVersion).toBe(2);
+      expect(readData(fresh).schemaVersion).toBe(2);
+      expect(readData(fresh)).toMatchObject(METADATA);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  /* -------------------- rollback keeps versioned bytes ------------------- */
+
+  it.live(
+    "update establish: a failed predecessor mark leaves an unsupported-version target byte-identical",
+    () => {
+      seed("0001-versioned-note.md", { ...BASE, schemaVersion: 2, ...METADATA });
+      seed("0002-editor-note.md", { ...BASE, id: "0002", title: "Editor note" });
+      const before = snapshot(dir());
+      return Effect.gen(function* () {
+        const store = yield* EngramStore;
+        const e = yield* Effect.flip(
+          store.update("project", "0002", { supersedes: "0001" }, NOSCAN),
+        );
+        expect((e as { _tag: string })._tag).toBe("PlatformError");
+        expect(snapshot(dir())).toBe(before);
+      }).pipe(Effect.provide(failWriteStoreLive((p) => p.includes("0001-"))));
+    },
+  );
+
+  it.live(
+    "update establish: an entry-write failure after marking restores the versioned target bytes",
+    () => {
+      const target = seed("0001-versioned-note.md", { ...BASE, schemaVersion: 2, ...METADATA });
+      const targetBefore = rawText(target);
+      seed("0002-editor-note.md", { ...BASE, id: "0002", title: "Editor note" });
+      return Effect.gen(function* () {
+        const store = yield* EngramStore;
+        const e = yield* Effect.flip(
+          store.update("project", "0002", { supersedes: "0001", body: "new body" }, NOSCAN),
+        );
+        expect((e as { _tag: string })._tag).toBe("PlatformError");
+        // raw-byte restoration: the seeded schemaVersion and unknown fields
+        // come back exactly as written, not re-serialized
+        expect(rawText(target)).toBe(targetBefore);
+        expect(rawText(target)).toContain("schemaVersion: 2");
+      }).pipe(
+        Effect.provide(
+          failWriteCallsStoreLive((p, n) => p.includes("0002-editor-note.md") && n === 1),
+        ),
+      );
+    },
+  );
+});

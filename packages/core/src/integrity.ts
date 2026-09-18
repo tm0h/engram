@@ -33,6 +33,11 @@ export type StoreDiagnosticCode =
   | "expires_invalid"
   | "source_type_invalid"
   | "source_ref_invalid"
+  /* ENG-41 entry format version (packages/core/src/frontmatter.ts). Only
+   * schema_version_unsupported is a warning: a future-format entry still
+   * reads; an invalid shape is entry-preventing. */
+  | "schema_version_invalid"
+  | "schema_version_unsupported"
   /* store scanning and cross-file checks (packages/core/src/store.ts) */
   | "file_unreadable"
   | "filename_invalid"
@@ -57,8 +62,9 @@ export type StoreDiagnosticCode =
   | "secret_detected";
 
 /** Diagnostic weight. "error" marks a defect that makes a check fail;
- * "warning" is advisory (ENG-13 lifecycle conditions): reported in every
- * output mode, but a warning-only scan still passes. */
+ * "warning" is advisory (ENG-13 lifecycle conditions, ENG-41 unsupported
+ * entry schema versions): reported in every output mode, but a warning-only
+ * scan still passes. */
 export type StoreDiagnosticSeverity = "error" | "warning";
 
 /** One defect in one file: `message` states the problem, `hint` the repair. */

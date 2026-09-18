@@ -24,7 +24,13 @@
  */
 import { Result } from "effect";
 import yaml from "js-yaml";
-import { ENGRAM_STATUSES, ENGRAM_TYPES, FrontmatterSchema, SOURCE_TYPES } from "./domain.js";
+import {
+  ENGRAM_STATUSES,
+  ENGRAM_TYPES,
+  FrontmatterSchema,
+  SOURCE_TYPES,
+  SUPPORTED_ENTRY_SCHEMA_VERSION,
+} from "./domain.js";
 import type { EngramType, Frontmatter, Scope, SourceType, Status } from "./domain.js";
 import { isValidId, parseTimestamp } from "./util.js";
 
@@ -115,7 +121,11 @@ export type EntryIssueCode =
   | "review_after_invalid"
   | "expires_invalid"
   | "source_type_invalid"
-  | "source_ref_invalid";
+  | "source_ref_invalid"
+  /* ENG-41 entry format version. Only schema_version_unsupported is
+   * non-entry-preventing: a future-format file still reads. */
+  | "schema_version_invalid"
+  | "schema_version_unsupported";
 
 /** One entry defect without file/scope context (added by the store). */
 export interface EntryIssue {
@@ -141,8 +151,9 @@ export interface PartialFrontmatter {
 
 export interface ValidatedEntry {
   /** Fully valid frontmatter; undefined when any entry-preventing issue was
-   * found. A lifecycle-only defect (`updated_before_created`) keeps the
-   * entry usable: it is diagnosed, not hidden. */
+   * found. A lifecycle relation defect (`updated_before_created`) or an
+   * unsupported (integer) `schemaVersion` keeps the entry usable: it is
+   * diagnosed, not hidden. */
   readonly frontmatter: Frontmatter | undefined;
   /** Unknown top-level keys with their parsed values, kept so mediated
    * rewrites do not delete user metadata. Known keys are never part of this
@@ -413,6 +424,29 @@ export const validateEntry = (raw: string): ValidatedEntry => {
     issues.push(fieldTypeIssue("pinned", "true or false", pinned));
   }
 
+  /* ENG-41 entry format version. Inspect the raw value before the
+   * null-normalizing `field()` accessor: YAML `schemaVersion:` (null) is a
+   * present non-integer, not an absent key, and must be diagnosed. */
+  let schemaVersion = SUPPORTED_ENTRY_SCHEMA_VERSION; // effective value
+  const rawSchemaVersion = fm.schemaVersion;
+  if (rawSchemaVersion !== undefined) {
+    if (typeof rawSchemaVersion !== "number" || !Number.isInteger(rawSchemaVersion)) {
+      const got = Number.isNaN(rawSchemaVersion) ? "NaN" : describeValue(rawSchemaVersion);
+      issues.push({
+        code: "schema_version_invalid",
+        message: `"schemaVersion" must be an integer, got ${got}`,
+        hint: 'Set "schemaVersion" to an integer such as 1, or remove the line (absence means version 1).',
+      });
+    } else if (rawSchemaVersion !== SUPPORTED_ENTRY_SCHEMA_VERSION) {
+      schemaVersion = rawSchemaVersion;
+      issues.push({
+        code: "schema_version_unsupported",
+        message: `"schemaVersion" ${rawSchemaVersion} is newer than the entry format this engram supports (${SUPPORTED_ENTRY_SCHEMA_VERSION})`,
+        hint: "Upgrade engram to a release that supports this entry format. Avoid editing this file unless you accept forward-compatibility risk.",
+      });
+    }
+  }
+
   /* ENG-13 lifecycle metadata. All defects here are entry-preventing: a
    * value that fails its contract must not silently become an Engram. */
   const status = field("status");
@@ -517,8 +551,12 @@ export const validateEntry = (raw: string): ValidatedEntry => {
     });
   }
 
-  // Entry-preventing issues are everything except the lifecycle relation.
-  const hard = issues.some((i) => i.code !== "updated_before_created");
+  // Entry-preventing issues are everything except the two relation/format
+  // conditions that keep the entry usable: a reversed created/updated pair
+  // and an unsupported (integer) schema version, which is retained verbatim.
+  const hard = issues.some(
+    (i) => i.code !== "updated_before_created" && i.code !== "schema_version_unsupported",
+  );
   const frontmatter: Frontmatter | undefined = hard
     ? undefined
     : {
@@ -531,6 +569,7 @@ export const validateEntry = (raw: string): ValidatedEntry => {
         updated: updated as string,
         author: author as string | undefined,
         pinned: pinned as boolean | undefined,
+        schemaVersion,
         status: status as Status | undefined,
         supersedes: supersedes as string | undefined,
         reviewAfter: reviewAfter as string | undefined,

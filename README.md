@@ -244,6 +244,22 @@ the six modeled lifecycle fields are preserved.
   `sourceRef`: a non-empty reference such as a relative path, URL, command, or
   conversation note. The two are independent; neither is required.
 
+### Entry schema version
+
+Entries carry an optional integer `schemaVersion` frontmatter field that names
+the entry format version. Absence means version 1, and engram writes version
+1 by omitting the key: an unversioned entry that engram rewrites stays
+unversioned, and an explicit `schemaVersion: 1` is canonicalized away on the
+next rewrite. An integer other than `1` is unsupported: `engram check` reports
+`schema_version_unsupported` as a warning, the entry stays readable, and its
+version is preserved verbatim through mediated edits (never silently
+downgraded). A present value that is not an integer (a string, `null`, a
+fraction, a boolean, a mapping, or a list) is an error
+(`schema_version_invalid`): the entry is omitted from scans until the line is
+fixed by hand. Both codes appear in `check --json` diagnostics. A newer
+version being readable does not mean its fields are interpreted; upgrade
+engram to work with future entry formats.
+
 **Authority warning.** Lifecycle and provenance fields are notes anyone (and
 any agent) can write. Engram does not authenticate them, does not resolve or
 verify the referenced source, and does not establish that a memory is true,
