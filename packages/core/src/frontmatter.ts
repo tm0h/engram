@@ -24,7 +24,7 @@
  */
 import { Result } from "effect";
 import yaml from "js-yaml";
-import { ENGRAM_STATUSES, ENGRAM_TYPES, SOURCE_TYPES } from "./domain.js";
+import { ENGRAM_STATUSES, ENGRAM_TYPES, FrontmatterSchema, SOURCE_TYPES } from "./domain.js";
 import type { EngramType, Frontmatter, Scope, SourceType, Status } from "./domain.js";
 import { isValidId, parseTimestamp } from "./util.js";
 
@@ -157,20 +157,29 @@ export interface ValidatedEntry {
 /** The v0.4 required fields (the README is corrected to match). */
 const REQUIRED_FIELDS = ["id", "title", "type", "tags", "scope", "created", "updated"] as const;
 
-/** Every top-level frontmatter key the engram schema decodes. Keys outside
- * this set are user metadata: preserved verbatim across rewrites, never
- * validated, and never allowed to shadow a known field. */
-export const KNOWN_FRONTMATTER_KEYS: ReadonlySet<string> = new Set([
-  ...REQUIRED_FIELDS,
-  "author",
-  "pinned",
-  "status",
-  "supersedes",
-  "reviewAfter",
-  "expires",
-  "sourceType",
-  "sourceRef",
-]);
+/** Single source of truth for the known-key set: exactly the top-level
+ * fields `FrontmatterSchema` decodes, so the set cannot silently drift from
+ * the schema. Keys outside this set are user metadata: preserved verbatim
+ * across rewrites, never validated, and never allowed to shadow a known
+ * field. */
+export const KNOWN_FRONTMATTER_KEYS: ReadonlySet<string> = new Set(
+  Object.keys(FrontmatterSchema.fields),
+);
+
+/** Own-property assignment that can never mutate a prototype. A YAML
+ * mapping may contain any key, and plain assignment for `__proto__` hits
+ * the inherited accessor instead of creating an own property: a scalar
+ * value is silently dropped, an object value is adopted as the target's
+ * prototype. The descriptor matches assignment semantics for every other
+ * key (own, enumerable, writable, configurable). */
+const defineField = (target: Record<string, unknown>, key: string, value: unknown): void => {
+  Object.defineProperty(target, key, {
+    value,
+    writable: true,
+    enumerable: true,
+    configurable: true,
+  });
+};
 
 /** The unknown top-level keys of a parsed frontmatter mapping: user metadata
  * that must survive a mediated rewrite. Known keys are excluded by name, so
@@ -180,7 +189,7 @@ export const unknownFrontmatterFields = (
 ): Readonly<Record<string, unknown>> => {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data)) {
-    if (!KNOWN_FRONTMATTER_KEYS.has(key)) out[key] = value;
+    if (!KNOWN_FRONTMATTER_KEYS.has(key)) defineField(out, key, value);
   }
   return out;
 };
@@ -194,7 +203,7 @@ export const mergeUnknownFields = (
   const out: Record<string, unknown> = { ...canonical };
   if (metadata === undefined) return out;
   for (const [key, value] of Object.entries(metadata)) {
-    if (!KNOWN_FRONTMATTER_KEYS.has(key)) out[key] = value;
+    if (!KNOWN_FRONTMATTER_KEYS.has(key)) defineField(out, key, value);
   }
   return out;
 };

@@ -3241,4 +3241,23 @@ describe("EngramStore / unknown frontmatter preservation (ENG-40)", () => {
       expect(readData(fresh)).toMatchObject(METADATA);
     }).pipe(Effect.provide(StoreLive)),
   );
+
+  it.live("a normal edit preserves a top-level __proto__ key as an own property", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      // Computed key: the value must land as an own property, mirroring how
+      // js-yaml resolves a `__proto__` mapping key.
+      seed("0001-keeps-metadata.md", { ...BASE, ["__proto__"]: "kept-value" });
+
+      const patched = yield* store.update("project", "0001", { body: "Edited\n" }, NOSCAN);
+
+      const data = readData(patched.path) as Record<string, unknown>;
+      expect(Object.getPrototypeOf(data)).toBe(Object.prototype);
+      expect(Object.getOwnPropertyDescriptor(data, "__proto__")?.value).toBe("kept-value");
+      expect(Object.getPrototypeOf(patched.metadata)).toBe(Object.prototype);
+      expect(Object.getOwnPropertyDescriptor(patched.metadata, "__proto__")?.value).toBe(
+        "kept-value",
+      );
+    }).pipe(Effect.provide(StoreLive)),
+  );
 });

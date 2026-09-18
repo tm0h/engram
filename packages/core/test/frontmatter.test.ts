@@ -6,7 +6,9 @@ import {
   validateEntry,
   mergeUnknownFields,
   unknownFrontmatterFields,
+  KNOWN_FRONTMATTER_KEYS,
 } from "../src/frontmatter.js";
+import { FrontmatterSchema } from "../src/domain.js";
 
 /** Success value of parsing `raw`, or undefined when it failed. */
 const ok = (raw: string) => Option.getOrUndefined(Result.getSuccess(parseFrontmatter(raw)));
@@ -511,5 +513,48 @@ describe("unknown frontmatter preservation", () => {
       mergeUnknownFields({ ...VALID }, v.metadata),
     );
     expect(ok(rewritten)).toEqual({ data: { ...VALID, ...UNKNOWN }, content: "New body\n" });
+  });
+
+  it("mergeUnknownFields keeps a __proto__ key as an own property without mutating the prototype", () => {
+    // Computed key: a literal `__proto__:` would set the prototype, not an
+    // own property, and js-yaml hands us the key exactly this way.
+    const metadata: Record<string, unknown> = {};
+    Object.defineProperty(metadata, "__proto__", {
+      value: { squad: "core" },
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+
+    const merged = mergeUnknownFields({ id: "0001", title: "Hello" }, metadata);
+
+    expect(Object.getPrototypeOf(merged)).toBe(Object.prototype);
+    expect(Object.getOwnPropertyDescriptor(merged, "__proto__")?.value).toEqual({
+      squad: "core",
+    });
+    expect(Object.keys(merged)).toEqual(["id", "title", "__proto__"]);
+  });
+
+  it("a rewrite round-trip preserves a top-level __proto__ key losslessly", () => {
+    const v = validateEntry(raw({ ["__proto__"]: "kept-value" }));
+    expect(v.issues).toEqual([]);
+    expect(Object.getPrototypeOf(v.metadata)).toBe(Object.prototype);
+    expect(Object.getOwnPropertyDescriptor(v.metadata, "__proto__")?.value).toBe("kept-value");
+
+    const rewritten = stringifyFrontmatter(
+      "New body\n",
+      mergeUnknownFields({ ...VALID }, v.metadata),
+    );
+    expect(rewritten).toContain("__proto__:");
+
+    const reparsed = ok(rewritten) as { data: Record<string, unknown>; content: string };
+    expect(Object.getPrototypeOf(reparsed.data)).toBe(Object.prototype);
+    expect(Object.getOwnPropertyDescriptor(reparsed.data, "__proto__")?.value).toBe("kept-value");
+  });
+
+  it("KNOWN_FRONTMATTER_KEYS mirrors the FrontmatterSchema field set", () => {
+    expect([...KNOWN_FRONTMATTER_KEYS].sort()).toEqual(
+      Object.keys(FrontmatterSchema.fields).sort(),
+    );
   });
 });
