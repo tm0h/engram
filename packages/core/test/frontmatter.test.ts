@@ -585,6 +585,16 @@ describe("entry schemaVersion (ENG-41)", () => {
     }
   });
 
+  it("the unsupported message is value-neutral and names the supported version", () => {
+    for (const version of [0, 2, -3]) {
+      const v = validateEntry(raw({ schemaVersion: version }));
+      expect(v.issues[0].message).toBe(
+        `unsupported entry schema version ${version} (supported: 1)`,
+      );
+      expect(v.issues[0].hint).toContain("Upgrade");
+    }
+  });
+
   it("present non-integer shapes are entry-preventing (schema_version_invalid)", () => {
     for (const shape of ["2", 1.5, true, null, { major: 2 }, [2], Number.NaN]) {
       const v = validateEntry(raw({ schemaVersion: shape }));

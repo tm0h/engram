@@ -441,7 +441,7 @@ export const validateEntry = (raw: string): ValidatedEntry => {
       schemaVersion = rawSchemaVersion;
       issues.push({
         code: "schema_version_unsupported",
-        message: `"schemaVersion" ${rawSchemaVersion} is newer than the entry format this engram supports (${SUPPORTED_ENTRY_SCHEMA_VERSION})`,
+        message: `unsupported entry schema version ${rawSchemaVersion} (supported: ${SUPPORTED_ENTRY_SCHEMA_VERSION})`,
         hint: "Upgrade engram to a release that supports this entry format. Avoid editing this file unless you accept forward-compatibility risk.",
       });
     }

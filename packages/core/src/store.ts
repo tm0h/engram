@@ -651,6 +651,9 @@ const makeEngramStoreLive = (
             expires: input.expires,
             sourceType: input.sourceType,
             sourceRef: input.sourceRef,
+            /* New entries are version 1 by construction; the returned Engram
+             * carries the same effective integer every read path reports. */
+            schemaVersion: SUPPORTED_ENTRY_SCHEMA_VERSION,
             body: input.body.trim(),
             path: file,
           });

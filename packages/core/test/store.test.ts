@@ -3395,6 +3395,26 @@ describe("EngramStore / entry schemaVersion (ENG-41)", () => {
     }).pipe(Effect.provide(StoreLive)),
   );
 
+  it.live("add returns the normalized schemaVersion on every return path", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+
+      // plain add: the returned Engram itself carries the effective version
+      const m = yield* store.add("project", input(), NOSCAN);
+      expect(m.schemaVersion).toBe(1);
+
+      // supersedes successor: the same literal flows through the other
+      // return path of add
+      seed("0001-versioned-note.md", { ...BASE });
+      const succ = yield* store.add(
+        "project",
+        input({ title: "Newer", supersedes: "0001" }),
+        NOSCAN,
+      );
+      expect(succ.schemaVersion).toBe(1);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
   it.live("rewriting an unversioned entry stays unversioned", () =>
     Effect.gen(function* () {
       const file = seed("0001-versioned-note.md", { ...BASE, ...METADATA });
