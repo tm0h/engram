@@ -29,6 +29,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Engram, Scope } from "./domain.js";
+import { SUPPORTED_ENTRY_SCHEMA_VERSION } from "./domain.js";
 import { validateEntry } from "./frontmatter.js";
 import { searchEngrams, type SearchResult } from "./search.js";
 import { isValidId, parseEntryFilename, parseTimestamp, slugify } from "./util.js";
@@ -484,6 +485,10 @@ export const loadCorpus = (corpusDir: string): LoadedCorpus => {
       expires: fm.expires,
       sourceType: fm.sourceType,
       sourceRef: fm.sourceRef,
+      // validateEntry's success literal always carries the effective
+      // integer (1 when the fixture has no schemaVersion key); the fallback
+      // only satisfies the optional Frontmatter field type.
+      schemaVersion: fm.schemaVersion ?? SUPPORTED_ENTRY_SCHEMA_VERSION,
       body: validated.content,
       path: file,
     };

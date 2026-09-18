@@ -26,6 +26,7 @@ import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
 import { PlatformError } from "effect/PlatformError";
 import type { Engram, EngramInput, EngramPatch, Scope, Frontmatter } from "./domain.js";
+import { SUPPORTED_ENTRY_SCHEMA_VERSION } from "./domain.js";
 import {
   AmbiguousIdError,
   DuplicateIdError,
@@ -149,6 +150,9 @@ const toEngram = (
   expires: fm.expires,
   sourceType: fm.sourceType,
   sourceRef: fm.sourceRef,
+  // validateEntry already attaches the effective integer; normalize here too
+  // so every Engram built from frontmatter carries a version.
+  schemaVersion: fm.schemaVersion ?? SUPPORTED_ENTRY_SCHEMA_VERSION,
   body,
   path: file,
   metadata,
@@ -166,6 +170,13 @@ function serialize(m: Engram): string {
   };
   if (m.author) data.author = m.author;
   if (m.pinned) data.pinned = true;
+  /* ENG-41: emit the entry format version only when it differs from the
+   * supported one. Version 1 (effective or explicit) keeps the current
+   * on-disk shape; an unsupported integer is re-emitted verbatim, never
+   * silently downgraded. */
+  if (m.schemaVersion !== undefined && m.schemaVersion !== SUPPORTED_ENTRY_SCHEMA_VERSION) {
+    data.schemaVersion = m.schemaVersion;
+  }
   /* Lifecycle fields emit on `!== undefined`, never on truthiness: an
    * unusual-but-valid value must not be silently discarded here. */
   if (m.status !== undefined) data.status = m.status;
@@ -198,14 +209,17 @@ const applyLifecyclePatch = <T>(
  * `add` nor `update` can create a file the next scan would reject (invalid
  * lifecycle values, `supersedes` pointing at the entry itself, a title
  * trimmed to empty, ...). Reuses `FrontmatterParseError`, the store's
- * existing validation error. `updated_before_created` stays out: it is the
- * one non-entry-preventing relation and cannot occur for fresh candidates. */
+ * existing validation error. `updated_before_created` and
+ * `schema_version_unsupported` stay out: both keep an entry usable after a
+ * scan, so a read-and-rewrite (update, retitle, supersedes marking, dedupe)
+ * must not refuse it. An unsupported version is preserved by the spread, so
+ * the re-validated candidate carries it verbatim. */
 const validateCandidate = (
   candidate: Engram,
   file: string,
 ): Effect.Effect<void, FrontmatterParseError> => {
   const defects = validateEntry(serialize(candidate)).issues.filter(
-    (i) => i.code !== "updated_before_created",
+    (i) => i.code !== "updated_before_created" && i.code !== "schema_version_unsupported",
   );
   return defects.length === 0
     ? Effect.void
@@ -387,7 +401,10 @@ const makeEngramStoreLive = (
                     supersedes: v.partial.supersedes,
                     diagnostics: v.issues.map((issue): StoreDiagnostic => ({
                       code: issue.code,
-                      severity: "error",
+                      /* ENG-41: an unsupported entry format version is the
+                       * one advisory entry issue; everything else keeps its
+                       * error severity at this boundary. */
+                      severity: issue.code === "schema_version_unsupported" ? "warning" : "error",
                       scope,
                       file,
                       message: issue.message,
@@ -634,6 +651,9 @@ const makeEngramStoreLive = (
             expires: input.expires,
             sourceType: input.sourceType,
             sourceRef: input.sourceRef,
+            /* New entries are version 1 by construction; the returned Engram
+             * carries the same effective integer every read path reports. */
+            schemaVersion: SUPPORTED_ENTRY_SCHEMA_VERSION,
             body: input.body.trim(),
             path: file,
           });

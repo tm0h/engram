@@ -858,3 +858,127 @@ describe("engram check / secret-scan diagnostics (ENG-15)", () => {
     expect([...files].sort()).toEqual(files);
   });
 });
+
+describe("engram check / entry schemaVersion (ENG-41)", () => {
+  let origCwd = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  let outLines: string[] = [];
+  let errLines: string[] = [];
+  let spies: Array<ReturnType<typeof vi.spyOn>> = [];
+
+  beforeEach(() => {
+    origCwd = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = mkHome();
+    process.chdir(tmp);
+    process.env.HOME = home;
+    outLines = [];
+    errLines = [];
+    spies = [
+      vi.spyOn(console, "log").mockImplementation(((...args: unknown[]) => {
+        outLines.push(args.map(String).join(" "));
+        return undefined;
+      }) as typeof console.log),
+      vi.spyOn(console, "error").mockImplementation(((...args: unknown[]) => {
+        errLines.push(args.map(String).join(" "));
+        return undefined;
+      }) as typeof console.error),
+    ];
+  });
+  afterEach(() => {
+    for (const s of spies) s.mockRestore();
+    process.chdir(origCwd);
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const output = (): string => outLines.join("\n");
+
+  const run = (
+    eff: Effect.Effect<unknown, unknown, EngramStore | ConfigRepo | FileSystem>,
+  ): Promise<void> => Effect.runPromise(Effect.provide(eff as never, MainLive)) as Promise<void>;
+
+  const runFail = (
+    eff: Effect.Effect<unknown, unknown, EngramStore | ConfigRepo | FileSystem>,
+  ): Promise<FailInfo> =>
+    Effect.runPromise(Effect.provide(Effect.flip(eff) as never, MainLive)) as Promise<FailInfo>;
+
+  it("an unsupported-version-only store warns, passes, and keeps the entry readable", async () => {
+    seedConsistent(tmp, "0001", "Future note", { schemaVersion: 2 });
+    await run(checkCommand({}));
+    const o = output();
+    expect(o).toContain("warning [schema_version_unsupported]");
+    expect(o).not.toContain("error [");
+
+    outLines = [];
+    await run(checkCommand({ json: true }));
+    const doc = JSON.parse(output()) as {
+      ok: boolean;
+      filesChecked: number;
+      validEntries: number;
+      omittedFiles: number;
+      diagnostics: Array<Record<string, string>>;
+    };
+    expect(doc).toMatchObject({
+      ok: true,
+      filesChecked: 1,
+      validEntries: 1,
+      omittedFiles: 0,
+    });
+    expect(doc.diagnostics).toHaveLength(1);
+    expect(doc.diagnostics[0]).toMatchObject({
+      code: "schema_version_unsupported",
+      severity: "warning",
+      scope: "project",
+      file: path.join(projectEngramsDir(tmp), "0001-future-note.md"),
+    });
+    expect(typeof doc.diagnostics[0].message).toBe("string");
+    expect(typeof doc.diagnostics[0].hint).toBe("string");
+  });
+
+  it("an invalid version fails the check and omits the entry", async () => {
+    seed(tmp, "0001-bad-version.md", fm({ id: "0001", title: "Bad version", schemaVersion: "2" }));
+    const info = await runFail(checkCommand({}));
+    expect(info._tag).toBe("IntegrityCheckFailedError");
+    expect(output()).toContain("error [schema_version_invalid]");
+
+    outLines = [];
+    await runFail(checkCommand({ json: true }));
+    const doc = JSON.parse(output()) as {
+      ok: boolean;
+      filesChecked: number;
+      validEntries: number;
+      omittedFiles: number;
+      diagnostics: Array<Record<string, string>>;
+    };
+    expect(doc).toMatchObject({
+      ok: false,
+      filesChecked: 1,
+      validEntries: 0,
+      omittedFiles: 1,
+    });
+    expect(doc.diagnostics).toHaveLength(1);
+    expect(doc.diagnostics[0]).toMatchObject({
+      code: "schema_version_invalid",
+      severity: "error",
+      scope: "project",
+      file: path.join(projectEngramsDir(tmp), "0001-bad-version.md"),
+    });
+  });
+
+  it("a mixed scan counts only invalid-version errors in the failure summary", async () => {
+    seedConsistent(tmp, "0001", "Future note", { schemaVersion: 2 });
+    seed(tmp, "0002-bad-version.md", fm({ id: "0002", title: "Bad version", schemaVersion: null }));
+    const info = await runFail(checkCommand({}));
+    expect(info._tag).toBe("IntegrityCheckFailedError");
+    const o = output();
+    expect(o).toContain("warning [schema_version_unsupported]");
+    expect(o).toContain("error [schema_version_invalid]");
+    expect(info.message).toContain("1 problem found");
+  });
+});

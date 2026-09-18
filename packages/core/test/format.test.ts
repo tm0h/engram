@@ -11,6 +11,7 @@ const mem = (over: Partial<Engram> & { id: string; title: string }): Engram => (
   updated: "2025-01-01T00:00:00.000Z",
   author: undefined,
   pinned: false,
+  schemaVersion: 1,
   body: "",
   path: "",
   ...over,

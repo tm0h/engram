@@ -86,6 +86,9 @@ export const FrontmatterSchema = Schema.Struct({
   sourceType: Schema.optional(SourceTypeSchema),
   /** Non-empty reference for the source (path, URL, command, conversation). */
   sourceRef: Schema.optional(Schema.String),
+  /* ENG-41 entry format version. Absence decodes as version 1; the effective
+   * integer is attached by validateEntry, never selected by users. */
+  schemaVersion: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isInt()))),
 });
 export type Frontmatter = Schema.Schema.Type<typeof FrontmatterSchema>;
 
@@ -108,6 +111,12 @@ export interface Engram {
   readonly expires?: string | undefined;
   readonly sourceType?: SourceType | undefined;
   readonly sourceRef?: string | undefined;
+  /* ENG-41: effective entry format version (1 when the file has no
+   * schemaVersion key). Required: every Engram construction site must
+   * normalize, so no read path can leak an undefined version. Kept out of
+   * EngramInput and EngramPatch: users and harnesses cannot select or
+   * mutate format versions through add/edit. */
+  readonly schemaVersion: number;
   readonly body: string;
   /** absolute path to the source file */
   readonly path: string;
@@ -183,6 +192,11 @@ export const effectiveStatus = (
 /** The only config schema version this release understands. Configs with a
  * different version load as data but fail integrity validation. */
 export const SUPPORTED_CONFIG_VERSION = 1;
+
+/** ENG-41: the only entry format version this release writes. Entries with a
+ * higher schemaVersion still read (diagnosed with a warning); an entry whose
+ * schemaVersion is not an integer is rejected. */
+export const SUPPORTED_ENTRY_SCHEMA_VERSION = 1;
 
 /** ENG-15: secret-scan write policy. Project writes default to block,
  * personal writes to warn; `off` disables scanning entirely. */

@@ -11,6 +11,8 @@ import {
   SourceTypeSchema,
   SOURCE_TYPES,
   effectiveStatus,
+  SUPPORTED_CONFIG_VERSION,
+  SUPPORTED_ENTRY_SCHEMA_VERSION,
 } from "../src/domain.js";
 
 describe("EngramTypeSchema", () => {
@@ -148,6 +150,61 @@ describe("FrontmatterSchema / lifecycle metadata", () => {
   });
 });
 
+describe("FrontmatterSchema / entry schemaVersion (ENG-41)", () => {
+  const v04 = {
+    id: "0001",
+    title: "Replaced libfoo with libbar",
+    type: "decision",
+    tags: ["deps", "auth"],
+    scope: "project",
+    created: "2025-01-15T10:30:00.000Z",
+    updated: "2025-01-15T10:30:00.000Z",
+  };
+
+  it("exposes SUPPORTED_ENTRY_SCHEMA_VERSION = 1 beside SUPPORTED_CONFIG_VERSION", () => {
+    expect(SUPPORTED_ENTRY_SCHEMA_VERSION).toBe(1);
+    expect(SUPPORTED_CONFIG_VERSION).toBe(1);
+  });
+
+  it("accepts an absent schemaVersion", () => {
+    const out = Schema.decodeSync(FrontmatterSchema)(v04 as never);
+    expect(out.schemaVersion).toBeUndefined();
+  });
+
+  it("accepts integer schemaVersion values", () => {
+    expect(
+      Schema.decodeSync(FrontmatterSchema)({ ...v04, schemaVersion: 1 } as never).schemaVersion,
+    ).toBe(1);
+    expect(
+      Schema.decodeSync(FrontmatterSchema)({ ...v04, schemaVersion: 2 } as never).schemaVersion,
+    ).toBe(2);
+  });
+
+  it("rejects a string schemaVersion", () => {
+    expect(() =>
+      Schema.decodeSync(FrontmatterSchema)({ ...v04, schemaVersion: "2" } as never),
+    ).toThrow();
+  });
+
+  it("rejects a fractional schemaVersion", () => {
+    expect(() =>
+      Schema.decodeSync(FrontmatterSchema)({ ...v04, schemaVersion: 1.5 } as never),
+    ).toThrow();
+  });
+
+  it("rejects a boolean schemaVersion", () => {
+    expect(() =>
+      Schema.decodeSync(FrontmatterSchema)({ ...v04, schemaVersion: true } as never),
+    ).toThrow();
+  });
+
+  it("rejects a null schemaVersion (present, but not an integer)", () => {
+    expect(() =>
+      Schema.decodeSync(FrontmatterSchema)({ ...v04, schemaVersion: null } as never),
+    ).toThrow();
+  });
+});
+
 describe("config schemas", () => {
   it("decodes a project config", () => {
     const out = Schema.decodeSync(ProjectConfigSchema)({
@@ -179,6 +236,7 @@ describe("effectiveStatus (ENG-17)", () => {
     updated: "2026-01-01T00:00:00.000Z",
     author: undefined,
     pinned: false,
+    schemaVersion: 1,
     body: "",
     path: "",
   };

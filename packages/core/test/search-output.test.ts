@@ -13,6 +13,7 @@ const entry = (over: Partial<Engram> = {}): Engram => ({
   updated: "2026-01-01T00:00:00.000Z",
   pinned: true,
   author: "private author",
+  schemaVersion: 1,
   body: "cafe PRIVATE_BODY",
   path: "/private/location",
   sourceType: "other",

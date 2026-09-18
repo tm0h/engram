@@ -558,3 +558,68 @@ describe("unknown frontmatter preservation", () => {
     );
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* ENG-41: entry schemaVersion                                         */
+/* ------------------------------------------------------------------ */
+
+describe("entry schemaVersion (ENG-41)", () => {
+  it("an absent schemaVersion normalizes to 1 with no issue", () => {
+    const v = validateEntry(raw());
+    expect(v.issues).toEqual([]);
+    expect(v.frontmatter?.schemaVersion).toBe(1);
+  });
+
+  it("an explicit schemaVersion 1 is valid and decodes as 1", () => {
+    const v = validateEntry(raw({ schemaVersion: 1 }));
+    expect(v.issues).toEqual([]);
+    expect(v.frontmatter?.schemaVersion).toBe(1);
+  });
+
+  it("unsupported integers stay readable and retain the explicit integer", () => {
+    for (const version of [0, 2, 42, -3]) {
+      const v = validateEntry(raw({ schemaVersion: version }));
+      expect(codes(v)).toEqual(["schema_version_unsupported"]);
+      expect(v.frontmatter).toBeDefined();
+      expect(v.frontmatter?.schemaVersion).toBe(version);
+    }
+  });
+
+  it("the unsupported message is value-neutral and names the supported version", () => {
+    for (const version of [0, 2, -3]) {
+      const v = validateEntry(raw({ schemaVersion: version }));
+      expect(v.issues[0].message).toBe(
+        `unsupported entry schema version ${version} (supported: 1)`,
+      );
+      expect(v.issues[0].hint).toContain("Upgrade");
+    }
+  });
+
+  it("present non-integer shapes are entry-preventing (schema_version_invalid)", () => {
+    for (const shape of ["2", 1.5, true, null, { major: 2 }, [2], Number.NaN]) {
+      const v = validateEntry(raw({ schemaVersion: shape }));
+      expect(codes(v)).toEqual(["schema_version_invalid"]);
+      expect(v.frontmatter).toBeUndefined();
+      expect(v.issues[0].message).toContain("schemaVersion");
+      expect(v.issues[0].hint).not.toBe("");
+    }
+  });
+
+  it("an unsupported version does not mask a hard defect in the same entry", () => {
+    const v = validateEntry(raw({ schemaVersion: 2, type: "blogpost" }));
+    expect(v.frontmatter).toBeUndefined();
+    expect([...codes(v)].sort()).toEqual(["schema_version_unsupported", "type_invalid"]);
+  });
+
+  it("schemaVersion joins the modeled key set, so it never lands in metadata", () => {
+    expect(KNOWN_FRONTMATTER_KEYS.has("schemaVersion")).toBe(true);
+    const v = validateEntry(raw({ schemaVersion: 2 }));
+    expect(v.metadata).toEqual({});
+  });
+
+  it("mergeUnknownFields cannot let an unknown-map schemaVersion override the modeled one", () => {
+    const merged = mergeUnknownFields({ schemaVersion: 1 }, { schemaVersion: 2, extra: "kept" });
+    expect(merged).toEqual({ schemaVersion: 1, extra: "kept" });
+    expect(Object.keys(merged).filter((k) => k === "schemaVersion")).toHaveLength(1);
+  });
+});

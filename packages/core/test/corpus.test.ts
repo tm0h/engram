@@ -402,6 +402,7 @@ describe("evaluateCase mechanics (small fixtures, no corpus)", () => {
     updated: "2026-01-01T00:00:00.000Z",
     author: undefined,
     pinned: false,
+    schemaVersion: 1,
     body: "",
     path: "",
     ...over,
@@ -633,5 +634,77 @@ describe("corpus fixtures: binding quotas (turn 2)", () => {
         : `[corpus] quota shortfalls: ${shortfalls.join(", ")}`,
     );
     expect(shortfalls, "per-category quota shortfalls").toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* ENG-41: entry schemaVersion on loaded corpus engrams                */
+/* ------------------------------------------------------------------ */
+
+describe("loadCorpus / entry schemaVersion (ENG-41)", () => {
+  it("every shipped fixture engram exposes the effective version 1", () => {
+    // No shipped fixture carries a schemaVersion key; loadCorpus must
+    // normalize them through the same contract as store reads.
+    expect(corpus.issues).toEqual([]);
+    for (const e of corpus.engrams) {
+      expect(e.engram.schemaVersion, `${e.file}: effective version`).toBe(1);
+    }
+  });
+
+  it("unversioned temp fixtures normalize to 1 and an unsupported integer is preserved", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "engram-corpus-schemaver-"));
+    try {
+      mkdirSync(path.join(dir, "engrams"), { recursive: true });
+      mkdirSync(path.join(dir, "cases"), { recursive: true });
+      writeFileSync(
+        path.join(dir, "manifest.json"),
+        JSON.stringify({
+          schemaVersion: SUPPORTED_CORPUS_SCHEMA_VERSION,
+          corpusVersion: "1.0.0",
+          name: "schemaversion",
+          description: "ENG-41 schemaVersion coverage",
+        }),
+      );
+      const entry = (id: string, title: string, version?: string): string => {
+        const versionLine = version === undefined ? "" : `schemaVersion: ${version}\n`;
+        return [
+          "---",
+          `id: "${id}"`,
+          `title: ${title}`,
+          "type: note",
+          "tags: []",
+          "scope: project",
+          "created: 2026-01-01T00:00:00.000Z",
+          "updated: 2026-01-01T00:00:00.000Z",
+          versionLine,
+          "---",
+          "Body\n",
+        ].join("\n");
+      };
+      writeFileSync(
+        path.join(dir, "engrams", "01jwpz07000000000000000001-unversioned-note.md"),
+        entry("01jwpz07000000000000000001", "Unversioned note"),
+      );
+      writeFileSync(
+        path.join(dir, "engrams", "01jwpz07000000000000000002-future-format-note.md"),
+        entry("01jwpz07000000000000000002", "Future format note", "2"),
+      );
+
+      const loaded = loadCorpus(dir);
+      // the loader surfaces every validateEntry issue; the future-format
+      // file's advisory is expected and the unversioned file is clean
+      expect(loaded.issues).toEqual([
+        {
+          file: "01jwpz07000000000000000002-future-format-note.md",
+          message: "schema_version_unsupported: unsupported entry schema version 2 (supported: 1)",
+        },
+      ]);
+      expect(loaded.engrams).toHaveLength(2);
+      const byId = new Map(loaded.engrams.map((r) => [r.engram.id, r.engram.schemaVersion]));
+      expect(byId.get("01jwpz07000000000000000001")).toBe(1);
+      expect(byId.get("01jwpz07000000000000000002")).toBe(2);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
