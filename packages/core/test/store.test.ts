@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Option, Result } from "effect";
 import { FileSystem } from "effect/FileSystem";
 import { systemError } from "effect/PlatformError";
 import { NodeServices } from "@effect/platform-node";
@@ -13,7 +13,7 @@ import {
   type ScanOptions,
 } from "../src/store.js";
 import { projectConfigPath, projectEngramsDir, globalEngramsDir } from "../src/paths.js";
-import { stringifyFrontmatter } from "../src/frontmatter.js";
+import { parseFrontmatter, stringifyFrontmatter } from "../src/frontmatter.js";
 import { slugify } from "../src/util.js";
 import type { Engram, EngramInput, EngramPatch } from "../src/domain.js";
 
@@ -3131,6 +3131,114 @@ describe("EngramStore / secret-scan gate (ENG-15)", () => {
       const unmarked = yield* store.get("project", pred.id);
       // active is the implicit default: no status key was ever written
       expect(unmarked.status).toBeUndefined();
+    }).pipe(Effect.provide(StoreLive)),
+  );
+});
+
+/* ------------------------------------------------------------------ */
+/* ENG-40: unknown frontmatter survives every mediated rewrite         */
+/* ------------------------------------------------------------------ */
+
+describe("EngramStore / unknown frontmatter preservation (ENG-40)", () => {
+  let orig = "";
+  let tmp = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    tmp = mkProject();
+    process.chdir(tmp);
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const dir = () => projectEngramsDir(tmp);
+
+  const BASE = {
+    id: "0001",
+    title: "Keeps metadata",
+    type: "note",
+    tags: ["a"],
+    scope: "project",
+    created: "2025-08-15T10:00:00.000Z",
+    updated: "2025-08-15T11:00:00.000Z",
+  };
+
+  /** Unknown top-level values of every YAML shape the format must keep. */
+  const METADATA = {
+    confidence: "high",
+    "next-review": "2026-01-01",
+    owner: { name: "mohammad", team: { squad: "core" } },
+    labels: ["a", "b", { deep: [1, 2] }],
+    reviewed: true,
+    weight: 3.5,
+    empty: null,
+    quoted: "yes",
+  };
+
+  const seed = (name: string, fm: Record<string, unknown>, body = "Body\n"): string => {
+    const file = path.join(dir(), name);
+    fs.writeFileSync(file, stringifyFrontmatter(body, fm));
+    return file;
+  };
+
+  const readData = (file: string): unknown =>
+    Option.getOrUndefined(Result.getSuccess(parseFrontmatter(fs.readFileSync(file, "utf8"))))?.data;
+
+  it.live("a normal edit preserves arbitrary unknown values losslessly", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0001-keeps-metadata.md", { ...BASE, ...METADATA });
+
+      const patched = yield* store.update("project", "0001", { body: "Edited\n" }, NOSCAN);
+
+      expect(readData(patched.path)).toMatchObject(METADATA);
+      expect(fs.readFileSync(patched.path, "utf8")).toContain("Edited\n");
+      expect(patched.metadata).toMatchObject(METADATA);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("a title-changing edit preserves unknown values", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0001-keeps-metadata.md", { ...BASE, ...METADATA });
+
+      const patched = yield* store.update("project", "0001", { title: "Renamed" }, NOSCAN);
+
+      expect(patched.path).toContain("0001-renamed.md");
+      expect(readData(patched.path)).toMatchObject(METADATA);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("marking a predecessor superseded preserves its unknown values", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const predFile = seed("0001-keeps-metadata.md", { ...BASE, ...METADATA });
+
+      yield* store.add("project", input({ title: "Newer", supersedes: "0001" }), NOSCAN);
+
+      expect(readData(predFile)).toMatchObject({ ...METADATA, status: "superseded" });
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("dedupe renumbering preserves unknown values on both files", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const winner = seed("0001-older-copy.md", {
+        ...BASE,
+        title: "Older copy",
+        created: "2025-08-14T10:00:00.000Z",
+        updated: "2025-08-14T11:00:00.000Z",
+        ...METADATA,
+      });
+      seed("0001-keeps-metadata.md", { ...BASE, ...METADATA });
+
+      const result = yield* store.dedupe("project");
+
+      expect(result.renumbered).toHaveLength(1);
+      const fresh = path.join(dir(), `${result.renumbered[0].to}-${slugify("Keeps metadata")}.md`);
+      expect(readData(winner)).toMatchObject(METADATA);
+      expect(readData(fresh)).toMatchObject(METADATA);
     }).pipe(Effect.provide(StoreLive)),
   );
 });

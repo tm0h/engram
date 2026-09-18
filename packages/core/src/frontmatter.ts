@@ -144,6 +144,10 @@ export interface ValidatedEntry {
    * found. A lifecycle-only defect (`updated_before_created`) keeps the
    * entry usable: it is diagnosed, not hidden. */
   readonly frontmatter: Frontmatter | undefined;
+  /** Unknown top-level keys with their parsed values, kept so mediated
+   * rewrites do not delete user metadata. Known keys are never part of this
+   * set. Empty when the block has no unknown keys. */
+  readonly metadata: Readonly<Record<string, unknown>>;
   readonly content: string;
   /** Every issue found, in a fixed check order. */
   readonly issues: ReadonlyArray<EntryIssue>;
@@ -152,6 +156,48 @@ export interface ValidatedEntry {
 
 /** The v0.4 required fields (the README is corrected to match). */
 const REQUIRED_FIELDS = ["id", "title", "type", "tags", "scope", "created", "updated"] as const;
+
+/** Every top-level frontmatter key the engram schema decodes. Keys outside
+ * this set are user metadata: preserved verbatim across rewrites, never
+ * validated, and never allowed to shadow a known field. */
+export const KNOWN_FRONTMATTER_KEYS: ReadonlySet<string> = new Set([
+  ...REQUIRED_FIELDS,
+  "author",
+  "pinned",
+  "status",
+  "supersedes",
+  "reviewAfter",
+  "expires",
+  "sourceType",
+  "sourceRef",
+]);
+
+/** The unknown top-level keys of a parsed frontmatter mapping: user metadata
+ * that must survive a mediated rewrite. Known keys are excluded by name, so
+ * a preserved value can never be re-emitted as a known field. */
+export const unknownFrontmatterFields = (
+  data: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> => {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (!KNOWN_FRONTMATTER_KEYS.has(key)) out[key] = value;
+  }
+  return out;
+};
+
+/** Merge preserved unknown metadata under canonical known fields. Known
+ * fields always win: metadata can add keys, never override or forge one. */
+export const mergeUnknownFields = (
+  canonical: Readonly<Record<string, unknown>>,
+  metadata: Readonly<Record<string, unknown>> | undefined,
+): Record<string, unknown> => {
+  const out: Record<string, unknown> = { ...canonical };
+  if (metadata === undefined) return out;
+  for (const [key, value] of Object.entries(metadata)) {
+    if (!KNOWN_FRONTMATTER_KEYS.has(key)) out[key] = value;
+  }
+  return out;
+};
 
 type RequiredField = (typeof REQUIRED_FIELDS)[number];
 
@@ -221,6 +267,7 @@ export const validateEntry = (raw: string): ValidatedEntry => {
   if (block.kind === "yaml_error") {
     return {
       frontmatter: undefined,
+      metadata: {},
       content: block.content,
       issues: [
         {
@@ -236,6 +283,7 @@ export const validateEntry = (raw: string): ValidatedEntry => {
     // Covers both "no frontmatter" and an unterminated opening block.
     return {
       frontmatter: undefined,
+      metadata: {},
       content: block.content,
       issues: [
         {
@@ -251,6 +299,7 @@ export const validateEntry = (raw: string): ValidatedEntry => {
   if (typeof data !== "object" || data === null || Array.isArray(data)) {
     return {
       frontmatter: undefined,
+      metadata: {},
       content: block.content,
       issues: [
         {
@@ -483,6 +532,7 @@ export const validateEntry = (raw: string): ValidatedEntry => {
 
   return {
     frontmatter,
+    metadata: unknownFrontmatterFields(fm),
     content: block.content,
     issues,
     partial: {

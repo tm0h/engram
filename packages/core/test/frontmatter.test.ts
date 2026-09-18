@@ -1,6 +1,12 @@
 import { describe, it, expect } from "@effect/vitest";
 import { Option, Result } from "effect";
-import { parseFrontmatter, stringifyFrontmatter, validateEntry } from "../src/frontmatter.js";
+import {
+  parseFrontmatter,
+  stringifyFrontmatter,
+  validateEntry,
+  mergeUnknownFields,
+  unknownFrontmatterFields,
+} from "../src/frontmatter.js";
 
 /** Success value of parsing `raw`, or undefined when it failed. */
 const ok = (raw: string) => Option.getOrUndefined(Result.getSuccess(parseFrontmatter(raw)));
@@ -441,5 +447,69 @@ describe("validateEntry / lifecycle metadata", () => {
   it("stringifyFrontmatter and parseFrontmatter round-trip all six lifecycle values", () => {
     const data = { ...VALID, ...LIFECYCLE };
     expect(ok(stringifyFrontmatter("Body\n", data))).toEqual({ data, content: "Body\n" });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* ENG-40: unknown-field preservation                                  */
+/* ------------------------------------------------------------------ */
+
+describe("unknown frontmatter preservation", () => {
+  const UNKNOWN = {
+    confidence: "high",
+    "next-review": "2026-01-01",
+    owner: { name: "mohammad", team: { squad: "core" } },
+    labels: ["a", "b", { deep: [1, 2] }],
+    reviewed: true,
+    weight: 3.5,
+    empty: null,
+    quoted: "yes",
+  };
+
+  it("validateEntry exposes unknown top-level values in metadata", () => {
+    const v = validateEntry(raw(UNKNOWN));
+    expect(v.issues).toEqual([]);
+    expect(v.metadata).toEqual(UNKNOWN);
+  });
+
+  it("validateEntry metadata never contains known keys", () => {
+    const v = validateEntry(raw({ ...UNKNOWN, author: "mohammad", pinned: true }));
+    expect(v.metadata).toEqual(UNKNOWN);
+    expect(Object.keys(v.metadata)).not.toContain("author");
+    expect(Object.keys(v.metadata)).not.toContain("title");
+  });
+
+  it("unknownFrontmatterFields drops every key the schema knows", () => {
+    expect(unknownFrontmatterFields({ ...VALID, extra: 1 })).toEqual({ extra: 1 });
+    expect(unknownFrontmatterFields({ status: "active", expires: "x", extra: 1 })).toEqual({
+      extra: 1,
+    });
+  });
+
+  it("mergeUnknownFields appends unknown keys under canonical fields", () => {
+    const merged = mergeUnknownFields({ id: "0001", title: "Hello" }, UNKNOWN);
+    expect(merged).toEqual({ id: "0001", title: "Hello", ...UNKNOWN });
+  });
+
+  it("mergeUnknownFields never lets metadata override or forge a known field", () => {
+    const merged = mergeUnknownFields(
+      { id: "0001", title: "Hello" },
+      {
+        title: "poisoned",
+        id: "9999",
+        status: "archived",
+        extra: "kept",
+      },
+    );
+    expect(merged).toEqual({ id: "0001", title: "Hello", extra: "kept" });
+  });
+
+  it("a rewrite round-trip preserves equivalent parsed metadata values", () => {
+    const v = validateEntry(raw(UNKNOWN));
+    const rewritten = stringifyFrontmatter(
+      "New body\n",
+      mergeUnknownFields({ ...VALID }, v.metadata),
+    );
+    expect(ok(rewritten)).toEqual({ data: { ...VALID, ...UNKNOWN }, content: "New body\n" });
   });
 });

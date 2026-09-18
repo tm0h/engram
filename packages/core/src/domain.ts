@@ -111,6 +111,11 @@ export interface Engram {
   readonly body: string;
   /** absolute path to the source file */
   readonly path: string;
+  /** Unknown top-level frontmatter keys with their parsed values, preserved
+   * verbatim from the source file so mediated rewrites do not delete user
+   * metadata. Absent when the source had none. Known fields always win:
+   * serialization never lets these values shadow or forge a known field. */
+  readonly metadata?: Readonly<Record<string, unknown>> | undefined;
 }
 
 export interface EngramInput {
