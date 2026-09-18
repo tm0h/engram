@@ -319,9 +319,6 @@ export function rankEntries(
     body: buildFieldStats(candidates, "body"),
   } satisfies Record<SearchFieldName, FieldStats>;
   const dfMemo = new Map<string, number>();
-  const hasHardRequirements = parsed.alternatives.some(
-    (alternative) => alternative.length > 1 || alternative.some((term) => term.field !== undefined),
-  );
 
   const results: SearchResult[] = [];
   for (let index = 0; index < candidates.length; index++) {
@@ -331,9 +328,13 @@ export function rankEntries(
     // Contribution objects are only materialized when explaining.
     const pointsList: number[] = [];
     const contributions: ScoreContribution[] = [];
-    let matched = m.pinned === true && !hasHardRequirements;
+    let matched = false;
     for (const alternative of parsed.alternatives) {
       // Inclusion gate: the alternative matches when every term matches.
+      // A pinned entry also satisfies a plain, single-term alternative, but
+      // never a field-scoped or AND alternative. Eligibility is local to the
+      // alternative so a constrained OR branch cannot disable a plain one.
+      const pinnedEligible = alternative.length === 1 && alternative[0]?.field === undefined;
       // Scoring is unconditional: every matching term of every alternative
       // contributes, in fixed alternative-then-term order.
       let all = true;
@@ -341,7 +342,7 @@ export function rankEntries(
         if (!scoreTerm(term, index, stats, dfMemo, pointsList, explain ? contributions : undefined))
           all = false;
       }
-      if (all) matched = true;
+      if (all || (m.pinned === true && pinnedEligible)) matched = true;
     }
     if (!matched) continue;
     // Pinned is pushed and accumulated LAST so the score is exactly the

@@ -199,6 +199,21 @@ describe("rankEntries (BM25-style)", () => {
     ).toEqual(["match"]);
   });
 
+  it("keeps pinned fallback for a plain branch in a mixed OR query", () => {
+    const entries = [
+      mem({ id: "match", title: "alpha deployment", tags: ["ops"] }),
+      mem({ id: "pinned", title: "unrelated", tags: ["misc"], pinned: true }),
+    ];
+
+    expect(ids(rankEntries(entries, parseQuery("release OR tag:ops"), { explain: true }))).toEqual([
+      "match",
+      "pinned",
+    ]);
+    expect(
+      ids(rankEntries(entries, parseQuery("tag:ops OR title:alpha"), { explain: true })),
+    ).toEqual(["match"]);
+  });
+
   it("emits contributions in token-major order with fields tag,title,type,body then pinned, summing to the score", () => {
     const entry = mem({
       id: "e1",
