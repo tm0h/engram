@@ -28,6 +28,22 @@ normalized query tokens, and score contributions in result details.
 Explanations contain no memory bodies, source references, or filesystem paths.
 Use `engram_show` to read the selected memory. Identify entries by scope and id.
 
+### Precise search
+
+`engram_search` supports quoted phrases, bounded prefixes, field filters, and
+explicit Boolean groups. Example queries:
+
+- `"release checklist"`
+- `kuber*`
+- `tag:auth AND body:rotation`
+- `title:deploy OR type:decision`
+
+Whitespace behaves like `OR`. Uppercase `AND` binds more tightly than `OR`.
+The field filters are `tag:`, `title:`, `type:`, and `body:`. Native search and
+context tools exclude inactive entries. When the packaged CLI is available,
+use `engram search <query> --all` or `engram context --all` only when you need
+superseded, archived, or expired entries. Use `engram_show` for a known id.
+
 ## When to record (and when not to)
 
 Record:
@@ -75,6 +91,19 @@ preserves it. Clear a field once it no longer applies.
 Example: `engram_edit({ id: "0012", status: null, reviewAfter: null })`
 clears both fields after the review has happened.
 
+## Review and integrity maintenance
+
+The packaged CLI provides maintenance commands that are not native tools.
+Run `engram review --scope all` to find superseded, archived, expired,
+review-due, and broken-lineage entries. Add `--json` for structured output.
+The command is read-only.
+
+Run `engram check --scope all` when reads warn about skipped files, before a
+release, or after resolving merge conflicts in `.engram/`. It checks entry
+frontmatter, filenames, duplicate ids, configuration, lifecycle references,
+and stored secret-scan findings. Add `--json` for a structured report. Errors
+and unchecked scopes return a nonzero status. Lifecycle advisories are warnings.
+
 ## Secret scanning on writes
 
 Every `engram_add`/`engram_edit` write is scanned for secrets, private keys,
@@ -84,6 +113,13 @@ never the matched text. Remove the secret and keep it in a dedicated secret
 manager. Pass `allowSecrets: true` only when the user explicitly asks to
 record flagged content anyway; the bypass is reported. `engram check` reports
 the same redacted findings for existing files.
+
+Change scan policy only when the user intends to change it:
+
+```bash
+engram config set secretScan block|warn|off
+engram config set personalSecretScan block|warn|off
+```
 
 Authority caveat: these fields are unauthenticated claims anyone can write.
 Engram does not verify sources or establish truth; always weigh current

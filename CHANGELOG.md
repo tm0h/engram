@@ -5,10 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-09-18
 
 ### Added
 
+- **Store integrity diagnostics.** New `engram check` human and JSON reports
+  identify malformed entries, duplicate ids, invalid configuration, and other
+  store defects with stable diagnostic codes and actionable hints. Normal
+  reads now emit a bounded warning when unreadable entries were omitted instead
+  of silently hiding them. ([#19])
+- **Lifecycle and provenance metadata.** Entries can record `status`,
+  `supersedes`, `reviewAfter`, `expires`, `sourceType`, and `sourceRef`.
+  Existing entries remain valid without migration. CLI and harness edit paths
+  support explicit clearing without serializing null values. ([#20])
+- **Agent-facing edits.** Pi and OpenCode now expose `engram_edit`, and Pi adds
+  `/engram edit`. Both preserve omitted fields, clear explicitly nullable
+  fields, validate before mutation, and refresh cached context after successful
+  writes. ([#21])
+- **Supersession, expiry, and review workflows.** Establishing a `supersedes`
+  link marks the predecessor superseded as one logical operation and rejects
+  invalid or cyclic lineage before writing. Search, list, context, and startup
+  injection exclude inactive entries by default; `--all` includes them when
+  needed. New `engram review` human and JSON reports identify superseded,
+  archived, expired, review-due, and broken-lineage entries. ([#22])
+- **Versioned retrieval corpus and regression benchmark.** The repository now
+  contains 187 labeled retrieval cases, deterministic benchmark tooling, and a
+  checked-in regression gate. Search tokenization now applies consistent
+  Unicode normalization and handles code identifiers. ([#24])
 - **Secret and prompt-injection scanning on every write (ENG-15).** `engram
 add`, `engram edit`, and the Pi/OpenCode `engram_add`/`engram_edit` tools
   scan the complete serialized entry for credentials, high-entropy tokens,
@@ -23,11 +46,17 @@ add`, `engram edit`, and the Pi/OpenCode `engram_add`/`engram_edit` tools
   `engram check` also scans every readable raw Markdown file, including
   malformed frontmatter, emitting `secret_detected` diagnostics (block:
   error, warn: warning, off: none) and failing closed when a scope's config
-  cannot be loaded.
+  cannot be loaded. ([#28])
 - Search JSON output and ranking explanations, with scope-qualified results,
   pagination metadata, and equivalent structured metadata in Pi and OpenCode.
+  ([#25])
+- **Host-neutral installer framework.** Integration authors can build
+  previewable, idempotent installers and uninstallers that preserve surrounding
+  user content, reject duplicate asset paths, use atomic replacement, and
+  recover safely from interrupted staging. Host-specific installers are not
+  included in this release. ([#26])
 - **BM25-style lexical ranker (ENG-18).** `searchEngrams` now scores the
-  title, tag, type, and body fields with per-field Okapi BM25 (weights
+  tag, title, type, and body fields with per-field Okapi BM25 (weights
   5/3/2/1, k1 = 1.2, b = 0.75, Lucene-variant idf) plus a pinned boost,
   replacing the fixed-points scorer, which remains callable as
   `searchEngramsLegacy` for same-corpus benchmark comparison. New query
@@ -42,7 +71,47 @@ add`, `engram edit`, and the Pi/OpenCode `engram_add`/`engram_edit` tools
   (legacy: 183) with no forbidden hits and fewer stale hits; latency over a
   1,000-entry corpus is at parity (p95 25.4 ms vs 28.4 ms for the legacy
   ranker in the same harness). New `benchmark:shadow` command reports the
-  legacy-vs-wired delta and latency percentiles.
+  legacy-vs-wired delta and latency percentiles. ([#27])
+
+### Changed
+
+- Releases now use protected version tags, fail-closed validation, npm trusted
+  publishing through OIDC, and GitHub releases created only after npm
+  publication succeeds. A dispatch-only workflow prepares version and
+  changelog pull requests without publishing. ([#18])
+- The README now documents the current quick start, five native agent tools,
+  BM25 query syntax, structured search output, write safeguards, command
+  reference, retrieval corpus, and release process. ([#30])
+
+### Fixed
+
+- Piping CLI output to an early-closing consumer now exits with conventional
+  SIGPIPE status 141 without an `EPIPE` stack trace. Completed mutations remain
+  persisted. ([#23])
+- Retitles and duplicate-id repairs now compensate for partial filesystem
+  failures. Failed removals restore original entries, failed successor writes
+  remove partial files, and incomplete cleanup reports both the primary and
+  compensation failures. ([#31], [#35], [#36])
+- Supersedes validation now identifies the node that actually closes a
+  pre-existing cycle and renders the true cycle segment. ([#32])
+
+[#18]: https://github.com/tm0h/engram/pull/18
+[#19]: https://github.com/tm0h/engram/pull/19
+[#20]: https://github.com/tm0h/engram/pull/20
+[#21]: https://github.com/tm0h/engram/pull/21
+[#22]: https://github.com/tm0h/engram/pull/22
+[#23]: https://github.com/tm0h/engram/pull/23
+[#24]: https://github.com/tm0h/engram/pull/24
+[#25]: https://github.com/tm0h/engram/pull/25
+[#26]: https://github.com/tm0h/engram/pull/26
+[#27]: https://github.com/tm0h/engram/pull/27
+[#28]: https://github.com/tm0h/engram/pull/28
+[#30]: https://github.com/tm0h/engram/pull/30
+[#31]: https://github.com/tm0h/engram/pull/31
+[#32]: https://github.com/tm0h/engram/pull/32
+[#35]: https://github.com/tm0h/engram/pull/35
+[#36]: https://github.com/tm0h/engram/pull/36
+[0.5.0]: https://github.com/tm0h/engram/releases/tag/v0.5.0
 
 ## [0.4.0] - 2026-08-28
 

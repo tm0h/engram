@@ -187,6 +187,18 @@ describe("rankEntries (BM25-style)", () => {
     ]);
   });
 
+  it("does not let the pinned boost bypass field filters or AND requirements", () => {
+    const entries = [
+      mem({ id: "match", title: "alpha deployment", tags: ["ops"] }),
+      mem({ id: "pinned", title: "unrelated", tags: ["release"], pinned: true }),
+    ];
+
+    expect(ids(rankEntries(entries, parseQuery("tag:ops"), { explain: true }))).toEqual(["match"]);
+    expect(
+      ids(rankEntries(entries, parseQuery("tag:ops AND title:alpha"), { explain: true })),
+    ).toEqual(["match"]);
+  });
+
   it("emits contributions in token-major order with fields tag,title,type,body then pinned, summing to the score", () => {
     const entry = mem({
       id: "e1",

@@ -155,4 +155,23 @@ describe("guidance / skills stay aligned", () => {
       );
     }
   });
+
+  it("both skills cover the user-facing search and maintenance workflows", () => {
+    for (const [name, skill] of [
+      ["pi", piSkill],
+      ["claude", claudeSkill],
+    ] as const) {
+      expect(skill, `${name}: quoted phrase search`).toMatch(/quoted phrase/i);
+      expect(skill, `${name}: bounded prefix search`).toMatch(/bounded prefix/i);
+      for (const token of ["tag:", "title:", "type:", "body:", "AND", "OR"]) {
+        expect(skill, `${name}: search token ${token}`).toContain(token);
+      }
+      expect(skill, `${name}: inactive entry behavior`).toMatch(/inactive/i);
+      expect(skill, `${name}: inactive CLI override`).toContain("--all");
+      expect(skill, `${name}: review workflow`).toContain("engram review");
+      expect(skill, `${name}: integrity workflow`).toContain("engram check");
+      expect(skill, `${name}: project scan policy`).toContain("secretScan");
+      expect(skill, `${name}: personal scan policy`).toContain("personalSecretScan");
+    }
+  });
 });
