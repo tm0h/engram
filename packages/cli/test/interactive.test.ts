@@ -116,10 +116,7 @@ describe("related in the editor document (ENG-42)", () => {
 
   it("round-trips a populated list through parse", () => {
     const initial = { title: "T", type: "note", tags: [], body: "b", related: ["0002", "0003"] };
-    expect(parseEditorDocument(renderEditorDocument(initial)).related).toEqual([
-      "0002",
-      "0003",
-    ]);
+    expect(parseEditorDocument(renderEditorDocument(initial)).related).toEqual(["0002", "0003"]);
   });
 
   it("parses a blank or removed related line as absent", () => {

@@ -539,21 +539,13 @@ describe("engram opencode plugin / related schema contract (ENG-42)", () => {
       .find((c) => c.includes("OC related add"));
     expect(addedRaw).toMatch(/^related:\n  - "0001"$/m);
 
-    const replaced = await execute(
-      tools.engram_edit,
-      { id: "0001", related: ["0002"] },
-      env.tmp,
-    );
+    const replaced = await execute(tools.engram_edit, { id: "0001", related: ["0002"] }, env.tmp);
     expect(replaced.metadata?.isError).toBe(false);
     // update rewrites at <id>-<slug-of-title>; read through the returned path
     const replacedPath = replaced.metadata?.path as string;
     expect(fs.readFileSync(replacedPath, "utf8")).toMatch(/^related:\n  - "0002"$/m);
 
-    const cleared = await execute(
-      tools.engram_edit,
-      { id: "0001", related: null },
-      env.tmp,
-    );
+    const cleared = await execute(tools.engram_edit, { id: "0001", related: null }, env.tmp);
     expect(cleared.metadata?.isError).toBe(false);
     expect(fs.readFileSync(replacedPath, "utf8")).not.toMatch(/^related:/m);
   });

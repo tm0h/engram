@@ -572,11 +572,7 @@ describe("engram add/edit related flags (process level, ENG-42)", () => {
   it("add --related writes the exact ordered array and trims members", (ctx) => {
     if (!spawnOk) ctx.skip();
     const proj = freshProject();
-    const r = runCli(
-      ["add", "--title", "Linked", "--related", "0003, 0002", "body"],
-      proj,
-      home,
-    );
+    const r = runCli(["add", "--title", "Linked", "--related", "0003, 0002", "body"], proj, home);
     expect(r.status).toBe(0);
     expect(entryRaw(proj, "Linked")).toMatch(/^related:\n  - "0003"\n  - "0002"$/m);
   });
@@ -592,11 +588,7 @@ describe("engram add/edit related flags (process level, ENG-42)", () => {
   it("add --related with empty tokens is a usage error, not a write (Q2)", (ctx) => {
     if (!spawnOk) ctx.skip();
     const proj = freshProject();
-    const r = runCli(
-      ["add", "--title", "Bad", "--related", "0001,,0002", "body"],
-      proj,
-      home,
-    );
+    const r = runCli(["add", "--title", "Bad", "--related", "0001,,0002", "body"], proj, home);
     expect(r.status).not.toBe(0);
     expect(`${r.stderr}${r.stdout}`).toContain("--related");
     expect(readdirSync(join(proj, ".engram", "engrams"))).toHaveLength(0);
@@ -645,11 +637,7 @@ describe("engram add/edit related flags (process level, ENG-42)", () => {
   it("the --related + --clear-related conflict is a usage error on a nonexistent id", (ctx) => {
     if (!spawnOk) ctx.skip();
     const proj = freshProject();
-    const r = runCli(
-      ["edit", "9999", "--related", "0001", "--clear-related"],
-      proj,
-      home,
-    );
+    const r = runCli(["edit", "9999", "--related", "0001", "--clear-related"], proj, home);
     expect(r.status).not.toBe(0);
     const text = `${r.stderr}${r.stdout}`;
     expect(text).toContain("--clear-related");

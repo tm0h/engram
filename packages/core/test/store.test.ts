@@ -3750,22 +3750,12 @@ describe("EngramStore / ENG-42 related", () => {
       seed("0001-linked-note.md", { ...BASE });
 
       const self = yield* Effect.flip(
-        store.update(
-          "project",
-          "0001",
-          { related: ["0001"] } as EngramPatch,
-          NOSCAN,
-        ),
+        store.update("project", "0001", { related: ["0001"] } as EngramPatch, NOSCAN),
       );
       expect((self as { message: string }).message).toContain("itself");
 
       const dup = yield* Effect.flip(
-        store.update(
-          "project",
-          "0001",
-          { related: ["0002", "0002"] } as EngramPatch,
-          NOSCAN,
-        ),
+        store.update("project", "0001", { related: ["0002", "0002"] } as EngramPatch, NOSCAN),
       );
       expect((dup as { message: string }).message).toContain("more than once");
     }).pipe(Effect.provide(StoreLive)),
@@ -3882,7 +3872,12 @@ describe("EngramStore / ENG-42 related", () => {
 
   it.live("warnings order deterministically across files by path, then id", () =>
     Effect.gen(function* () {
-      seed("0007-second-source.md", { ...BASE, id: "0007", title: "Second source", related: ["0009"] });
+      seed("0007-second-source.md", {
+        ...BASE,
+        id: "0007",
+        title: "Second source",
+        related: ["0009"],
+      });
       seed("0001-linked-note.md", { ...BASE, related: ["0009", "0008"] });
       const store = yield* EngramStore;
 
@@ -3989,12 +3984,7 @@ describe("EngramStore / ENG-42 related", () => {
       expect(bytes(t2)).not.toMatch(/^related:/m);
 
       // replacing the list touches only the source file
-      const replaced = yield* store.update(
-        "project",
-        added.id,
-        { related: ["0003"] },
-        NOSCAN,
-      );
+      const replaced = yield* store.update("project", added.id, { related: ["0003"] }, NOSCAN);
       expect(bytes(t1)).toBe(t1Before);
       expect(bytes(t2)).toBe(t2Before);
       expect(replaced.path).toBe(added.path);
@@ -4007,21 +3997,12 @@ describe("EngramStore / ENG-42 related", () => {
       expect(readData(cleared.path)).not.toHaveProperty("related");
 
       // a retitle rename does not touch targets either
-      const renamed = yield* store.update(
-        "project",
-        added.id,
-        { title: "Renamed source" },
-        NOSCAN,
-      );
+      const renamed = yield* store.update("project", added.id, { title: "Renamed source" }, NOSCAN);
       expect(renamed.path).toContain("renamed-source");
       expect(bytes(t1)).toBe(t1Before);
       expect(bytes(t2)).toBe(t2Before);
       expect(fs.readdirSync(dir()).sort()).toEqual(
-        [
-          "0002-first-target.md",
-          "0003-second-target.md",
-          path.basename(renamed.path),
-        ].sort(),
+        ["0002-first-target.md", "0003-second-target.md", path.basename(renamed.path)].sort(),
       );
     }).pipe(Effect.provide(StoreLive)),
   );
@@ -4071,9 +4052,9 @@ describe("EngramStore / ENG-42 related", () => {
       const rejected = yield* store.scan("project");
       expect(rejected.entries.map((m) => m.id)).toEqual(["0002"]); // target retained
       expect(rejected.omittedFiles).toBe(1);
-      expect(rejected.diagnostics.map((d) => [d.code, d.severity]).sort()).toEqual([
-        ["related_invalid", "error"],
-        ["schema_version_unsupported", "warning"],
+      expect(rejected.diagnostics.map((d) => `${d.code}:${d.severity}`).sort()).toEqual([
+        "related_invalid:error",
+        "schema_version_unsupported:warning",
       ]);
     }).pipe(Effect.provide(StoreLive)),
   );

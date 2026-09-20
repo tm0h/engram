@@ -689,18 +689,12 @@ describe("validateEntry / related metadata (ENG-42)", () => {
   });
 
   it("rejects a self-link in every list position", () => {
-    for (const related of [
-      [VALID_ID],
-      ["0002", VALID_ID],
-      ["0002", VALID_ID, "0003"],
-    ]) {
+    for (const related of [[VALID_ID], ["0002", VALID_ID], ["0002", VALID_ID, "0003"]]) {
       const v = validateEntry(raw({ related }));
       expect(codes(v), JSON.stringify(related)).toEqual(["self_relation"]);
       expect(v.frontmatter).toBeUndefined();
     }
-    expect(codes(validateEntry(raw({ id: "0001", related: ["0001"] })))).toEqual([
-      "self_relation",
-    ]);
+    expect(codes(validateEntry(raw({ id: "0001", related: ["0001"] })))).toEqual(["self_relation"]);
   });
 
   it("rejects adjacent and non-adjacent duplicate values", () => {

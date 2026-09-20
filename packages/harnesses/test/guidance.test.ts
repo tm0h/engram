@@ -183,8 +183,7 @@ describe("guidance / skills stay aligned", () => {
 describe("guidance / related links (ENG-42)", () => {
   const piAdd = piTools.find((t) => t.name === "engram_add")!;
   const piEdit = piTools.find((t) => t.name === "engram_edit")!;
-  const readSkill = (rel: string): string =>
-    fs.readFileSync(path.join(repoRoot, rel), "utf8");
+  const readSkill = (rel: string): string => fs.readFileSync(path.join(repoRoot, rel), "utf8");
   const piSkillText = readSkill("packages/harnesses/src/pi/skills/engram/SKILL.md");
   const claudeSkillText = readSkill("packages/harnesses/claude/skills/engram/SKILL.md");
 

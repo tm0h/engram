@@ -328,7 +328,7 @@ export const engramEditTool = {
     related: Type.Optional(
       Type.Union([Type.Array(Type.String()), Type.Null()], {
         description:
-          'Replace the whole related list with exact same-scope ids in this order. Null clears; omit to preserve. Missing targets are advisory (a warning on check, not an error).',
+          "Replace the whole related list with exact same-scope ids in this order. Null clears; omit to preserve. Missing targets are advisory (a warning on check, not an error).",
       }),
     ),
     allowSecrets: Type.Optional(

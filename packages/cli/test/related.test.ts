@@ -196,9 +196,7 @@ describe("engram add/edit related flags", () => {
   it("a value plus --clear-related is a usage error before any read or write", async () => {
     seedLegacyId("0002", "Unrelated", "unrelated");
     const before = snapshotAll();
-    const e = await runFail(
-      editCommand("9999", { related: "0002", clearRelated: true }),
-    );
+    const e = await runFail(editCommand("9999", { related: "0002", clearRelated: true }));
     expect(e._tag).toBe("ValidationError");
     expect(e.message).toContain("--related");
     expect(e.message).toContain("--clear-related");
@@ -209,13 +207,13 @@ describe("engram add/edit related flags", () => {
     seedLegacyId("0001", "Linked note", "linked-note");
     const before = snapshotAll();
 
-    const addE = await runFail(addCommand({ title: "Bad add", content: "B", related: "0001,,0002" }));
+    const addE = await runFail(
+      addCommand({ title: "Bad add", content: "B", related: "0001,,0002" }),
+    );
     expect(addE._tag).toBe("ValidationError");
     expect(addE.message).toContain("--related");
 
-    const editE = await runFail(
-      editCommand("0001", { related: "0001, ,0002", content: "Probe" }),
-    );
+    const editE = await runFail(editCommand("0001", { related: "0001, ,0002", content: "Probe" }));
     expect(editE._tag).toBe("ValidationError");
 
     expect(snapshotAll()).toBe(before);
@@ -272,15 +270,18 @@ describe("engram add/edit related flags", () => {
   });
 
   it("the editor on add: a populated line links, a blank line records no key", async () => {
-    openEditorMock.mockReturnValue(Effect.succeed(edited({ title: "From editor", related: ["0002"] })));
+    openEditorMock.mockReturnValue(
+      Effect.succeed(edited({ title: "From editor", related: ["0002"] })),
+    );
     await run(addCommand({}));
     expect(readEntry(addedId()).data.related).toEqual(["0002"]);
 
-    openEditorMock.mockReturnValue(Effect.succeed(edited({ title: "No links", related: undefined })));
+    openEditorMock.mockReturnValue(
+      Effect.succeed(edited({ title: "No links", related: undefined })),
+    );
     await run(addCommand({}));
-    expect(
-      readEntry(addedId()).data,
-      "blank related must stay absent",
-    ).not.toHaveProperty("related");
+    expect(readEntry(addedId()).data, "blank related must stay absent").not.toHaveProperty(
+      "related",
+    );
   });
 });
