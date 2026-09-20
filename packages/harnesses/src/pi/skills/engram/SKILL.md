@@ -76,8 +76,15 @@ Do **not** record:
 `sourceRef` (a path, URL, command, or conversation note). Omit them unless
 they add real information.
 
+`related` is an optional list of exact same-scope entry ids that links related
+knowledge, e.g. `related: ["0002"]`. Links are directional one-way metadata:
+no reciprocal link is written to the target, and a missing target is only a
+`related_not_found` warning, so forward references are fine. Prefixes are not
+ids; use exact ids.
+
 Example: `engram_add({ title: "…", body: "…", status: "superseded",
-supersedes: "0012", sourceType: "conversation", sourceRef: "refactor sync" })`
+supersedes: "0012", related: ["0007"], sourceType: "conversation",
+sourceRef: "refactor sync" })`
 
 ## Editing an entry
 
@@ -86,10 +93,15 @@ fields (`title`, `type`, `tags`, `body`, `pinned`, `author`) are replaced when
 passed and preserved when omitted. The six lifecycle fields (`status`,
 `supersedes`, `reviewAfter`, `expires`, `sourceType`, `sourceRef`) are
 three-state: a concrete value replaces, null clears the field, and omission
-preserves it. Clear a field once it no longer applies.
+preserves it. Clear a field once it no longer applies. `related` is
+three-state the same way: pass an array to replace the whole list, null to
+clear it, or omit it to preserve.
 
 Example: `engram_edit({ id: "0012", status: null, reviewAfter: null })`
 clears both fields after the review has happened.
+
+Example: `engram_edit({ id: "0012", related: ["0007"] })` replaces the whole
+list; `engram_edit({ id: "0012", related: null })` clears it.
 
 ## Review and integrity maintenance
 

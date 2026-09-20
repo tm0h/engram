@@ -139,6 +139,7 @@ describe("engram extension / registration", () => {
       "expires",
       "sourceType",
       "sourceRef",
+      "related",
       "allowSecrets",
     ]);
     expect(Object.keys(byName.get("engram_edit")!.parameters.properties!)).toEqual([
@@ -156,6 +157,7 @@ describe("engram extension / registration", () => {
       "expires",
       "sourceType",
       "sourceRef",
+      "related",
       "allowSecrets",
     ]);
     // ENG-15: allowSecrets validates as a strict boolean
@@ -1145,5 +1147,112 @@ describe("engram extension / write refresh hook", () => {
 
     await edit.execute("c5", { id: seeded.details.id, title: "Edited target" });
     expect(refreshes).toBe(3);
+  });
+});
+
+describe("engram extension / related schema contract (ENG-42)", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "engram-pihome-"));
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const baseParams = { title: "T", body: "b" };
+
+  const piAddTool = () => {
+    const { pi, tools } = fakePi();
+    engramExtension(pi);
+    return tools.find((t) => t.name === "engram_add")!;
+  };
+
+  const piEditTool = () => {
+    const { pi, tools } = fakePi();
+    engramExtension(pi);
+    return tools.find((t) => t.name === "engram_edit")!;
+  };
+
+  it("engram_add schema accepts exact string arrays only", () => {
+    const parameters = piAddTool().parameters;
+    expect(Value.Check(parameters, { ...baseParams, related: ["0002", "0003"] })).toBe(true);
+    expect(Value.Check(parameters, { ...baseParams, related: [] })).toBe(true);
+    expect(Value.Check(parameters, { ...baseParams, related: "0002" })).toBe(false);
+    expect(Value.Check(parameters, { ...baseParams, related: [7] })).toBe(false);
+    expect(Value.Check(parameters, { ...baseParams, related: null })).toBe(false);
+  });
+
+  it("engram_edit schema accepts array, null, or omission and rejects bad members", () => {
+    const parameters = piEditTool().parameters;
+    const base = { id: "0001" };
+    expect(Value.Check(parameters, base)).toBe(true);
+    expect(Value.Check(parameters, { ...base, related: ["0002"] })).toBe(true);
+    expect(Value.Check(parameters, { ...base, related: null })).toBe(true);
+    expect(Value.Check(parameters, { ...base, related: "0002" })).toBe(false);
+    expect(Value.Check(parameters, { ...base, related: [7] })).toBe(false);
+  });
+
+  it("related descriptions state the real contract on both tools", () => {
+    const addProps = piAddTool().parameters.properties as Record<
+      string,
+      { description?: string } | undefined
+    >;
+    expect(addProps.related?.description).toMatch(/exact/i);
+    expect(addProps.related?.description).toMatch(/same scope/i);
+    expect(addProps.related?.description).toMatch(/whole list|replaces/i);
+    expect(addProps.related?.description).toMatch(/warning|advisory/i);
+
+    const editProps = piEditTool().parameters.properties as Record<
+      string,
+      { description?: string } | undefined
+    >;
+    expect(editProps.related?.description).toMatch(/null clears/i);
+    expect(editProps.related?.description).toMatch(/same[- ]scope/i);
+  });
+
+  it("execution forwards exact arrays through add and three-state edits", async () => {
+    seedEntry(tmp, "0001", "Related edit target");
+    seedEntry(tmp, "0002", "Related other");
+    const { pi, tools } = fakePi();
+    engramExtension(pi);
+    const add = tools.find((t) => t.name === "engram_add")!;
+    const edit = tools.find((t) => t.name === "engram_edit")!;
+
+    const added = (await add.execute("c1", {
+      title: "Related add",
+      body: "b",
+      related: ["0002"],
+    })) as { isError: boolean; details: Record<string, unknown> };
+    expect(added.isError).toBe(false);
+    expect(fs.readFileSync(added.details.path as string, "utf8")).toMatch(
+      /^related:\n  - "0002"$/m,
+    );
+
+    const replaced = (await edit.execute("c2", {
+      id: added.details.id,
+      related: ["0001", "0002"],
+    })) as { isError: boolean; details: Record<string, unknown> };
+    expect(replaced.isError).toBe(false);
+    expect(fs.readFileSync(replaced.details.path as string, "utf8")).toMatch(
+      /^related:\n  - "0001"\n  - "0002"$/m,
+    );
+
+    const cleared = (await edit.execute("c3", {
+      id: added.details.id,
+      related: null,
+    })) as { isError: boolean; details: Record<string, unknown> };
+    expect(cleared.isError).toBe(false);
+    expect(fs.readFileSync(cleared.details.path as string, "utf8")).not.toMatch(/^related:/m);
   });
 });

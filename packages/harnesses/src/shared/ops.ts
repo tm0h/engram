@@ -438,6 +438,11 @@ export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, Engram
         ...(m.pinned ? ["pinned: true"] : []),
         ...(m.status !== undefined ? [`status: ${m.status}`] : []),
         ...(m.supersedes !== undefined ? [`supersedes: ${m.supersedes}`] : []),
+        /* ENG-42: part of the header like every other metadata line, so
+         * pagination's body-capacity math sees the growth. */
+        ...(m.related !== undefined && m.related.length > 0
+          ? [`related: ${m.related.join(", ")}`]
+          : []),
         ...(m.reviewAfter !== undefined ? [`review-after: ${m.reviewAfter}`] : []),
         ...(m.expires !== undefined ? [`expires: ${m.expires}`] : []),
         ...(source !== "" ? [`source: ${source}`] : []),
@@ -542,6 +547,7 @@ export const addOp = (opts: AddOptions): Effect.Effect<OpResult, never, EngramSt
             author,
             status: opts.status,
             supersedes: opts.supersedes,
+            related: opts.related,
             reviewAfter: opts.reviewAfter,
             expires: opts.expires,
             sourceType: opts.sourceType,
@@ -655,9 +661,11 @@ export const editOp = (
       if (opts.pinned !== undefined) patch.pinned = opts.pinned;
       if (opts.author !== undefined) patch.author = opts.author;
       // Lifecycle fields: pass the three-state instruction through unchanged
-      // (undefined preserves, null clears, a value replaces).
+      // (undefined preserves, null clears, a value replaces). ENG-42 related
+      // is three-state too; no target pre-resolution happens here.
       patch.status = opts.status;
       patch.supersedes = opts.supersedes;
+      patch.related = opts.related;
       patch.reviewAfter = opts.reviewAfter;
       patch.expires = opts.expires;
       patch.sourceType = opts.sourceType;

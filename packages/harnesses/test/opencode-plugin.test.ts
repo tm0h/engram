@@ -133,6 +133,7 @@ describe("engram opencode plugin / registration", () => {
       "expires",
       "sourceType",
       "sourceRef",
+      "related",
       "allowSecrets",
     ]);
     expect(Object.keys(tools.engram_edit.args)).toEqual([
@@ -150,6 +151,7 @@ describe("engram opencode plugin / registration", () => {
       "expires",
       "sourceType",
       "sourceRef",
+      "related",
       "allowSecrets",
     ]);
   });
@@ -477,5 +479,82 @@ describe("engram opencode plugin / lifecycle schema contract", () => {
       expect(args[field]?.description, field).toMatch(/omit to preserve/i);
       expect(args[field]?.description, field).not.toMatch(/null clears/i);
     }
+  });
+});
+
+describe("engram opencode plugin / related schema contract (ENG-42)", () => {
+  let env: ToolEnv;
+  beforeEach(() => {
+    env = enterProject();
+  });
+  afterEach(() => leaveProject(env));
+
+  it("engram_add args accept exact string arrays only", async () => {
+    const tools = await loadTools();
+    const shape = z.object(tools.engram_add.args as Record<string, z.ZodType>);
+    const base = { title: "T", body: "b" };
+    expect(shape.safeParse({ ...base, related: ["0002", "0003"] }).success).toBe(true);
+    expect(shape.safeParse({ ...base, related: [] }).success).toBe(true);
+    expect(shape.safeParse({ ...base, related: "0002" }).success).toBe(false);
+    expect(shape.safeParse({ ...base, related: [7] }).success).toBe(false);
+    expect(shape.safeParse({ ...base, related: null }).success).toBe(false);
+  });
+
+  it("engram_edit args accept array, null, or omission and reject bad members", async () => {
+    const tools = await loadTools();
+    const shape = z.object(tools.engram_edit.args as Record<string, z.ZodType>);
+    const base = { id: "0001" };
+    expect(shape.safeParse(base).success).toBe(true);
+    expect(shape.safeParse({ ...base, related: ["0002"] }).success).toBe(true);
+    expect(shape.safeParse({ ...base, related: null }).success).toBe(true);
+    expect(shape.safeParse({ ...base, related: "0002" }).success).toBe(false);
+    expect(shape.safeParse({ ...base, related: [7] }).success).toBe(false);
+  });
+
+  it("related descriptions state the real contract on both tools", async () => {
+    const tools = await loadTools();
+    const addArgs = tools.engram_add.args as Record<string, { description?: string }>;
+    expect(addArgs.related?.description).toMatch(/exact/i);
+    expect(addArgs.related?.description).toMatch(/same scope/i);
+    expect(addArgs.related?.description).toMatch(/whole list|replaces/i);
+    expect(addArgs.related?.description).toMatch(/warning|advisory/i);
+
+    const editArgs = tools.engram_edit.args as Record<string, { description?: string }>;
+    expect(editArgs.related?.description).toMatch(/null clears/i);
+    expect(editArgs.related?.description).toMatch(/same[- ]scope/i);
+  });
+
+  it("execution forwards exact arrays through add and three-state edits", async () => {
+    const tools = await loadTools();
+    seedEntry(env.tmp, "0001", "OC related target");
+    const added = await execute(
+      tools.engram_add,
+      { title: "OC related add", body: "b", related: ["0001"] },
+      env.tmp,
+    );
+    expect(added.metadata?.isError).toBe(false);
+    const addedRaw = fs
+      .readdirSync(projectEngramsDir(env.tmp))
+      .map((f) => fs.readFileSync(path.join(projectEngramsDir(env.tmp), f), "utf8"))
+      .find((c) => c.includes("OC related add"));
+    expect(addedRaw).toMatch(/^related:\n  - "0001"$/m);
+
+    const replaced = await execute(
+      tools.engram_edit,
+      { id: "0001", related: ["0002"] },
+      env.tmp,
+    );
+    expect(replaced.metadata?.isError).toBe(false);
+    // update rewrites at <id>-<slug-of-title>; read through the returned path
+    const replacedPath = replaced.metadata?.path as string;
+    expect(fs.readFileSync(replacedPath, "utf8")).toMatch(/^related:\n  - "0002"$/m);
+
+    const cleared = await execute(
+      tools.engram_edit,
+      { id: "0001", related: null },
+      env.tmp,
+    );
+    expect(cleared.metadata?.isError).toBe(false);
+    expect(fs.readFileSync(replacedPath, "utf8")).not.toMatch(/^related:/m);
   });
 });
