@@ -343,3 +343,29 @@ describe("searchEngrams / ENG-18 BM25 ranker and query syntax", () => {
     expect(explained[0]?.explanation?.contributions[0]).not.toHaveProperty("component");
   });
 });
+
+describe("call-form identifier ranking (ENG-60)", () => {
+  it("searchEngrams ranks the exact identifier document first for a call-form query", () => {
+    // Corpus case-code-identifiers-27 pair: the required document holds the
+    // bare identifier only; the rival matches the loose query words.
+    const entries: Engram[] = [
+      mem({
+        id: "req",
+        title: "exportStatic writes gzipped bundles",
+        type: "note",
+        tags: ["export", "api"],
+        body: "`exportStatic` writes gzipped bundles alongside the raw sources.",
+      }),
+      mem({
+        id: "rival",
+        title: "Static export gzip level is 6",
+        type: "fact",
+        tags: ["export", "limits"],
+        body: "Static export writes gzip level 6, balancing archive size against build CPU.",
+      }),
+    ];
+    const r = searchEngrams(entries, "exportStatic(outDir) behavior", 20);
+    expect(r[0]?.engram.id).toBe("req");
+    expect(r.map((x) => x.engram.id)).toContain("rival");
+  });
+});

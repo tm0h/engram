@@ -19,6 +19,85 @@ const mem = (over: Partial<Engram> & { id: string; title: string }): Engram => (
 
 const ids = (rs: { engram: Engram }[]): string[] => rs.map((r) => r.engram.id);
 
+describe("rankEntries: call-form identifier ranking (ENG-60)", () => {
+  // The corpus case-code-identifiers-27 shape, with fresh identifiers: a
+  // call-form query term's whole form ("fetchbundle(outpath") never matches
+  // a document token (document side splits on separators, no camel
+  // splitting), and camelCase expansion splits the bare identifier the
+  // document side keeps whole. Ranking must therefore derive the bare
+  // identifier components of multi-component query tokens at scoring time.
+  const target = mem({
+    id: "t1",
+    title: "fetchBundle writes cache files",
+    body: "`fetchBundle` writes cache files alongside the raw sources.",
+  });
+  const competitor = mem({
+    id: "t2",
+    title: "fetch cache report",
+    tags: ["bundle"],
+    body: "fetch cache report",
+  });
+
+  it("ranks the bare identifier document first for a call-form query", () => {
+    // The rival and the filler hold the common expansion words; the target
+    // holds the rare bare identifier the call form names.
+    const rival = mem({ id: "t2", title: "fetch bundle overview", body: "fetch bundle overview" });
+    const filler = mem({ id: "t3", title: "fetch bundle notes", body: "fetch bundle" });
+    const r = rankEntries([filler, rival, target], parseQuery("fetchBundle(outPath)"), {
+      explain: false,
+    });
+    expect(ids(r)).toEqual(["t1", "t3", "t2"]);
+  });
+
+  it("scores the derived bare identifier as an explicit contribution", () => {
+    const r = rankEntries([competitor, target], parseQuery("fetchBundle(outPath)"), {
+      explain: true,
+    });
+    const t1 = r.find((e) => e.engram.id === "t1");
+    const derived = t1?.explanation?.contributions.filter((c) => c.token === "fetchbundle");
+    expect(derived?.length).toBeGreaterThan(0);
+    expect(derived?.every((c) => c.score > 0)).toBe(true);
+  });
+
+  it("handles multiple call forms, each recovering its own identifier", () => {
+    const a = mem({ id: "m1", title: "fetchBundle writes cache files", body: "`fetchBundle` writes cache files." });
+    const b = mem({ id: "m2", title: "loadCache reads warm entries", body: "`loadCache` reads warm entries." });
+    const noise = mem({ id: "m3", title: "load fetch overview", body: "load and fetch utilities" });
+    const r = rankEntries([noise, a, b], parseQuery("fetchBundle(outPath) loadCache(inPath)"), {
+      explain: false,
+    });
+    expect(ids(r)).toEqual(["m1", "m2", "m3"]);
+  });
+
+  it("recovers acronym-run identifiers that document side keeps whole", () => {
+    const doc = mem({ id: "a1", title: "parseURLConfig validates flags", body: "`parseURLConfig` validates flags before requests." });
+    const noise = mem({ id: "a2", title: "parser overview", body: "parser utilities" });
+    const r = rankEntries([noise, doc], parseQuery("parseURLConfig(ctx)"), { explain: false });
+    expect(ids(r)).toEqual(["a1", "a2"]);
+  });
+
+  it("recovers Unicode-folded identifiers inside call forms", () => {
+    const doc = mem({ id: "u1", title: "caféMenu renders items", body: "`caféMenu` renders localized items." });
+    const noise = mem({ id: "u2", title: "menu overview", body: "menu rendering utilities" });
+    const r = rankEntries([noise, doc], parseQuery("caféMenu(order)"), { explain: false });
+    expect(ids(r)[0]).toBe("u1");
+  });
+
+  it("does not double-score path components that expansion already emits", () => {
+    const doc = mem({ id: "p1", title: "parser", body: "src/core/parser.ts logic lives here" });
+    const r = rankEntries([doc], parseQuery("src/core/parser.ts logic"), { explain: true });
+    // "parser" is in the term's token list exactly once, so per field it
+    // must contribute exactly once (title and body each score it once).
+    const parserPoints = r[0]?.explanation?.contributions.filter((c) => c.token === "parser") ?? [];
+    expect(parserPoints.map((c) => c.field).sort()).toEqual(["body", "title"]);
+  });
+
+  it("keeps single-component word terms scoring exactly as before", () => {
+    const r = rankEntries([competitor, target], parseQuery("report"), { explain: false });
+    expect(ids(r)).toEqual(["t2"]);
+  });
+});
+
 describe("rankEntries (BM25-style)", () => {
   it("scores a single term match with the title field weight and length norm", () => {
     // N=1, df=1: idf = ln(1 + 0.5/1.5) = ln(4/3) = 0.287682...;
