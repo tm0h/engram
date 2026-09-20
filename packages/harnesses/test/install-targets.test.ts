@@ -166,6 +166,7 @@ describe("installer core / jsonEntries kind", () => {
 
     const scan2 = await run(scanAssets(tmp, spec));
     expect(scan2.states[0]?.status).toBe("current");
+    expect(scan2.states[0]?.reasons).toEqual([]);
     expect(planInstall(scan2).actions).toHaveLength(0);
   });
 

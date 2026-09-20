@@ -501,11 +501,12 @@ const classifyInstall = (spec: AssetSpec, current: string | null): AssetState =>
     });
     const registryOk =
       Array.isArray(reg) && jsonEqual(reg as JsonValue, refs.map((r) => r.identity).sort());
+    const ok = entriesOk && registryOk;
     return {
       spec,
-      status: entriesOk && registryOk ? "current" : "drift",
+      status: ok ? "current" : "drift",
       current,
-      reasons: ["owned entries differ from spec"],
+      reasons: ok ? [] : ["owned entries differ from spec"],
     };
   }
 
