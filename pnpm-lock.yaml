@@ -6,6 +6,12 @@ settings:
 
 catalogs:
   astro:
+    '@astrojs/check':
+      specifier: ^0.9.10
+      version: 0.9.10
+    astro:
+      specifier: ^7.3.3
+      version: 7.3.3
     typescript:
       specifier: ^6.0.3
       version: 6.0.3
@@ -62,11 +68,11 @@ importers:
   apps/site:
     dependencies:
       astro:
-        specifier: ^7.3.3
+        specifier: catalog:astro
         version: 7.3.3(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@22.20.1)(ioredis@5.11.1)(jiti@2.7.0)(tsx@4.23.12)(typescript@6.0.3)(yaml@2.9.0)
     devDependencies:
       '@astrojs/check':
-        specifier: ^0.9.10
+        specifier: catalog:astro
         version: 0.9.10(@emnapi/runtime@1.11.3)(prettier@3.9.8)(typescript@6.0.3)
       typescript:
         specifier: catalog:astro

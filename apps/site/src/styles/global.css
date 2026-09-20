@@ -471,21 +471,43 @@ h1 em {
 }
 
 .tool-list {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 28px;
-  min-width: max-content;
+  overflow: hidden;
   padding: 23px;
   font-size: 14px;
   font-weight: 700;
 }
 
-.tool-list i {
+.tool-track,
+.tool-sequence {
+  display: flex;
+  align-items: center;
+}
+
+.tool-track {
+  justify-content: center;
+  min-width: max-content;
+}
+
+.tool-sequence {
+  gap: 28px;
+}
+
+.tool-sequence[aria-hidden="true"] {
+  display: none;
+}
+
+.tool-sequence i,
+.tool-sequence::after {
   width: 5px;
   height: 5px;
+  flex: none;
   border-radius: 50%;
   background: var(--accent);
+}
+
+.tool-sequence::after {
+  display: none;
+  content: "";
 }
 
 .problem {
@@ -1041,7 +1063,7 @@ footer {
   color: var(--accent);
 }
 
-.reveal {
+.js .reveal {
   opacity: 0;
   transform: translateY(22px);
   transition:
@@ -1049,7 +1071,7 @@ footer {
     transform 650ms ease;
 }
 
-.reveal.is-visible {
+.js .reveal.is-visible {
   opacity: 1;
   transform: translateY(0);
 }
@@ -1289,8 +1311,25 @@ footer {
   }
 
   .tool-list {
+    padding-inline: 0;
+  }
+
+  .tool-track {
     justify-content: flex-start;
     animation: ticker 20s linear infinite;
+  }
+
+  .tool-sequence {
+    flex: none;
+    padding-right: 28px;
+  }
+
+  .tool-sequence[aria-hidden="true"] {
+    display: flex;
+  }
+
+  .tool-sequence::after {
+    display: block;
   }
 
   .problem,
@@ -1436,7 +1475,7 @@ footer {
     transition-duration: 0.01ms !important;
   }
 
-  .reveal {
+  .js .reveal {
     opacity: 1;
     transform: none;
   }
