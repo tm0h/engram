@@ -11,7 +11,9 @@
     "test:watch": "vp test",
     "typecheck": "vp run -r typecheck",
     "build": "vp run -r build",
-    "dev": "vp -C packages/cli run dev"
+    "dev": "vp -C packages/cli run dev",
+    "site:dev": "pnpm --filter @engram/site dev",
+    "site:build": "pnpm --filter @engram/site build"
   },
   "devDependencies": {
     "@types/node": "catalog:",

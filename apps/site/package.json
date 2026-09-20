@@ -1,0 +1,25 @@
+{
+  "name": "@engram/site",
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "check": "astro check",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "astro": "catalog:astro"
+  },
+  "devDependencies": {
+    "@astrojs/check": "catalog:astro",
+    "typescript": "catalog:astro"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "allowScripts": {
+    "esbuild": true
+  }
+}

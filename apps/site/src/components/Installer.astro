@@ -1,0 +1,61 @@
+---
+const commands = [
+  { manager: "npm", command: "npm install -g engram-cli" },
+  { manager: "pnpm", command: "pnpm add -g engram-cli" },
+  { manager: "bun", command: "bun add -g engram-cli" },
+];
+---
+
+<div class="install-panel reveal">
+  <div class="install-tabs" aria-label="Package manager">
+    {
+      commands.map(({ manager, command }, index) => (
+        <button
+          type="button"
+          aria-pressed={index === 0 ? "true" : "false"}
+          data-command={command}
+        >
+          {manager}
+        </button>
+      ))
+    }
+  </div>
+  <div class="install-command">
+    <code><span>$</span> <b id="install-command">{commands[0].command}</b></code>
+    <button class="copy-button" type="button" data-copy-target="install-command">Copy</button>
+  </div>
+  <div class="first-memory">
+    <span>Then start your project memory</span>
+    <code><i>$</i> engram init --tracked</code>
+  </div>
+</div>
+
+<script>
+  const tabs = document.querySelectorAll<HTMLButtonElement>(".install-tabs [data-command]");
+  const command = document.querySelector("#install-command");
+
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      tabs.forEach((item) => item.setAttribute("aria-pressed", String(item === tab)));
+      if (command) command.textContent = tab.dataset.command ?? "";
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>("[data-copy-target]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const targetId = button.dataset.copyTarget;
+      const target = targetId ? document.querySelector(`#${targetId}`) : null;
+      if (!target?.textContent) return;
+
+      try {
+        await navigator.clipboard.writeText(target.textContent);
+        button.textContent = "Copied";
+        window.setTimeout(() => {
+          button.textContent = "Copy";
+        }, 1600);
+      } catch {
+        button.textContent = "Select to copy";
+      }
+    });
+  });
+</script>

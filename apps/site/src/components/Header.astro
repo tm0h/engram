@@ -1,0 +1,36 @@
+---
+import Brand from "./Brand.astro";
+---
+
+<header class="site-header">
+  <Brand />
+
+  <button class="menu-button" type="button" aria-expanded="false" aria-controls="site-nav">
+    <span class="sr-only">Toggle navigation</span>
+    <span></span><span></span>
+  </button>
+
+  <nav id="site-nav" class="site-nav" aria-label="Primary navigation">
+    <a href="#how-it-works">How it works</a>
+    <a href="#features">Features</a>
+    <a href="https://github.com/tm0h/engram">GitHub</a>
+    <a class="nav-cta" href="#install">Install</a>
+  </nav>
+</header>
+
+<script>
+  const menuButton = document.querySelector<HTMLButtonElement>(".menu-button");
+  const navigation = document.querySelector<HTMLElement>(".site-nav");
+
+  menuButton?.addEventListener("click", () => {
+    const isOpen = menuButton.getAttribute("aria-expanded") === "true";
+    menuButton.setAttribute("aria-expanded", String(!isOpen));
+    navigation?.classList.toggle("is-open", !isOpen);
+  });
+
+  navigation?.addEventListener("click", (event) => {
+    if (!(event.target instanceof HTMLAnchorElement)) return;
+    menuButton?.setAttribute("aria-expanded", "false");
+    navigation.classList.remove("is-open");
+  });
+</script>
