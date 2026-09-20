@@ -19,7 +19,7 @@
     "kValues": [1, 3, 5],
     "abstainThreshold": 0
   },
-  "generatedAtUtc": "2026-09-06T20:24:09.700Z",
+  "generatedAtUtc": "2026-09-20T19:35:17.615Z",
   "metrics": {
     "queryCount": 187,
     "passedCount": 184,
@@ -93,13 +93,13 @@
     "kMetrics": [
       {
         "k": 1,
-        "recall": 0.8641618497109826,
-        "precision": 0.8670520231213873
+        "recall": 0.8815028901734104,
+        "precision": 0.884393063583815
       },
       {
         "k": 3,
-        "recall": 0.9710982658959537,
-        "precision": 0.32562620423892175
+        "recall": 0.976878612716763,
+        "precision": 0.3275529865125248
       },
       {
         "k": 5,
@@ -107,7 +107,7 @@
         "precision": 0.19884393063583786
       }
     ],
-    "mrr": 0.919524727039178,
+    "mrr": 0.9296403339755941,
     "totalReturned": 2435,
     "staleReturned": 30,
     "forbiddenReturned": 0,
@@ -129,7 +129,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 9678624,
+        "latencyNs": 12972227,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -145,7 +145,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 3577680,
+        "latencyNs": 3877519,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -161,7 +161,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 2949019,
+        "latencyNs": 13141039,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -177,7 +177,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 9975312,
+        "latencyNs": 1861080,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -193,7 +193,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 1670671,
+        "latencyNs": 2043887,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -209,7 +209,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 1720540,
+        "latencyNs": 1706734,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -225,7 +225,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 1350069,
+        "latencyNs": 1349995,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -241,7 +241,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 1449470,
+        "latencyNs": 1528148,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -257,7 +257,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 1454528,
+        "latencyNs": 1535776,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -273,7 +273,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 1437883,
+        "latencyNs": 1506274,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -289,7 +289,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2610,
-        "latencyNs": 3943538,
+        "latencyNs": 4309784,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -305,7 +305,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 5221,
-        "latencyNs": 4765734,
+        "latencyNs": 2839784,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -321,7 +321,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 3589725,
+        "latencyNs": 2463900,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -337,7 +337,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2556,
-        "latencyNs": 2930896,
+        "latencyNs": 11682950,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -353,7 +353,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 564,
-        "latencyNs": 12046644,
+        "latencyNs": 1330804,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -369,7 +369,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 564,
-        "latencyNs": 1645321,
+        "latencyNs": 1447902,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -385,7 +385,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 476,
-        "latencyNs": 2021669,
+        "latencyNs": 1334505,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -401,7 +401,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 476,
-        "latencyNs": 2050941,
+        "latencyNs": 1259055,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -417,7 +417,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 394,
-        "latencyNs": 2005268,
+        "latencyNs": 1159687,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -433,7 +433,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 394,
-        "latencyNs": 1461790,
+        "latencyNs": 1399252,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -449,7 +449,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 256,
-        "latencyNs": 1785129,
+        "latencyNs": 1241325,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -465,7 +465,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 256,
-        "latencyNs": 1857879,
+        "latencyNs": 1376345,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -481,7 +481,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 254,
-        "latencyNs": 1732620,
+        "latencyNs": 1180121,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -497,7 +497,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 254,
-        "latencyNs": 1638139,
+        "latencyNs": 1155760,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -513,7 +513,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 991,
-        "latencyNs": 2032950,
+        "latencyNs": 1799464,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -529,7 +529,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 205,
-        "latencyNs": 1574826,
+        "latencyNs": 1521942,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -545,7 +545,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 610,
-        "latencyNs": 2514356,
+        "latencyNs": 1669249,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -561,7 +561,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 139,
-        "latencyNs": 2395733,
+        "latencyNs": 1774809,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -577,7 +577,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 300,
-        "latencyNs": 2527478,
+        "latencyNs": 2474582,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -593,7 +593,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1107,
-        "latencyNs": 2667867,
+        "latencyNs": 2050974,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -609,7 +609,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 725,
-        "latencyNs": 2375840,
+        "latencyNs": 2393117,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -625,7 +625,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1603,
-        "latencyNs": 4062539,
+        "latencyNs": 3558641,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -641,7 +641,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 888,
-        "latencyNs": 3010727,
+        "latencyNs": 4161347,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -657,7 +657,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 140,
-        "latencyNs": 3576373,
+        "latencyNs": 4906431,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -673,7 +673,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 127,
-        "latencyNs": 2945514,
+        "latencyNs": 4192236,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -689,7 +689,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 582,
-        "latencyNs": 3390559,
+        "latencyNs": 4910516,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -705,7 +705,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 287,
-        "latencyNs": 2461692,
+        "latencyNs": 4040360,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -721,7 +721,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 126,
-        "latencyNs": 2455750,
+        "latencyNs": 4319628,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -737,7 +737,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 113,
-        "latencyNs": 2346835,
+        "latencyNs": 4409590,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -753,7 +753,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 762,
-        "latencyNs": 2604835,
+        "latencyNs": 4324596,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -769,7 +769,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2522,
-        "latencyNs": 2799912,
+        "latencyNs": 4853632,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -785,7 +785,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 273,
-        "latencyNs": 2392173,
+        "latencyNs": 3010961,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -801,7 +801,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 234,
-        "latencyNs": 2533659,
+        "latencyNs": 2706800,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -817,7 +817,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1810,
-        "latencyNs": 2855712,
+        "latencyNs": 2718452,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -833,10 +833,10 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 3676,
-        "latencyNs": 2864464,
-        "recall": [0, 0, 1],
-        "precision": [0, 0, 0.2],
-        "reciprocalRank": 0.25
+        "latencyNs": 3365605,
+        "recall": [1, 1, 1],
+        "precision": [1, 0.3333333333333333, 0.2],
+        "reciprocalRank": 1
       },
       {
         "queryId": "case-code-identifiers-22",
@@ -849,7 +849,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2515,
-        "latencyNs": 2716709,
+        "latencyNs": 3140601,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -865,7 +865,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1014,
-        "latencyNs": 2605417,
+        "latencyNs": 3249019,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -881,7 +881,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 574,
-        "latencyNs": 2615041,
+        "latencyNs": 3978882,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -897,10 +897,10 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 672,
-        "latencyNs": 2439323,
-        "recall": [0, 1, 1],
-        "precision": [0, 0.3333333333333333, 0.2],
-        "reciprocalRank": 0.5
+        "latencyNs": 2397867,
+        "recall": [1, 1, 1],
+        "precision": [1, 0.3333333333333333, 0.2],
+        "reciprocalRank": 1
       },
       {
         "queryId": "case-code-identifiers-26",
@@ -913,7 +913,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 12681,
-        "latencyNs": 2109495,
+        "latencyNs": 3554434,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -929,10 +929,10 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1293,
-        "latencyNs": 1626102,
-        "recall": [0, 1, 1],
-        "precision": [0, 0.3333333333333333, 0.2],
-        "reciprocalRank": 0.5
+        "latencyNs": 2635333,
+        "recall": [1, 1, 1],
+        "precision": [1, 0.3333333333333333, 0.2],
+        "reciprocalRank": 1
       },
       {
         "queryId": "case-code-identifiers-28",
@@ -945,7 +945,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1888,
-        "latencyNs": 1800195,
+        "latencyNs": 3408983,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -961,7 +961,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1239,
-        "latencyNs": 1539942,
+        "latencyNs": 2366754,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -977,7 +977,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1636,
-        "latencyNs": 1276967,
+        "latencyNs": 1695995,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -993,7 +993,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 2,
         "renderedChars": 1636,
-        "latencyNs": 1425901,
+        "latencyNs": 1766466,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.3333333333333333
@@ -1009,7 +1009,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1398,
-        "latencyNs": 1612278,
+        "latencyNs": 2378491,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1025,7 +1025,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1117,
-        "latencyNs": 1424206,
+        "latencyNs": 1910012,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1041,7 +1041,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 725,
-        "latencyNs": 1216717,
+        "latencyNs": 1579415,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1057,7 +1057,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1467,
-        "latencyNs": 1521804,
+        "latencyNs": 2010284,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.3333333333333333
@@ -1073,7 +1073,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 446,
-        "latencyNs": 1377944,
+        "latencyNs": 1939352,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1089,7 +1089,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 3,
         "renderedChars": 12634,
-        "latencyNs": 2288287,
+        "latencyNs": 3531062,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1105,7 +1105,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 2062,
-        "latencyNs": 1520520,
+        "latencyNs": 2417015,
         "recall": [0, 0, 1],
         "precision": [0, 0, 0.2],
         "reciprocalRank": 0.2
@@ -1121,7 +1121,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1047,
-        "latencyNs": 1448101,
+        "latencyNs": 2025262,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1137,7 +1137,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 132,
-        "latencyNs": 119491,
+        "latencyNs": 213360,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1153,7 +1153,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1760,
-        "latencyNs": 1826701,
+        "latencyNs": 3381697,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1169,7 +1169,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1381,
-        "latencyNs": 2427944,
+        "latencyNs": 2580098,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1185,7 +1185,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1460,
-        "latencyNs": 3120266,
+        "latencyNs": 3076189,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1201,7 +1201,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1236,
-        "latencyNs": 2850539,
+        "latencyNs": 2744630,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1217,7 +1217,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1142,
-        "latencyNs": 3031214,
+        "latencyNs": 3275840,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1233,7 +1233,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1598,
-        "latencyNs": 2935134,
+        "latencyNs": 2938955,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1249,7 +1249,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2107,
-        "latencyNs": 2767033,
+        "latencyNs": 4370484,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1265,7 +1265,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1165,
-        "latencyNs": 2717812,
+        "latencyNs": 3117522,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1281,7 +1281,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 648,
-        "latencyNs": 2556762,
+        "latencyNs": 3068253,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1297,7 +1297,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 444,
-        "latencyNs": 2463984,
+        "latencyNs": 3140241,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1313,7 +1313,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 657,
-        "latencyNs": 2725802,
+        "latencyNs": 2807491,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1329,7 +1329,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 4440,
-        "latencyNs": 2925833,
+        "latencyNs": 2859189,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1345,7 +1345,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1774,
-        "latencyNs": 2806625,
+        "latencyNs": 3220707,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1361,7 +1361,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 636,
-        "latencyNs": 2692958,
+        "latencyNs": 3244102,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1377,7 +1377,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 421,
-        "latencyNs": 2616865,
+        "latencyNs": 3575585,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1393,7 +1393,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1168,
-        "latencyNs": 2931594,
+        "latencyNs": 3228517,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1409,7 +1409,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 949,
-        "latencyNs": 2682877,
+        "latencyNs": 2487736,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1425,7 +1425,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 542,
-        "latencyNs": 2504214,
+        "latencyNs": 2372415,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1441,7 +1441,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1028,
-        "latencyNs": 1402012,
+        "latencyNs": 1936805,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -1457,7 +1457,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 132,
-        "latencyNs": 1379527,
+        "latencyNs": 1773930,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1473,7 +1473,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 386,
-        "latencyNs": 1711066,
+        "latencyNs": 1996709,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1489,7 +1489,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 753,
-        "latencyNs": 1611151,
+        "latencyNs": 2424346,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1505,7 +1505,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 783,
-        "latencyNs": 1311091,
+        "latencyNs": 1943783,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1521,7 +1521,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 12810,
-        "latencyNs": 1981507,
+        "latencyNs": 2860216,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1537,7 +1537,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1077,
-        "latencyNs": 1771280,
+        "latencyNs": 2880283,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1553,7 +1553,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 320,
-        "latencyNs": 1341062,
+        "latencyNs": 2177796,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1569,7 +1569,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1500,
-        "latencyNs": 1706044,
+        "latencyNs": 2851979,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1585,7 +1585,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 311,
-        "latencyNs": 1599633,
+        "latencyNs": 1790676,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1601,7 +1601,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 305,
-        "latencyNs": 124240,
+        "latencyNs": 142272,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1617,7 +1617,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 768,
-        "latencyNs": 1752431,
+        "latencyNs": 1846895,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1633,7 +1633,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1107,
-        "latencyNs": 1684903,
+        "latencyNs": 2042567,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1649,7 +1649,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 880,
-        "latencyNs": 1643183,
+        "latencyNs": 1844130,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1665,7 +1665,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2811,
-        "latencyNs": 1616146,
+        "latencyNs": 2046789,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1681,7 +1681,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1112,
-        "latencyNs": 1485529,
+        "latencyNs": 1594686,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1697,7 +1697,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 405,
-        "latencyNs": 1529000,
+        "latencyNs": 1552007,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1713,7 +1713,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 485,
-        "latencyNs": 1641911,
+        "latencyNs": 1894916,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1729,7 +1729,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 339,
-        "latencyNs": 107086,
+        "latencyNs": 165424,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1745,7 +1745,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 270,
-        "latencyNs": 1588941,
+        "latencyNs": 3232191,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1761,7 +1761,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2185,
-        "latencyNs": 2007762,
+        "latencyNs": 1748933,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1777,7 +1777,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 525,
-        "latencyNs": 1578253,
+        "latencyNs": 1725229,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1793,7 +1793,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 3419,
-        "latencyNs": 1547508,
+        "latencyNs": 3022663,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1809,7 +1809,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1359,
-        "latencyNs": 1478195,
+        "latencyNs": 2736455,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1825,7 +1825,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 434,
-        "latencyNs": 1446102,
+        "latencyNs": 2039676,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1841,7 +1841,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 386,
-        "latencyNs": 1561975,
+        "latencyNs": 2643853,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1857,7 +1857,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 683,
-        "latencyNs": 1751154,
+        "latencyNs": 2435806,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1873,7 +1873,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1152,
-        "latencyNs": 1860975,
+        "latencyNs": 1870266,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1889,7 +1889,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 255,
-        "latencyNs": 1730697,
+        "latencyNs": 1728968,
         "recall": [0.5, 1, 1],
         "precision": [1, 0.6666666666666666, 0.4],
         "reciprocalRank": 1
@@ -1905,7 +1905,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 4616,
-        "latencyNs": 1718778,
+        "latencyNs": 1772681,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1921,7 +1921,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 12681,
-        "latencyNs": 2141642,
+        "latencyNs": 2056379,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1937,7 +1937,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2028,
-        "latencyNs": 1778971,
+        "latencyNs": 2802904,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1953,7 +1953,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1583,
-        "latencyNs": 1504790,
+        "latencyNs": 1556559,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.3333333333333333
@@ -1969,7 +1969,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1405,
-        "latencyNs": 2699466,
+        "latencyNs": 1723653,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -1985,7 +1985,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 5448,
-        "latencyNs": 1647216,
+        "latencyNs": 2594060,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2001,7 +2001,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 13067,
-        "latencyNs": 2500778,
+        "latencyNs": 2956909,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2017,7 +2017,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 663,
-        "latencyNs": 1634938,
+        "latencyNs": 1817170,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2033,7 +2033,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2290,
-        "latencyNs": 1818314,
+        "latencyNs": 2085071,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2049,7 +2049,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 3442,
-        "latencyNs": 1888541,
+        "latencyNs": 2106726,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2065,7 +2065,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 455,
-        "latencyNs": 1265999,
+        "latencyNs": 1348184,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2081,7 +2081,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 12476,
-        "latencyNs": 1867590,
+        "latencyNs": 2694113,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2097,7 +2097,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 12476,
-        "latencyNs": 1682131,
+        "latencyNs": 2613853,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2113,7 +2113,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2597,
-        "latencyNs": 1875658,
+        "latencyNs": 2634755,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2129,7 +2129,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1874,
-        "latencyNs": 1822654,
+        "latencyNs": 3161744,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2145,7 +2145,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 12934,
-        "latencyNs": 2168327,
+        "latencyNs": 3168014,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2161,7 +2161,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2587,
-        "latencyNs": 1934999,
+        "latencyNs": 3355878,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2177,7 +2177,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 386,
-        "latencyNs": 1685798,
+        "latencyNs": 2999095,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2193,7 +2193,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1979,
-        "latencyNs": 1639070,
+        "latencyNs": 2932112,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -2209,7 +2209,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1652,
-        "latencyNs": 1734093,
+        "latencyNs": 3252360,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2225,7 +2225,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 132,
-        "latencyNs": 1506509,
+        "latencyNs": 2432588,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2241,7 +2241,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 314,
-        "latencyNs": 1142074,
+        "latencyNs": 1789994,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2257,7 +2257,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1949,
-        "latencyNs": 1975506,
+        "latencyNs": 3333122,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2273,7 +2273,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 13241,
-        "latencyNs": 2361088,
+        "latencyNs": 4254488,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.3333333333333333
@@ -2289,7 +2289,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 12833,
-        "latencyNs": 1674524,
+        "latencyNs": 2877847,
         "recall": [0, 0, 0],
         "precision": [0, 0, 0],
         "reciprocalRank": 0.1111111111111111
@@ -2305,7 +2305,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 4024,
-        "latencyNs": 1785269,
+        "latencyNs": 3050138,
         "recall": [0, 0, 0],
         "precision": [0, 0, 0],
         "reciprocalRank": 0.1
@@ -2321,7 +2321,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 12874,
-        "latencyNs": 2104358,
+        "latencyNs": 3378187,
         "recall": [0, 0, 1],
         "precision": [0, 0, 0.2],
         "reciprocalRank": 0.25
@@ -2337,7 +2337,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2231,
-        "latencyNs": 1818429,
+        "latencyNs": 3253647,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2353,7 +2353,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 12704,
-        "latencyNs": 2222906,
+        "latencyNs": 3296021,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2369,7 +2369,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1494,
-        "latencyNs": 1887221,
+        "latencyNs": 2525338,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -2385,7 +2385,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 289,
-        "latencyNs": 1436482,
+        "latencyNs": 2610513,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2401,7 +2401,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 515,
-        "latencyNs": 1544106,
+        "latencyNs": 1576421,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2417,7 +2417,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1338,
-        "latencyNs": 2700669,
+        "latencyNs": 1548597,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2433,7 +2433,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 876,
-        "latencyNs": 1485427,
+        "latencyNs": 1632022,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2449,7 +2449,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 623,
-        "latencyNs": 1471545,
+        "latencyNs": 1638975,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2465,7 +2465,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 578,
-        "latencyNs": 1563108,
+        "latencyNs": 1702006,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2481,7 +2481,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1458,
-        "latencyNs": 1730942,
+        "latencyNs": 1951165,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2497,7 +2497,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 137,
-        "latencyNs": 1566718,
+        "latencyNs": 1723232,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2513,7 +2513,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 133,
-        "latencyNs": 1288084,
+        "latencyNs": 1626328,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2529,7 +2529,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1049,
-        "latencyNs": 1510054,
+        "latencyNs": 1675427,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2545,7 +2545,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1458,
-        "latencyNs": 1548477,
+        "latencyNs": 1856624,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2561,7 +2561,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1865,
-        "latencyNs": 1630542,
+        "latencyNs": 1749891,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2577,7 +2577,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1095,
-        "latencyNs": 2032176,
+        "latencyNs": 1673771,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2593,7 +2593,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 680,
-        "latencyNs": 2196695,
+        "latencyNs": 1862116,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2609,7 +2609,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 273,
-        "latencyNs": 2241379,
+        "latencyNs": 1832432,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2625,7 +2625,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1438,
-        "latencyNs": 1832421,
+        "latencyNs": 1947445,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2641,7 +2641,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 498,
-        "latencyNs": 2256151,
+        "latencyNs": 1827318,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2657,7 +2657,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 393,
-        "latencyNs": 1643917,
+        "latencyNs": 1770232,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2673,7 +2673,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1271,
-        "latencyNs": 1775960,
+        "latencyNs": 2021733,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2689,7 +2689,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 725,
-        "latencyNs": 1314137,
+        "latencyNs": 1816004,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2705,7 +2705,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1584,
-        "latencyNs": 1950603,
+        "latencyNs": 2694326,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2721,7 +2721,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2392,
-        "latencyNs": 1591629,
+        "latencyNs": 2427505,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2737,7 +2737,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 716,
-        "latencyNs": 1766008,
+        "latencyNs": 2181150,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2753,7 +2753,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 695,
-        "latencyNs": 1354201,
+        "latencyNs": 1612085,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2769,7 +2769,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1993,
-        "latencyNs": 1953964,
+        "latencyNs": 2796997,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2785,7 +2785,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 762,
-        "latencyNs": 1275024,
+        "latencyNs": 1655278,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.3333333333333333
@@ -2801,7 +2801,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 746,
-        "latencyNs": 1679354,
+        "latencyNs": 2114898,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2817,7 +2817,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 548,
-        "latencyNs": 1335241,
+        "latencyNs": 1375610,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2833,7 +2833,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 827,
-        "latencyNs": 1525196,
+        "latencyNs": 1576743,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -2849,7 +2849,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 500,
-        "latencyNs": 1758816,
+        "latencyNs": 2241773,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2865,7 +2865,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1409,
-        "latencyNs": 1591037,
+        "latencyNs": 1778399,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2881,7 +2881,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 645,
-        "latencyNs": 1705075,
+        "latencyNs": 1717799,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2897,7 +2897,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2334,
-        "latencyNs": 1538042,
+        "latencyNs": 6013865,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2913,7 +2913,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 2783,
-        "latencyNs": 2275390,
+        "latencyNs": 3509969,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2929,7 +2929,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1913,
-        "latencyNs": 3041551,
+        "latencyNs": 2569898,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2945,7 +2945,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2823,
-        "latencyNs": 1798137,
+        "latencyNs": 2304832,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2961,7 +2961,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1983,
-        "latencyNs": 1379185,
+        "latencyNs": 1427137,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2977,7 +2977,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1367,
-        "latencyNs": 1710098,
+        "latencyNs": 1832725,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2993,7 +2993,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 301,
-        "latencyNs": 1586135,
+        "latencyNs": 1502477,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -3009,7 +3009,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1455,
-        "latencyNs": 1722682,
+        "latencyNs": 1732298,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -3025,7 +3025,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1077,
-        "latencyNs": 1421991,
+        "latencyNs": 1328218,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -3041,7 +3041,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 514,
-        "latencyNs": 1768611,
+        "latencyNs": 1720320,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -3057,7 +3057,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1712,
-        "latencyNs": 1800265,
+        "latencyNs": 1778752,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -3073,7 +3073,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1236,
-        "latencyNs": 1763856,
+        "latencyNs": 1683198,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -3089,7 +3089,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 521,
-        "latencyNs": 1534899,
+        "latencyNs": 1454015,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -3105,7 +3105,7 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 116,
-        "latencyNs": 1288906,
+        "latencyNs": 1370667,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -3116,7 +3116,7 @@
     "queryCount": 187,
     "passedCount": 184,
     "passRate": 0.983957,
-    "mrr": 0.919525,
+    "mrr": 0.92964,
     "staleRate": 0.01232,
     "forbiddenRate": 0,
     "abstentionAccuracy": 0.785714,
@@ -3129,13 +3129,13 @@
     "kMetrics": [
       {
         "k": 1,
-        "recall": 0.864162,
-        "precision": 0.867052
+        "recall": 0.881503,
+        "precision": 0.884393
       },
       {
         "k": 3,
-        "recall": 0.971098,
-        "precision": 0.325626
+        "recall": 0.976879,
+        "precision": 0.327553
       },
       {
         "k": 5,
@@ -3977,10 +3977,10 @@
       "passed": true,
       "returned": 26,
       "rankedIds": [
+        "01jwq3zgn0000000000000002q",
         "01jwpzmbh0000000000000000b",
         "01jwq1sy30000000000000001h",
         "01jwq08g20000000000000000p",
-        "01jwq3zgn0000000000000002q",
         "01jwq13yz00000000000000015",
         "01jwq4tzj00000000000000036",
         "01jwq4qac00000000000000034",
@@ -4008,9 +4008,9 @@
       "forbiddenReturned": 0,
       "supportingReturned": 0,
       "renderedChars": 3676,
-      "recall": [0, 0, 1],
-      "precision": [0, 0, 0.2],
-      "reciprocalRank": 0.25
+      "recall": [1, 1, 1],
+      "precision": [1, 0.3333333333333333, 0.2],
+      "reciprocalRank": 1
     },
     "case-code-identifiers-22": {
       "category": "code-identifiers",
@@ -4087,8 +4087,8 @@
       "passed": true,
       "returned": 5,
       "rankedIds": [
-        "01jwq39hh0000000000000002b",
         "01jwq46v10000000000000002v",
+        "01jwq39hh0000000000000002b",
         "01jwq3bc40000000000000002c",
         "01jwq1p8x0000000000000001f",
         "01jwq1eyh0000000000000001b"
@@ -4097,9 +4097,9 @@
       "forbiddenReturned": 0,
       "supportingReturned": 0,
       "renderedChars": 672,
-      "recall": [0, 1, 1],
-      "precision": [0, 0.3333333333333333, 0.2],
-      "reciprocalRank": 0.5
+      "recall": [1, 1, 1],
+      "precision": [1, 0.3333333333333333, 0.2],
+      "reciprocalRank": 1
     },
     "case-code-identifiers-26": {
       "category": "code-identifiers",
@@ -4208,8 +4208,8 @@
       "passed": true,
       "returned": 9,
       "rankedIds": [
-        "01jwq3t0w0000000000000002m",
         "01jwq4ag70000000000000002x",
+        "01jwq3t0w0000000000000002m",
         "01jwq0dzv0000000000000000s",
         "01jwq3gvx0000000000000002f",
         "01jwq55z40000000000000003c",
@@ -4222,9 +4222,9 @@
       "forbiddenReturned": 0,
       "supportingReturned": 0,
       "renderedChars": 1293,
-      "recall": [0, 1, 1],
-      "precision": [0, 0.3333333333333333, 0.2],
-      "reciprocalRank": 0.5
+      "recall": [1, 1, 1],
+      "precision": [1, 0.3333333333333333, 0.2],
+      "reciprocalRank": 1
     },
     "case-code-identifiers-28": {
       "category": "code-identifiers",

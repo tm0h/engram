@@ -60,8 +60,16 @@ describe("rankEntries: call-form identifier ranking (ENG-60)", () => {
   });
 
   it("handles multiple call forms, each recovering its own identifier", () => {
-    const a = mem({ id: "m1", title: "fetchBundle writes cache files", body: "`fetchBundle` writes cache files." });
-    const b = mem({ id: "m2", title: "loadCache reads warm entries", body: "`loadCache` reads warm entries." });
+    const a = mem({
+      id: "m1",
+      title: "fetchBundle writes cache files",
+      body: "`fetchBundle` writes cache files.",
+    });
+    const b = mem({
+      id: "m2",
+      title: "loadCache reads warm entries",
+      body: "`loadCache` reads warm entries.",
+    });
     const noise = mem({ id: "m3", title: "load fetch overview", body: "load and fetch utilities" });
     const r = rankEntries([noise, a, b], parseQuery("fetchBundle(outPath) loadCache(inPath)"), {
       explain: false,
@@ -70,14 +78,22 @@ describe("rankEntries: call-form identifier ranking (ENG-60)", () => {
   });
 
   it("recovers acronym-run identifiers that document side keeps whole", () => {
-    const doc = mem({ id: "a1", title: "parseURLConfig validates flags", body: "`parseURLConfig` validates flags before requests." });
+    const doc = mem({
+      id: "a1",
+      title: "parseURLConfig validates flags",
+      body: "`parseURLConfig` validates flags before requests.",
+    });
     const noise = mem({ id: "a2", title: "parser overview", body: "parser utilities" });
     const r = rankEntries([noise, doc], parseQuery("parseURLConfig(ctx)"), { explain: false });
     expect(ids(r)).toEqual(["a1", "a2"]);
   });
 
   it("recovers Unicode-folded identifiers inside call forms", () => {
-    const doc = mem({ id: "u1", title: "caféMenu renders items", body: "`caféMenu` renders localized items." });
+    const doc = mem({
+      id: "u1",
+      title: "caféMenu renders items",
+      body: "`caféMenu` renders localized items.",
+    });
     const noise = mem({ id: "u2", title: "menu overview", body: "menu rendering utilities" });
     const r = rankEntries([noise, doc], parseQuery("caféMenu(order)"), { explain: false });
     expect(ids(r)[0]).toBe("u1");
