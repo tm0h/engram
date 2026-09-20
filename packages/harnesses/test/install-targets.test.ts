@@ -47,6 +47,7 @@ import {
 } from "../src/installer/constants.js";
 import { claudeCodeSpec, claudeCodeRoot } from "../src/installer/claude-code.js";
 import { codexSpec, codexRoot } from "../src/installer/codex.js";
+import { parseSidecarLedger, SIDECAR_FILENAME } from "../src/installer/sidecar.js";
 
 /* ------------------------------ helpers ------------------------------ */
 
@@ -394,6 +395,14 @@ describe("claude-code target spec", () => {
       expect(inner.command).toBe(`engram hook claude-code ${g.identity.split(":").at(-1)}`);
       expect(inner.timeout).toBe(HOST_HOOK_TIMEOUT_SECONDS);
     }
+    // turn-2 (F2): markerless mode — no engram keys inside settings.json
+    expect(asset.entryMarker).toBeUndefined();
+    expect(asset.registryKey).toBeUndefined();
+    const sidecar = spec.assets[1] as Extract<AssetSpec, { kind: "file" }>;
+    expect(sidecar.path).toBe(SIDECAR_FILENAME);
+    expect(sidecar.markers?.begin).toContain("engram-claude-code-sidecar");
+    expect(sidecar.markers?.end).toContain("engram-claude-code-sidecar");
+    expect(validateSpec({ assets: [sidecar] })).toBeNull();
   });
 
   it("hook commands contain no absolute paths (A5)", () => {
@@ -429,16 +438,26 @@ describe("claude-code target spec", () => {
     const groups = doc.hooks.SessionStart as Array<Record<string, any>>;
     expect(groups).toHaveLength(4); // 1 user + 3 engram
     expect(groups[0]?.hooks?.[0]?.command).toBe("user-own-hook --flag"); // user entry first, untouched
-    const marked = groups.filter((g) => typeof g[ENTRY_MARKER_KEY] === "string");
-    expect(marked.map((g) => g[ENTRY_MARKER_KEY]).sort((a, b) => a.localeCompare(b))).toEqual([
+    // engram groups carry only documented Claude schema keys (turn-2, F2)
+    for (const g of groups.slice(1)) {
+      for (const key of Object.keys(g)) expect(["matcher", "hooks"]).toContain(key);
+      expect(g.matcher).toMatch(/^(startup|resume|compact)$/);
+    }
+    // ownership ledger lives in the engram-owned sidecar, itself valid JSON
+    const ledger = parseSidecarLedger(
+      fs.readFileSync(path.join(home, ".claude", SIDECAR_FILENAME), "utf8"),
+    );
+    expect(ledger?.target).toBe("claude-code");
+    expect(ledger?.configFile).toBe("settings.json");
+    expect(ledger?.entries.map((e) => e.identity).sort((a, b) => a.localeCompare(b))).toEqual([
       "engram-hook:claude-code:compact",
       "engram-hook:claude-code:resume",
       "engram-hook:claude-code:startup",
     ]);
 
-    // idempotent
+    // idempotent across both assets
     const scan2 = await run(scanAssets(root, spec));
-    expect(scan2.states[0]?.status).toBe("current");
+    expect(scan2.states.map((s) => s.status)).toEqual(["current", "current"]);
     expect(planInstall(scan2).actions).toHaveLength(0);
 
     // uninstall leaves only the user entry
@@ -450,6 +469,62 @@ describe("claude-code target spec", () => {
     expect(after.hooks.SessionStart[0].hooks[0].command).toBe("user-own-hook --flag");
     expect(after[OWNERSHIP_MARKER_KEY]).toBeUndefined();
     expect(after.model).toBe("opus");
+    // uninstall removes the sidecar itself (turn-2, F2)
+    expect(fs.existsSync(path.join(home, ".claude", SIDECAR_FILENAME))).toBe(false);
+  });
+
+  it("drift repair rebuilds a stale or missing sidecar (turn-2, F2)", async () => {
+    const home = path.join(tmp, "home");
+    fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(home, ".claude", "settings.json"), "{}\n");
+    const spec = claudeCodeSpec();
+    const root = claudeCodeRoot(home);
+    const sidecarPath = path.join(home, ".claude", SIDECAR_FILENAME);
+
+    await run(applyPlan(root, planInstall(await run(scanAssets(root, spec)))));
+
+    // stale sidecar: markers intact, ledger content differs -> drift -> repair
+    const stale = fs.readFileSync(sidecarPath, "utf8").replace('"version": 1', '"version": 99');
+    fs.writeFileSync(sidecarPath, stale);
+    const scan = await run(scanAssets(root, spec));
+    expect(scan.states[1]?.status).toBe("drift");
+    await run(applyPlan(root, planInstall(scan)));
+    const scanRepaired = await run(scanAssets(root, spec));
+    expect(scanRepaired.states[1]?.status).toBe("current");
+    const repaired = parseSidecarLedger(fs.readFileSync(sidecarPath, "utf8"));
+    expect(repaired?.version).toBe(1);
+
+    // missing sidecar: entries still recognized -> absent -> rewritten
+    fs.rmSync(sidecarPath);
+    const scanMissing = await run(scanAssets(root, spec));
+    expect(scanMissing.states[0]?.status).toBe("current"); // entries match
+    expect(scanMissing.states[1]?.status).toBe("absent");
+    await run(applyPlan(root, planInstall(scanMissing)));
+    expect(parseSidecarLedger(fs.readFileSync(sidecarPath, "utf8"))?.entries).toHaveLength(3);
+  });
+
+  it("hand-edited entries with altered commands are left alone (A3, turn-2)", async () => {
+    const home = path.join(tmp, "home");
+    fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(home, ".claude", "settings.json"), "{}\n");
+    const spec = claudeCodeSpec();
+    const root = claudeCodeRoot(home);
+    await run(applyPlan(root, planInstall(await run(scanAssets(root, spec)))));
+
+    // hand-edit one engram group's command
+    const settingsPath = path.join(home, ".claude", "settings.json");
+    const doc = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as any;
+    const resume = doc.hooks.SessionStart.find((g: any) => g.matcher === "resume");
+    resume.hooks[0].command = "hand-edited engram hook claude-code resume";
+    fs.writeFileSync(settingsPath, `${JSON.stringify(doc, null, 2)}\n`);
+
+    // uninstall removes only recognizable entries; the hand-edited one stays
+    await run(applyPlan(root, planUninstall(await run(scanAssets(root, spec)))));
+    const after = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as any;
+    expect(after.hooks.SessionStart).toHaveLength(1);
+    expect(after.hooks.SessionStart[0].hooks[0].command).toBe(
+      "hand-edited engram hook claude-code resume",
+    );
   });
 
   it("root is <home>/.claude", () => {
@@ -467,6 +542,14 @@ describe("codex target spec", () => {
     expect(asset.entries.map((e) => e.key)).toEqual(["SessionStart", "PostCompact"]);
     const identities = asset.entries.flatMap((e) => e.groups.map((g) => g.identity));
     expect(identities).toEqual(["engram-hook:codex:startup", "engram-hook:codex:compact"]);
+    // turn-2 (F2): markerless mode — hooks.json carries only spec-valid keys
+    expect(asset.entryMarker).toBeUndefined();
+    expect(asset.registryKey).toBeUndefined();
+    const sidecar = spec.assets[1] as Extract<AssetSpec, { kind: "file" }>;
+    expect(sidecar.path).toBe(SIDECAR_FILENAME);
+    expect(sidecar.markers?.begin).toContain("engram-codex-sidecar");
+    expect(sidecar.markers?.end).toContain("engram-codex-sidecar");
+    expect(validateSpec({ assets: [sidecar] })).toBeNull();
     for (const entry of asset.entries) {
       for (const g of entry.groups) {
         expect(g.group.matcher).toBeUndefined(); // observed codex schema has no matcher
@@ -495,29 +578,175 @@ describe("codex target spec", () => {
     const startGroups = doc.hooks.SessionStart as Array<Record<string, any>>;
     expect(startGroups).toHaveLength(2);
     expect(startGroups[0]?.hooks?.[0]?.command).toContain("herdr-agent-state.sh"); // user entry untouched
-    expect(startGroups[1]?.[ENTRY_MARKER_KEY]).toBe("engram-hook:codex:startup");
+    expect(startGroups[1]?.hooks?.[0]?.command).toBe("engram hook codex startup");
     const compactGroups = doc.hooks.PostCompact as Array<Record<string, any>>;
     expect(compactGroups).toHaveLength(1);
-    expect(compactGroups[0]?.[ENTRY_MARKER_KEY]).toBe("engram-hook:codex:compact");
-    // only keys observed in the pinned codex schema plus engram markers
+    expect(compactGroups[0]?.hooks?.[0]?.command).toBe("engram hook codex compact");
+    // only keys observed in the pinned codex schema (turn-2: no marker keys)
     for (const group of [...startGroups, ...compactGroups]) {
       for (const key of Object.keys(group)) {
-        expect(["hooks", ENTRY_MARKER_KEY]).toContain(key);
+        expect(key).toBe("hooks");
       }
     }
+    // ownership ledger lives in the engram-owned sidecar, itself valid JSON
+    const ledger = parseSidecarLedger(
+      fs.readFileSync(path.join(home, ".codex", SIDECAR_FILENAME), "utf8"),
+    );
+    expect(ledger?.target).toBe("codex");
+    expect(ledger?.configFile).toBe("hooks.json");
+    expect(ledger?.entries.map((e) => e.identity).sort((a, b) => a.localeCompare(b))).toEqual([
+      "engram-hook:codex:compact",
+      "engram-hook:codex:startup",
+    ]);
 
     const scan2 = await run(scanAssets(root, spec));
-    expect(scan2.states[0]?.status).toBe("current");
+    expect(scan2.states.map((s) => s.status)).toEqual(["current", "current"]);
     expect(planInstall(scan2).actions).toHaveLength(0);
 
     await run(applyPlan(root, planUninstall(await run(scanAssets(root, spec)))));
     const after = JSON.parse(
       fs.readFileSync(path.join(home, ".codex", "hooks.json"), "utf8"),
     ) as any;
-    expect(after).toEqual(JSON.parse(fixture)); // back to the user's exact bytes content
+    expect(after).toEqual(JSON.parse(fixture)); // back to the user's exact content
+    // uninstall removes the sidecar itself (turn-2, F2)
+    expect(fs.existsSync(path.join(home, ".codex", SIDECAR_FILENAME))).toBe(false);
   });
 
   it("root is <home>/.codex", () => {
     expect(codexRoot("/h").endsWith(".codex")).toBe(true);
+  });
+});
+
+/* ----------------- core: jsonEntries markerless mode (F2) ----------------- */
+
+describe("installer core / jsonEntries markerless mode", () => {
+  const plainAsset = (
+    over: Partial<Extract<AssetSpec, { kind: "jsonEntries" }>> = {},
+  ): AssetSpec => ({
+    kind: "jsonEntries",
+    id: "engram-plain-hooks",
+    path: "config/hooks.json",
+    mapPath: ["hooks"],
+    entries: [
+      {
+        key: "SessionStart",
+        groups: [
+          {
+            identity: "engram-hook:plain:startup",
+            group: {
+              hooks: [{ type: "command", command: "engram hook plain startup", timeout: 10 }],
+            },
+          },
+        ],
+      },
+    ],
+    ...over,
+  });
+
+  it("requires entryMarker and registryKey to be set together", () => {
+    expect(
+      validateSpec({ assets: [plainAsset({ entryMarker: ENTRY_MARKER_KEY })] })?.message,
+    ).toMatch(/together/i);
+    expect(
+      validateSpec({ assets: [plainAsset({ registryKey: OWNERSHIP_MARKER_KEY })] })?.message,
+    ).toMatch(/together/i);
+  });
+
+  it("rejects duplicate group content (content-addressing needs distinct groups)", () => {
+    const group = { hooks: [{ type: "command", command: "same" }] };
+    expect(
+      validateSpec({
+        assets: [
+          plainAsset({
+            entries: [
+              {
+                key: "SessionStart",
+                groups: [
+                  { identity: "engram-hook:plain:a", group },
+                  { identity: "engram-hook:plain:b", group },
+                ],
+              },
+            ],
+          }),
+        ],
+      })?.message,
+    ).toMatch(/duplicate group content/i);
+  });
+
+  it("installs groups without marker keys and stays idempotent", async () => {
+    writeRoot("config/hooks.json", canon({}));
+    const spec: InstallSpec = { assets: [plainAsset()] };
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, spec)))));
+
+    const groups = (installedDoc() as any).hooks.SessionStart as Array<Record<string, unknown>>;
+    expect(groups).toHaveLength(1);
+    expect(Object.keys(groups[0]!)).toEqual(["hooks"]); // only spec-valid keys
+    expect(installedDoc()[OWNERSHIP_MARKER_KEY]).toBeUndefined();
+
+    const scan2 = await run(scanAssets(tmp, spec));
+    expect(scan2.states[0]?.status).toBe("current");
+    expect(scan2.states[0]?.reasons).toEqual([]);
+    expect(planInstall(scan2).actions).toHaveLength(0);
+  });
+
+  it("uninstall removes only canonical-matching entries and prunes containers", async () => {
+    writeRoot(
+      "config/hooks.json",
+      canon({
+        hooks: {
+          SessionStart: [
+            { hooks: [{ type: "command", command: "user-own-hook" }] },
+            { hooks: [{ type: "command", command: "engram hook plain startup", timeout: 10 }] },
+          ],
+        },
+      }),
+    );
+    const spec: InstallSpec = { assets: [plainAsset()] };
+    await run(applyPlan(tmp, planUninstall(await run(scanAssets(tmp, spec)))));
+
+    const groups = (installedDoc() as any).hooks.SessionStart as Array<Record<string, unknown>>;
+    expect(groups).toHaveLength(1); // only the user entry remains
+    expect(groups[0]?.hooks).toEqual([{ type: "command", command: "user-own-hook" }]);
+  });
+
+  it("hand-edited entries (changed command) are never recognized or removed", async () => {
+    writeRoot(
+      "config/hooks.json",
+      canon({
+        hooks: {
+          SessionStart: [
+            { hooks: [{ type: "command", command: "hand-edited engram hook plain startup" }] },
+          ],
+        },
+      }),
+    );
+    const spec: InstallSpec = { assets: [plainAsset()] };
+    const scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]?.status).toBe("absent"); // nothing recognizable
+    await run(applyPlan(tmp, planInstall(scan)));
+    let groups = (installedDoc() as any).hooks.SessionStart as Array<Record<string, unknown>>;
+    expect(groups).toHaveLength(2); // hand-edited untouched + fresh engram entry
+
+    await run(applyPlan(tmp, planUninstall(await run(scanAssets(tmp, spec)))));
+    groups = (installedDoc() as any).hooks.SessionStart as Array<Record<string, unknown>>;
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.hooks).toEqual([
+      { type: "command", command: "hand-edited engram hook plain startup" },
+    ]);
+  });
+
+  it("duplicate copies of spec-identical entries are drift; install dedupes them", async () => {
+    const group = {
+      hooks: [{ type: "command", command: "engram hook plain startup", timeout: 10 }],
+    };
+    writeRoot("config/hooks.json", canon({ hooks: { SessionStart: [group, group] } }));
+    const spec: InstallSpec = { assets: [plainAsset()] };
+    const scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]?.status).toBe("drift");
+    await run(applyPlan(tmp, planInstall(scan)));
+    const groups = (installedDoc() as any).hooks.SessionStart as Array<Record<string, unknown>>;
+    expect(groups).toHaveLength(1);
+    const scan2 = await run(scanAssets(tmp, spec));
+    expect(scan2.states[0]?.status).toBe("current");
   });
 });

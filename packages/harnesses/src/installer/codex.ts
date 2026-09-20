@@ -1,12 +1,17 @@
 /**
  * ENG-58 `codex` install target: user-level Codex CLI lifecycle hooks in
- * <home>/.codex/hooks.json. Declares WHAT to manage as data over the ENG-34
- * installer core; the core owns HOW.
+ * <home>/.codex/hooks.json plus an engram-owned sidecar ledger (turn-2,
+ * review F2). Declares WHAT to manage as data over the ENG-34 installer
+ * core; the core owns HOW.
  *
  * A1 discovery (offline, codex-cli 0.155.1, see constants.ts for the source):
  * - Hook config lives in hooks.json: {"hooks": {Event: [{hooks:
  *   [{type:"command", command, timeout}]}]}}. No matcher field in the
- *   observed schema.
+ *   observed schema, and the schema rejects unknown keys, so entries carry
+ *   only spec-valid keys; the ownership ledger lives in the engram-owned
+ *   engram-managed.json sidecar (markerless jsonEntries mode recognizes
+ *   engram entries by canonical content equality; hand-edited entries are
+ *   left alone).
  * - Event set includes SessionStart, SessionEnd, PreCompact, PostCompact,
  *   PreToolUse, PostToolUse, PermissionRequest, UserPromptSubmit. There is
  *   NO distinct resume event, so A6's startup and resume both map onto
@@ -24,22 +29,26 @@
  */
 import { join } from "node:path";
 import type { AssetSpec, InstallSpec } from "../shared/installer.js";
-import { ENTRY_MARKER_KEY, HOST_HOOK_TIMEOUT_SECONDS, OWNERSHIP_MARKER_KEY } from "./constants.js";
+import { HOST_HOOK_TIMEOUT_SECONDS } from "./constants.js";
+import { sidecarAsset, type SidecarEntry } from "./sidecar.js";
 
 export const CODEX_TARGET = "codex" as const;
 
 /** Install root for user-level Codex configuration. */
 export const codexRoot = (home: string): string => join(home.replace(/\/+$/, ""), ".codex");
 
-const codexGroup = (command: string): { readonly [key: string]: any } => ({
-  hooks: [
-    {
-      type: "command",
-      command,
-      timeout: HOST_HOOK_TIMEOUT_SECONDS,
-    },
-  ],
-});
+const sidecarEntries = (): SidecarEntry[] => [
+  {
+    identity: "engram-hook:codex:startup",
+    event: "SessionStart",
+    command: "engram hook codex startup",
+  },
+  {
+    identity: "engram-hook:codex:compact",
+    event: "PostCompact",
+    command: "engram hook codex compact",
+  },
+];
 
 export const codexSpec = (): InstallSpec => {
   const asset: AssetSpec = {
@@ -47,24 +56,44 @@ export const codexSpec = (): InstallSpec => {
     id: "engram-codex-hooks",
     path: "hooks.json",
     mapPath: ["hooks"],
-    registryKey: OWNERSHIP_MARKER_KEY,
-    entryMarker: ENTRY_MARKER_KEY,
     entries: [
       {
         key: "SessionStart",
         groups: [
-          { identity: "engram-hook:codex:startup", group: codexGroup("engram hook codex startup") },
+          {
+            identity: "engram-hook:codex:startup",
+            group: {
+              hooks: [
+                {
+                  type: "command",
+                  command: "engram hook codex startup",
+                  timeout: HOST_HOOK_TIMEOUT_SECONDS,
+                },
+              ],
+            },
+          },
         ],
       },
       {
         key: "PostCompact",
         groups: [
-          { identity: "engram-hook:codex:compact", group: codexGroup("engram hook codex compact") },
+          {
+            identity: "engram-hook:codex:compact",
+            group: {
+              hooks: [
+                {
+                  type: "command",
+                  command: "engram hook codex compact",
+                  timeout: HOST_HOOK_TIMEOUT_SECONDS,
+                },
+              ],
+            },
+          },
         ],
       },
     ],
   };
-  return { assets: [asset] };
+  return { assets: [asset, sidecarAsset(CODEX_TARGET, "hooks.json", sidecarEntries())] };
 };
 
 /**
