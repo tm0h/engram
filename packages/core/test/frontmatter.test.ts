@@ -623,3 +623,117 @@ describe("entry schemaVersion (ENG-41)", () => {
     expect(Object.keys(merged).filter((k) => k === "schemaVersion")).toHaveLength(1);
   });
 });
+
+describe("validateEntry / related metadata (ENG-42)", () => {
+  it("accepts an absent related key", () => {
+    const v = validateEntry(raw());
+    expect(v.issues).toEqual([]);
+    expect(v.frontmatter?.related).toBeUndefined();
+  });
+
+  it("accepts an explicitly empty list", () => {
+    const v = validateEntry(raw({ related: [] }));
+    expect(v.issues).toEqual([]);
+    expect(v.frontmatter?.related).toEqual([]);
+  });
+
+  it("accepts a single id and preserves list order for many ids", () => {
+    expect(validateEntry(raw({ related: ["0002"] })).frontmatter?.related).toEqual(["0002"]);
+    const v = validateEntry(raw({ related: ["0002", OTHER_ULID, "0003"] }));
+    expect(v.issues).toEqual([]);
+    expect(v.frontmatter?.related).toEqual(["0002", OTHER_ULID, "0003"]);
+  });
+
+  it("accepts legacy and generated ids mixed in one list", () => {
+    expect(validateEntry(raw({ related: [OTHER_ULID, "0002"] })).issues).toEqual([]);
+  });
+
+  it("accepts forward references: existence is advisory, never a write error", () => {
+    expect(validateEntry(raw({ related: ["0099"] })).issues).toEqual([]);
+  });
+
+  it("rejects every non-list shape with related_invalid", () => {
+    for (const bad of ["0002", 7, true, null, { a: 1 }, [["0002"]]]) {
+      const v = validateEntry(raw({ related: bad }));
+      expect(codes(v), JSON.stringify(bad)).toEqual(["related_invalid"]);
+      expect(v.frontmatter).toBeUndefined();
+      expect(v.issues[0].hint.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("rejects every non-string member with related_invalid", () => {
+    for (const member of [7, true, null, ["0002"], { id: "0002" }]) {
+      const v = validateEntry(raw({ related: ["0002", member] }));
+      expect(codes(v), JSON.stringify(member)).toEqual(["related_invalid"]);
+      expect(v.frontmatter).toBeUndefined();
+    }
+  });
+
+  it("rejects malformed legacy ids, prefixes, and padded members", () => {
+    for (const id of ["12", "001", "00011", "00a1", "12ab", " 0002", "0002 ", ""]) {
+      const v = validateEntry(raw({ related: [id] }));
+      expect(codes(v), JSON.stringify(id)).toEqual(["related_invalid"]);
+      expect(v.frontmatter).toBeUndefined();
+    }
+  });
+
+  it("rejects malformed generated ids: wrong length, uppercase, forbidden characters", () => {
+    for (const id of [
+      "01arz3ndektsv4rrffq69g5fa", // 25 chars
+      "01arz3ndektsv4rrffq69g5favv", // 27 chars
+      "01ARZ3NDEKTSV4RRFFQ69G5FAV", // uppercase
+      "01arz3ndektsv4rrffq69g5fil", // forbidden i, l
+    ]) {
+      expect(codes(validateEntry(raw({ related: [id] })))).toEqual(["related_invalid"]);
+    }
+  });
+
+  it("rejects a self-link in every list position", () => {
+    for (const related of [
+      [VALID_ID],
+      ["0002", VALID_ID],
+      ["0002", VALID_ID, "0003"],
+    ]) {
+      const v = validateEntry(raw({ related }));
+      expect(codes(v), JSON.stringify(related)).toEqual(["self_relation"]);
+      expect(v.frontmatter).toBeUndefined();
+    }
+    expect(codes(validateEntry(raw({ id: "0001", related: ["0001"] })))).toEqual([
+      "self_relation",
+    ]);
+  });
+
+  it("rejects adjacent and non-adjacent duplicate values", () => {
+    for (const related of [
+      ["0002", "0002"],
+      ["0002", "0003", "0002"],
+    ]) {
+      const v = validateEntry(raw({ related }));
+      expect(codes(v), JSON.stringify(related)).toEqual(["duplicate_relation"]);
+      expect(v.frontmatter).toBeUndefined();
+    }
+  });
+
+  it("collects multiple independent defects in a deterministic order", () => {
+    const v = validateEntry(raw({ related: [7, "nope", VALID_ID, VALID_ID] }));
+    expect(codes(v)).toEqual([
+      "related_invalid",
+      "related_invalid",
+      "duplicate_relation",
+      "self_relation",
+    ]);
+    expect(v.frontmatter).toBeUndefined();
+  });
+
+  it("a related defect stays entry-preventing on a file with an unsupported schemaVersion", () => {
+    const v = validateEntry(raw({ related: "nope", schemaVersion: 99 }));
+    expect(codes(v).sort()).toEqual(["related_invalid", "schema_version_unsupported"]);
+    expect(v.frontmatter).toBeUndefined();
+  });
+
+  it("a valid related list is preserved on a file with an unsupported schemaVersion", () => {
+    const v = validateEntry(raw({ related: ["0002"], schemaVersion: 99 }));
+    expect(codes(v)).toEqual(["schema_version_unsupported"]);
+    expect(v.frontmatter?.related).toEqual(["0002"]);
+  });
+});

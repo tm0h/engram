@@ -136,3 +136,29 @@ describe("renderContext", () => {
     expect(out).toContain("personal engram");
   });
 });
+
+describe("renderFull / related (ENG-42)", () => {
+  it("prints one ordered related line for a populated list", () => {
+    const out = renderFull(mem({ id: "0001", title: "T", related: ["0003", "0002"] }));
+    expect(out).toContain("related: 0003, 0002");
+    // exactly one related line, in list order
+    expect(out.match(/related:/g)).toHaveLength(1);
+    expect(out.indexOf("0003")).toBeLessThan(out.indexOf("0002"));
+  });
+
+  it("prints no related line when the list is absent or empty", () => {
+    expect(renderFull(mem({ id: "0001", title: "T" }))).not.toContain("related:");
+    expect(renderFull(mem({ id: "0001", title: "T", related: [] }))).not.toContain("related:");
+  });
+
+  it("keeps the related line inside the gray metadata block next to lifecycle labels", () => {
+    const out = renderFull(
+      mem({ id: "0001", title: "T", status: "superseded", related: ["0002"] }),
+    );
+    const blockLines = out
+      .split("\n")
+      .filter((l) => l.startsWith("  "))
+      .map((l) => l.trim());
+    expect(blockLines).toEqual(["status: superseded", "related: 0002"]);
+  });
+});

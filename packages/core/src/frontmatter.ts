@@ -122,6 +122,12 @@ export type EntryIssueCode =
   | "expires_invalid"
   | "source_type_invalid"
   | "source_ref_invalid"
+  /* ENG-42 related links: shape/id defects, self-links, and duplicates are
+   * all entry-preventing. Target existence is advisory and lives in the
+   * store's scan diagnostics (related_not_found), never here. */
+  | "related_invalid"
+  | "self_relation"
+  | "duplicate_relation"
   /* ENG-41 entry format version. Only schema_version_unsupported is
    * non-entry-preventing: a future-format file still reads. */
   | "schema_version_invalid"
@@ -519,6 +525,61 @@ export const validateEntry = (raw: string): ValidatedEntry => {
     });
   }
 
+  /* ENG-42 same-scope related links. The raw value is inspected directly, not
+   * through the null-normalizing `field()` accessor: a YAML `related:` (null)
+   * is a present bad shape, not an absent key. Exact ids only (draft decision
+   * D6): prefixes are rejected so persistence never depends on the current
+   * store contents. Independent defects are all collected: member errors in
+   * list order, then duplicates in first-occurrence order, then a self-link.
+   * All three codes are entry-preventing. Existence is never checked here:
+   * forward references are valid, and missing targets are scan warnings. */
+  const rawRelated = fm.related;
+  let related: ReadonlyArray<string> | undefined;
+  if (rawRelated !== undefined) {
+    if (Array.isArray(rawRelated)) {
+      for (const [position, member] of rawRelated.entries()) {
+        if (typeof member !== "string" || !isValidId(member)) {
+          issues.push({
+            code: "related_invalid",
+            message:
+              typeof member === "string"
+                ? `related ${quote(member)} (position ${position + 1}) is not a valid engram id`
+                : `related (position ${position + 1}) must be an id string, got ${describeValue(member)}`,
+            hint: "Related takes exact engram ids: four digits (legacy, e.g. 0001) or 26 lowercase base32 characters. Prefixes are not ids.",
+          });
+        }
+      }
+      const strings = rawRelated.filter((m): m is string => typeof m === "string");
+      const seen = new Set<string>();
+      const reported = new Set<string>();
+      for (const member of strings) {
+        if (seen.has(member) && !reported.has(member)) {
+          reported.add(member);
+          issues.push({
+            code: "duplicate_relation",
+            message: `related lists ${quote(member)} more than once`,
+            hint: "Keep each id at most once; list order is preserved, duplicates are ambiguous.",
+          });
+        }
+        seen.add(member);
+      }
+      if (typeof id === "string" && strings.includes(id)) {
+        issues.push({
+          code: "self_relation",
+          message: `related ${quote(id)} points at this entry itself`,
+          hint: 'Point "related" at other entries; an entry cannot relate to itself.',
+        });
+      }
+      related = strings;
+    } else {
+      issues.push({
+        code: "related_invalid",
+        message: `"related" must be a list of engram ids, got ${describeValue(rawRelated)}`,
+        hint: 'Write related as a YAML list of exact ids, e.g. related: ["0002", "0003"], or remove the line.',
+      });
+    }
+  }
+
   const created = field("created");
   let createdMs: number | undefined;
   if (created !== undefined) {
@@ -572,6 +633,7 @@ export const validateEntry = (raw: string): ValidatedEntry => {
         schemaVersion,
         status: status as Status | undefined,
         supersedes: supersedes as string | undefined,
+        related,
         reviewAfter: reviewAfter as string | undefined,
         expires: expires as string | undefined,
         sourceType: sourceType as SourceType | undefined,
