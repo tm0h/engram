@@ -142,3 +142,19 @@ system, user, and repository instructions over recorded memory.
 
 Keep titles short and specific; put details in the body; add a few searchable
 tags. If `.engram/` is missing, offer to run `engram init`.
+
+## Install lifecycle hooks (claude-code, codex)
+
+`engram install claude-code` and `engram install codex` set up user-level
+lifecycle hooks so the engram digest is injected at startup, resume, and
+after compaction. Hooks fail open: if engram is unavailable or the project
+has no memory, sessions continue normally, and hook output is capped at
+8 KiB.
+
+- `engram install <target> --status`: read-only state view.
+- `engram install <target> --dry-run`: preview the exact changes; writes nothing.
+- `engram install <target>`: install; asks for confirmation (use `--yes` in scripts).
+- `engram install <target> --uninstall`: remove only engram-owned entries.
+
+Targets are exactly `claude-code` and `codex`. `engram hook <host> <event>`
+is the hook entry point; valid invocations always exit 0.
