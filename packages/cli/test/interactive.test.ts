@@ -102,3 +102,41 @@ describe("parseEditorDocument", () => {
     });
   });
 });
+
+describe("related in the editor document (ENG-42)", () => {
+  it("renders a comma-separated related line when set", () => {
+    const doc = renderEditorDocument({ title: "T", related: ["0002", "0003"] });
+    expect(doc).toMatch(/^related: 0002, 0003$/m);
+  });
+
+  it("renders an empty related line when unset (blank means absent)", () => {
+    const doc = renderEditorDocument({ title: "T", tags: [], body: "b" });
+    expect(doc).toMatch(/^related:$/m);
+  });
+
+  it("round-trips a populated list through parse", () => {
+    const initial = { title: "T", type: "note", tags: [], body: "b", related: ["0002", "0003"] };
+    expect(parseEditorDocument(renderEditorDocument(initial)).related).toEqual([
+      "0002",
+      "0003",
+    ]);
+  });
+
+  it("parses a blank or removed related line as absent", () => {
+    const blank = parseEditorDocument(
+      "---\ntitle: T\ntype: note\ntags:\nrelated:\nstatus:\n---\nB",
+    );
+    expect(blank.related).toBeUndefined();
+    const removed = parseEditorDocument("---\ntitle: T\ntype: note\n---\nB");
+    expect(removed.related).toBeUndefined();
+  });
+
+  it("rejects empty tokens with the same rule as the CLI flags", () => {
+    expect(() =>
+      parseEditorDocument("---\ntitle: T\ntype: note\nrelated: 0001,,0002\n---\nB"),
+    ).toThrow(/--related|related/);
+    expect(() =>
+      parseEditorDocument("---\ntitle: T\ntype: note\nrelated: 0001, ,0002\n---\nB"),
+    ).toThrow(/--related|related/);
+  });
+});

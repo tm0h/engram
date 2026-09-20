@@ -9,6 +9,8 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { ValidationError } from "@engram/core";
+import { parseRelatedIds } from "./related.js";
 
 /** True when stdin is a TTY (i.e. a human is at the keyboard). */
 export const isInteractive = (): Effect.Effect<boolean> =>
@@ -46,6 +48,9 @@ export interface EditedEngram {
   readonly expires?: string | undefined;
   readonly sourceType?: string | undefined;
   readonly sourceRef?: string | undefined;
+  /* ENG-42 same-scope related ids; undefined means the line was absent or
+   * blank (add: no list, edit: explicit clear via the command's diff). */
+  readonly related?: ReadonlyArray<string> | undefined;
 }
 
 /** Canonical camelCase lifecycle keys, matching the serialized file format
@@ -63,19 +68,23 @@ const BODY_PLACEHOLDER = "Write what should be remembered here.";
 
 /** Render the editor document: a flat `key: value` frontmatter block above
  * the body. Lifecycle lines are always present (empty when unset) so the
- * key names are discoverable and blanking one is an explicit edit. Pure:
- * `openEditor` wraps this with the temp file and editor process. */
+ * key names are discoverable and blanking one is an explicit edit. The
+ * ENG-42 `related` line follows the same rule: comma-separated ids, blank
+ * means absent. Pure: `openEditor` wraps this with the temp file and editor
+ * process. */
 export const renderEditorDocument = (initial: Partial<EditedEngram> = {}): string => {
   const lifecycle = LIFECYCLE_KEYS.map((key) => {
     const value = initial[key];
     return `${key}:${value ? " " + value : ""}`;
   });
+  const related = initial.related;
   return [
     "---",
     `title: ${initial.title ?? ""}`,
     `type: ${initial.type ?? "note"}`,
     `tags: ${(initial.tags ?? []).join(", ")}`,
     ...lifecycle,
+    `related:${related !== undefined && related.length > 0 ? " " + related.join(", ") : ""}`,
     "---",
     "",
     initial.body ?? BODY_PLACEHOLDER,
@@ -86,7 +95,11 @@ export const renderEditorDocument = (initial: Partial<EditedEngram> = {}): strin
 /** Parse a saved editor document back into fields. Splits each header line
  * at the FIRST colon, so timestamp offsets, URLs, and references containing
  * colons survive. Blank or missing lifecycle lines parse as undefined;
- * commands turn that into unset (add) or an explicit clear (edit). Pure. */
+ * commands turn that into unset (add) or an explicit clear (edit). The
+ * ENG-42 related line goes through the same parser as the CLI flags, so the
+ * empty-token rule is identical (Q2): a blank line is absent and a non-blank
+ * line with empty tokens throws a usage error before anything is written.
+ * Pure. */
 export const parseEditorDocument = (raw: string): EditedEngram => {
   const m = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
   if (!m) return { title: "", type: undefined, tags: [], body: raw.trim() };
@@ -97,6 +110,10 @@ export const parseEditorDocument = (raw: string): EditedEngram => {
   }
   const lifecycle = (key: (typeof LIFECYCLE_KEYS)[number]): string | undefined =>
     data[key] || undefined;
+  const related = parseRelatedIds(data.related);
+  if (related.kind === "invalid") {
+    throw new ValidationError({ message: `invalid related line in the editor: ${related.reason}` });
+  }
   return {
     title: data.title ?? "",
     type: data.type || undefined,
@@ -110,6 +127,7 @@ export const parseEditorDocument = (raw: string): EditedEngram => {
     expires: lifecycle("expires"),
     sourceType: lifecycle("sourceType"),
     sourceRef: lifecycle("sourceRef"),
+    related: related.kind === "ids" ? related.ids : undefined,
     body: m[2].trim(),
   };
 };

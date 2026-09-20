@@ -520,3 +520,159 @@ describe("engram add/edit secret scan (process level, ENG-15)", () => {
     expect(readFileSync(file, "utf8")).toBe(before);
   });
 });
+
+describe("engram add/edit related flags (process level, ENG-42)", () => {
+  let tmp = "";
+  let home = "";
+
+  beforeAll(() => {
+    if (!spawnOk) return;
+    tmp = mkdtempSync(join(tmpdir(), "engram-proc-related-"));
+    home = mkdtempSync(join(tmpdir(), "engram-proc-related-home-"));
+  });
+  afterAll(() => {
+    if (tmp) rmSync(tmp, { recursive: true, force: true });
+    if (home) rmSync(home, { recursive: true, force: true });
+  });
+
+  let projSeq = 0;
+  const freshProject = (): string => {
+    projSeq += 1;
+    const proj = join(tmp, `proj-${projSeq}`);
+    mkdirSync(join(proj, ".engram", "engrams"), { recursive: true });
+    writeFileSync(
+      join(proj, ".engram", "config.json"),
+      JSON.stringify({ version: 1, tracked: true, defaultType: "note" }),
+    );
+    return proj;
+  };
+  const fm = (id: string, title: string): string =>
+    [
+      "---",
+      `id: "${id}"`,
+      `title: ${JSON.stringify(title)}`,
+      "type: note",
+      "tags: []",
+      "scope: project",
+      "created: 2025-08-15T10:00:00.000Z",
+      "updated: 2025-08-15T11:00:00.000Z",
+      "---",
+      "Body",
+      "",
+    ].join("\n");
+  const entryRaw = (proj: string, needle: string): string => {
+    const dir = join(proj, ".engram", "engrams");
+    const name = readdirSync(dir)
+      .filter((f) => f.endsWith(".md"))
+      .find((f) => readFileSync(join(dir, f), "utf8").includes(needle));
+    if (name === undefined) throw new Error(`no entry matching ${needle}`);
+    return readFileSync(join(dir, name), "utf8");
+  };
+
+  it("add --related writes the exact ordered array and trims members", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    const r = runCli(
+      ["add", "--title", "Linked", "--related", "0003, 0002", "body"],
+      proj,
+      home,
+    );
+    expect(r.status).toBe(0);
+    expect(entryRaw(proj, "Linked")).toMatch(/^related:\n  - "0003"\n  - "0002"$/m);
+  });
+
+  it("add --related with a value that trims to nothing records no key (Q1)", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    const r = runCli(["add", "--title", "Empty", "--related", "   ", "body"], proj, home);
+    expect(r.status).toBe(0);
+    expect(entryRaw(proj, "Empty")).not.toMatch(/^related:/m);
+  });
+
+  it("add --related with empty tokens is a usage error, not a write (Q2)", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    const r = runCli(
+      ["add", "--title", "Bad", "--related", "0001,,0002", "body"],
+      proj,
+      home,
+    );
+    expect(r.status).not.toBe(0);
+    expect(`${r.stderr}${r.stdout}`).toContain("--related");
+    expect(readdirSync(join(proj, ".engram", "engrams"))).toHaveLength(0);
+  });
+
+  it("edit --related replaces, omission preserves, and --clear-related omits the key", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    writeFileSync(join(proj, ".engram", "engrams", "0001-linked.md"), fm("0001", "Linked"));
+    writeFileSync(join(proj, ".engram", "engrams", "0002-target.md"), fm("0002", "Target"));
+    writeFileSync(join(proj, ".engram", "engrams", "0003-other.md"), fm("0003", "Other"));
+
+    const set = runCli(["edit", "0001", "--related", "0002"], proj, home);
+    expect(set.status).toBe(0);
+    expect(entryRaw(proj, "Linked")).toMatch(/^related:\n  - "0002"$/m);
+
+    const preserve = runCli(["edit", "0001", "--title", "Linked"], proj, home);
+    expect(preserve.status).toBe(0);
+    expect(entryRaw(proj, "Linked")).toMatch(/^related:\n  - "0002"$/m);
+
+    const replace = runCli(["edit", "0001", "--related", "0003"], proj, home);
+    expect(replace.status).toBe(0);
+    expect(entryRaw(proj, "Linked")).toMatch(/^related:\n  - "0003"$/m);
+    expect(entryRaw(proj, "Linked")).not.toMatch(/- "0002"/);
+
+    const clear = runCli(["edit", "0001", "--clear-related"], proj, home);
+    expect(clear.status).toBe(0);
+    expect(entryRaw(proj, "Linked")).not.toMatch(/^related:/m);
+  });
+
+  it("edit --related rejects a bare prefix and a self-link without mutation", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    writeFileSync(join(proj, ".engram", "engrams", "0001-linked.md"), fm("0001", "Linked"));
+    const before = entryRaw(proj, "Linked");
+
+    const prefix = runCli(["edit", "0001", "--related", "00"], proj, home);
+    expect(prefix.status).not.toBe(0);
+    expect(entryRaw(proj, "Linked")).toBe(before);
+
+    const self = runCli(["edit", "0001", "--related", "0001"], proj, home);
+    expect(self.status).not.toBe(0);
+    expect(entryRaw(proj, "Linked")).toBe(before);
+  });
+
+  it("the --related + --clear-related conflict is a usage error on a nonexistent id", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    const r = runCli(
+      ["edit", "9999", "--related", "0001", "--clear-related"],
+      proj,
+      home,
+    );
+    expect(r.status).not.toBe(0);
+    const text = `${r.stderr}${r.stdout}`;
+    expect(text).toContain("--clear-related");
+    // usage ordering: the flag conflict fires before the entry lookup
+    expect(text).not.toMatch(/not found/i);
+  });
+
+  it("a dangling relation is a warning-only check: --json exits 0 with related_not_found", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    writeFileSync(join(proj, ".engram", "engrams", "0001-linked.md"), fm("0001", "Linked"));
+    const set = runCli(["edit", "0001", "--related", "0099"], proj, home);
+    expect(set.status).toBe(0);
+
+    const check = runCli(["check", "--json"], proj, home);
+    expect(check.status).toBe(0);
+    const report = JSON.parse(check.stdout) as {
+      ok: boolean;
+      diagnostics: Array<{ code: string; severity: string }>;
+    };
+    expect(report.ok).toBe(true);
+    const related = report.diagnostics.find((d) => d.code === "related_not_found");
+    expect(related).toBeDefined();
+    expect(related?.severity).toBe("warning");
+  });
+});
