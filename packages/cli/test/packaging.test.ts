@@ -148,13 +148,23 @@ describe("engram-cli packaging (pi extension)", () => {
         [bin, "install", "codex", "--yes", "--home", home],
         { cwd: pkgRoot, encoding: "utf8" },
       );
-      expect(installOut).toContain("Installed 1 change(s)");
+      expect(installOut).toContain("Installed 2 change(s)"); // hooks.json + sidecar
       const hooksPath = join(home, ".codex", "hooks.json");
       expect(existsSync(hooksPath)).toBe(true);
       const hooks = JSON.parse(readFileSync(hooksPath, "utf8")) as Record<string, any>;
-      expect(typeof hooks.hooks.SessionStart[0].engram).toBe("string");
-      expect(hooks.engramManaged).toContain("engram-hook:codex:startup");
-      expect(hooks.engramManaged).toContain("engram-hook:codex:compact");
+      expect(hooks.hooks.SessionStart).toHaveLength(1);
+      // entries carry only spec-valid keys (turn-2, F2: no marker keys)
+      expect(Object.keys(hooks.hooks.SessionStart[0])).toEqual(["hooks"]);
+      const sidecarPath = join(home, ".codex", "engram-managed.json");
+      expect(existsSync(sidecarPath)).toBe(true);
+      const ledger = JSON.parse(readFileSync(sidecarPath, "utf8")) as any[];
+      expect(ledger[1].target).toBe("codex");
+      expect(ledger[1].configFile).toBe("hooks.json");
+      expect(
+        ledger[1].entries
+          .map((e: any) => e.identity)
+          .sort((a: string, b: string) => a.localeCompare(b)),
+      ).toEqual(["engram-hook:codex:compact", "engram-hook:codex:startup"]);
 
       // the installed hook entry point runs, fails open, and stays bounded
       const hookOut = execFileSync(process.execPath, [bin, "hook", "codex", "startup"], {
@@ -171,10 +181,11 @@ describe("engram-cli packaging (pi extension)", () => {
         { cwd: pkgRoot, encoding: "utf8" },
       );
       const after = JSON.parse(readFileSync(hooksPath, "utf8")) as Record<string, any>;
-      expect(after.engramManaged).toBeUndefined();
       // the fresh install was wholly engram-owned: emptied containers prune
       expect(after.hooks).toBeUndefined();
       expect(Object.keys(after)).toHaveLength(0);
+      // uninstall removes the sidecar itself (turn-2, F2)
+      expect(existsSync(sidecarPath)).toBe(false);
     } finally {
       rmSync(home, { recursive: true, force: true });
       rmSync(emptyProject, { recursive: true, force: true });

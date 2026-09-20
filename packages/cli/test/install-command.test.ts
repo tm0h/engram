@@ -12,7 +12,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { installCommand } from "../src/commands/install.js";
-import { ENTRY_MARKER_KEY, OWNERSHIP_MARKER_KEY } from "@engram/harnesses/installer";
+import { parseSidecarLedger, SIDECAR_FILENAME } from "@engram/harnesses/installer";
 
 /* ------------------------------ helpers ------------------------------ */
 
@@ -117,27 +117,27 @@ describe("engram install command", () => {
     expect(fs.readFileSync(settings, "utf8")).toBe(userClaudeSettings());
   });
 
-  it("install --yes merges marked entries, preserves user hooks, and creates no backups", async () => {
+  it("install --yes merges plain entries, preserves user hooks, and creates no backups", async () => {
     const settings = writeHomeFile("home/.claude/settings.json", userClaudeSettings());
     await runInstall({ target: "claude-code", yes: true, home: path.join(tmp, "home") });
-    expect(output()).toContain("Installed 1 change(s)");
+    expect(output()).toContain("Installed 2 change(s)"); // settings.json + sidecar
 
     const doc = JSON.parse(fs.readFileSync(settings, "utf8")) as Record<string, any>;
     const groups = doc.hooks.SessionStart as Array<Record<string, any>>;
     expect(groups).toHaveLength(4); // 1 user + 3 engram
     expect(groups[0].hooks[0].command).toBe("user-own-hook");
-    const identities = groups
-      .filter((g) => typeof g[ENTRY_MARKER_KEY] === "string")
-      .map((g) => g[ENTRY_MARKER_KEY])
-      .sort();
-    expect(identities).toEqual(
-      [
-        "engram-hook:claude-code:compact",
-        "engram-hook:claude-code:resume",
-        "engram-hook:claude-code:startup",
-      ].sort((a, b) => a.localeCompare(b)),
+    // engram groups carry only documented Claude schema keys (turn-2, F2)
+    expect(Object.keys(doc)).toEqual(["hooks"]);
+    for (const g of groups.slice(1)) {
+      for (const key of Object.keys(g)) expect(["matcher", "hooks"]).toContain(key);
+      expect(g.matcher).toMatch(/^(startup|resume|compact)$/);
+    }
+    // ownership ledger lives in the engram-owned sidecar
+    const ledger = parseSidecarLedger(
+      fs.readFileSync(path.join(tmp, "home", ".claude", SIDECAR_FILENAME), "utf8"),
     );
-    expect(doc[OWNERSHIP_MARKER_KEY]).toHaveLength(3);
+    expect(ledger?.entries).toHaveLength(3);
+    expect(ledger?.target).toBe("claude-code");
     expect(noBackupFiles()).toBe(true);
   });
 
@@ -172,10 +172,10 @@ describe("engram install command", () => {
     const homeDir = path.join(tmp, "fresh-home");
     await runInstall({ target: "claude-code", yes: true, home: homeDir });
     expect(fs.existsSync(path.join(homeDir, ".claude", "settings.json"))).toBe(true);
-    const doc = JSON.parse(
-      fs.readFileSync(path.join(homeDir, ".claude", "settings.json"), "utf8") as string,
+    const ledger = parseSidecarLedger(
+      fs.readFileSync(path.join(homeDir, ".claude", SIDECAR_FILENAME), "utf8"),
     );
-    expect(doc[OWNERSHIP_MARKER_KEY]).toHaveLength(3);
+    expect(ledger?.entries).toHaveLength(3);
   });
 
   it("codex: status reports the feature flag; install manages hooks.json only", async () => {
@@ -195,6 +195,14 @@ describe("engram install command", () => {
     const doc = JSON.parse(fs.readFileSync(hooks, "utf8")) as Record<string, any>;
     expect(doc.hooks.SessionStart).toHaveLength(2); // 1 user + 1 engram
     expect(doc.hooks.PostCompact).toHaveLength(1);
+    // entries carry only spec-valid keys; the ledger lives in the sidecar
+    for (const g of [...doc.hooks.SessionStart, ...doc.hooks.PostCompact]) {
+      for (const key of Object.keys(g)) expect(key).toBe("hooks");
+    }
+    const ledger = parseSidecarLedger(
+      fs.readFileSync(path.join(homeDir, ".codex", SIDECAR_FILENAME), "utf8"),
+    );
+    expect(ledger?.entries).toHaveLength(2);
     expect(fs.readFileSync(path.join(homeDir, ".codex", "config.toml"), "utf8")).toBe(
       'model = "x"\n\n[features]\nhooks = false\n',
     );
@@ -204,6 +212,7 @@ describe("engram install command", () => {
     expect(JSON.parse(fs.readFileSync(hooks, "utf8") as string)).toEqual(
       JSON.parse(userCodexHooks()),
     );
+    expect(fs.existsSync(path.join(homeDir, ".codex", SIDECAR_FILENAME))).toBe(false);
     expect(noBackupFiles()).toBe(true);
   });
 });
