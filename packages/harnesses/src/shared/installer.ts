@@ -22,6 +22,12 @@
  * - `json`: one owned key subtree inside a strict-JSON document. Unknown keys
  *   and their order survive install, update, and uninstall. Invalid JSON is
  *   never forced. (JSONC comments are out of scope for the core.)
+ * - `jsonEntries` (ENG-58): entry-level ownership inside a JSON hook config.
+ *   Engram-owned group objects carry a per-entry marker key (value = stable
+ *   identity) and one root key lists all owned identities. Unmarked entries
+ *   referencing engram are foreign and left alone; user entries, their
+ *   order, and unknown root keys survive install and uninstall. Invalid
+ *   JSON is never forced.
  * - `file`: a wholly owned file. Optional markers enable drift detection and
  *   markered updates; without them any differing content counts as a foreign
  *   file that only `force` may overwrite.
@@ -88,6 +94,25 @@ export type AssetSpec =
       /** Owned key subtree, e.g. ["integrations", "engram"]. */
       readonly keyPath: ReadonlyArray<string>;
       readonly value: JsonValue;
+    }
+  | {
+      readonly kind: "jsonEntries";
+      readonly id: string;
+      readonly path: string;
+      /** Document path to the event -> group-entries map, e.g. ["hooks"]. */
+      readonly mapPath: ReadonlyArray<string>;
+      /** Root key listing the identities of all engram-owned entries. */
+      readonly registryKey: string;
+      /** Marker key written onto each engram-owned entry (value = identity). */
+      readonly entryMarker: string;
+      /** Event key -> engram-owned entries. Groups must not pre-set the marker. */
+      readonly entries: ReadonlyArray<{
+        readonly key: string;
+        readonly groups: ReadonlyArray<{
+          readonly identity: string;
+          readonly group: { readonly [key: string]: JsonValue };
+        }>;
+      }>;
     };
 
 export interface InstallSpec {
@@ -166,6 +191,59 @@ const isMarkerLine = (line: string, marker: string): boolean => line.trim() === 
 
 const jsonEqual = (a: JsonValue, b: JsonValue): boolean => JSON.stringify(a) === JSON.stringify(b);
 
+const isJsonObject = (v: JsonValue | undefined): v is Record<string, JsonValue> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** Entry with its marker injected, in the exact shape the installer writes. */
+const markEntry = (
+  group: { readonly [key: string]: JsonValue },
+  marker: string,
+  identity: string,
+): Record<string, JsonValue> => ({ ...group, [marker]: identity });
+
+/** Flat list of (event key, identity, group) for a jsonEntries asset. */
+interface EntriesRef {
+  readonly key: string;
+  readonly identity: string;
+  readonly group: { readonly [key: string]: JsonValue };
+}
+
+const entriesRefs = (
+  spec: Extract<AssetSpec, { kind: "jsonEntries" }>,
+): ReadonlyArray<EntriesRef> =>
+  spec.entries.flatMap((entry) =>
+    entry.groups.map((g) => ({ key: entry.key, identity: g.identity, group: g.group })),
+  );
+
+/** Identities listed in the registry key; empty when absent or invalid. */
+const registryIdentities = (doc: Record<string, JsonValue>, registryKey: string): Array<string> => {
+  const reg = doc[registryKey];
+  if (!Array.isArray(reg)) return [];
+  return reg.filter((x): x is string => typeof x === "string");
+};
+
+/** Remove entries marked with any owned identity from every event array. */
+const stripOwnedEntries = (
+  map: Record<string, JsonValue>,
+  entryMarker: string,
+  owned: ReadonlySet<string>,
+): boolean => {
+  let removed = false;
+  for (const key of Object.keys(map)) {
+    const arr = map[key];
+    if (!Array.isArray(arr)) continue;
+    const kept = arr.filter(
+      (g) => !(isJsonObject(g) && typeof g[entryMarker] === "string" && owned.has(g[entryMarker])),
+    );
+    if (kept.length !== arr.length) {
+      removed = true;
+      if (kept.length > 0) map[key] = kept;
+      else delete map[key];
+    }
+  }
+  return removed;
+};
+
 /** Lines of the managed block between (excluding) the markers. */
 const managedLines = (content: string): ReadonlyArray<string> => {
   const lines = ensureNL(content).split("\n");
@@ -236,6 +314,39 @@ export const validateSpec = (spec: InstallSpec): InstallerError | null => {
       if (asset.keyPath.length === 0) return invalid(`empty keyPath for "${asset.id}"`);
       if (asset.keyPath.some((k) => typeof k !== "string" || k === "")) {
         return invalid(`invalid keyPath for "${asset.id}"`);
+      }
+    }
+    if (asset.kind === "jsonEntries") {
+      if (asset.mapPath.length === 0) return invalid(`empty mapPath for "${asset.id}"`);
+      if (asset.mapPath.some((k) => typeof k !== "string" || k === "")) {
+        return invalid(`invalid mapPath for "${asset.id}"`);
+      }
+      if (asset.mapPath[0] === asset.registryKey) {
+        return invalid(
+          `registry key "${asset.registryKey}" must not be the managed map root for "${asset.id}"`,
+        );
+      }
+      if (asset.registryKey === "" || asset.registryKey.includes("\n")) {
+        return invalid(`invalid registry key for "${asset.id}"`);
+      }
+      if (asset.entryMarker === "" || asset.entryMarker.includes("\n")) {
+        return invalid(`invalid entry marker for "${asset.id}"`);
+      }
+      const identities = new Set<string>();
+      for (const entry of asset.entries) {
+        if (entry.key === "") return invalid(`invalid event key for "${asset.id}"`);
+        for (const g of entry.groups) {
+          if (identities.has(g.identity)) {
+            return invalid(`duplicate entry identity "${g.identity}" for "${asset.id}"`);
+          }
+          identities.add(g.identity);
+          if (!isJsonObject(g.group)) {
+            return invalid(`group for "${g.identity}" must be a JSON object`);
+          }
+          if (g.group[asset.entryMarker] !== undefined) {
+            return invalid(`group for "${g.identity}" must not pre-set the marker key`);
+          }
+        }
       }
     }
   }
@@ -311,6 +422,91 @@ const classifyInstall = (spec: AssetSpec, current: string | null): AssetState =>
           current,
           reasons: ["unmanaged file exists at target path (use force to overwrite)"],
         };
+  }
+
+  if (spec.kind === "jsonEntries") {
+    let doc: JsonValue;
+    try {
+      doc = JSON.parse(current) as JsonValue;
+    } catch {
+      return { spec, status: "blocked", current, reasons: ["target file is not valid JSON"] };
+    }
+    if (!isJsonObject(doc)) {
+      return {
+        spec,
+        status: "blocked",
+        current,
+        reasons: ["target document is not a JSON object"],
+      };
+    }
+    const reg = doc[spec.registryKey];
+    if (reg !== undefined && (!Array.isArray(reg) || reg.some((x) => typeof x !== "string"))) {
+      return {
+        spec,
+        status: "blocked",
+        current,
+        reasons: [`registry key "${spec.registryKey}" is not a list of identities`],
+      };
+    }
+    let node: JsonValue = doc;
+    for (const key of spec.mapPath) {
+      if (!isJsonObject(node)) {
+        return {
+          spec,
+          status: "blocked",
+          current,
+          reasons: [`key path conflicts with a non-object value at "${key}"`],
+        };
+      }
+      const next: JsonValue | undefined = node[key];
+      if (next === undefined) return { spec, status: "absent", current, reasons: [] };
+      node = next;
+    }
+    if (!isJsonObject(node)) {
+      return { spec, status: "blocked", current, reasons: ["managed map is not a JSON object"] };
+    }
+    for (const entry of spec.entries) {
+      const arr: JsonValue | undefined = node[entry.key];
+      if (arr !== undefined && !Array.isArray(arr)) {
+        return {
+          spec,
+          status: "blocked",
+          current,
+          reasons: [`event "${entry.key}" is not a list`],
+        };
+      }
+    }
+    const refs = entriesRefs(spec);
+    const identities = new Set(refs.map((r) => r.identity));
+    const found = new Map<string, Array<Record<string, JsonValue>>>();
+    for (const entry of spec.entries) {
+      const arr = (node[entry.key] ?? []) as ReadonlyArray<JsonValue>;
+      for (const g of arr) {
+        if (!isJsonObject(g)) continue;
+        const id = g[spec.entryMarker];
+        if (typeof id === "string" && identities.has(id)) {
+          const list = found.get(id) ?? [];
+          list.push(g);
+          found.set(id, list);
+        }
+      }
+    }
+    if (found.size === 0) return { spec, status: "absent", current, reasons: [] };
+    const entriesOk = refs.every((ref) => {
+      const matches = found.get(ref.identity) ?? [];
+      return (
+        matches.length === 1 &&
+        jsonEqual(matches[0]!, markEntry(ref.group, spec.entryMarker, ref.identity))
+      );
+    });
+    const registryOk =
+      Array.isArray(reg) && jsonEqual(reg as JsonValue, refs.map((r) => r.identity).sort());
+    return {
+      spec,
+      status: entriesOk && registryOk ? "current" : "drift",
+      current,
+      reasons: ["owned entries differ from spec"],
+    };
   }
 
   // json
@@ -460,6 +656,43 @@ const installActionFor = (spec: AssetSpec, current: string | null): string => {
     (node as Record<string, JsonValue>)[spec.keyPath[spec.keyPath.length - 1]] = spec.value;
     return serializeJson(doc);
   }
+  if (spec.kind === "jsonEntries") {
+    const doc: Record<string, JsonValue> =
+      current === null ? {} : (JSON.parse(current) as Record<string, JsonValue>);
+    let node = doc;
+    for (const key of spec.mapPath.slice(0, -1)) {
+      let next = node[key] as Record<string, JsonValue> | undefined;
+      if (!isJsonObject(next)) {
+        next = {};
+        node[key] = next;
+      }
+      node = next;
+    }
+    const lastKey = spec.mapPath[spec.mapPath.length - 1];
+    let map = node[lastKey] as Record<string, JsonValue> | undefined;
+    if (!isJsonObject(map)) {
+      map = {};
+      node[lastKey] = map;
+    }
+    // Remove every entry marked with an identity we own (spec or stale
+    // registry), wherever it sits, then append the spec entries fresh.
+    const refs = entriesRefs(spec);
+    const owned = new Set<string>([
+      ...refs.map((r) => r.identity),
+      ...registryIdentities(doc, spec.registryKey),
+    ]);
+    stripOwnedEntries(map, spec.entryMarker, owned);
+    for (const entry of spec.entries) {
+      const existing = map[entry.key];
+      const arr = Array.isArray(existing) ? existing : [];
+      map[entry.key] = [
+        ...arr,
+        ...entry.groups.map((g) => markEntry(g.group, spec.entryMarker, g.identity)),
+      ];
+    }
+    doc[spec.registryKey] = refs.map((r) => r.identity).sort();
+    return serializeJson(doc);
+  }
   if (spec.kind === "file" && !spec.markers) return spec.content;
   const m = markersOf(spec);
   if (m === null) return spec.content; // unreachable for validated specs
@@ -524,6 +757,41 @@ const uninstallAfterFor = (spec: AssetSpec, current: string): string => {
     }
     return serializeJson(doc);
   }
+  if (spec.kind === "jsonEntries") {
+    const doc = JSON.parse(current) as Record<string, JsonValue>;
+    if (!isJsonObject(doc)) return current;
+    const registry = registryIdentities(doc, spec.registryKey);
+    // Registry absent: fall back to the spec identities so removal stays
+    // deterministic. Nothing unmarked is ever removed.
+    const owned = new Set<string>(
+      registry.length > 0 ? registry : entriesRefs(spec).map((r) => r.identity),
+    );
+    let node: JsonValue = doc;
+    for (const key of spec.mapPath) {
+      if (!isJsonObject(node)) return current;
+      const next: JsonValue | undefined = node[key];
+      if (next === undefined) return current; // nothing installed there
+      node = next;
+    }
+    if (!isJsonObject(node)) return current;
+    if (!stripOwnedEntries(node, spec.entryMarker, owned)) return current;
+    delete doc[spec.registryKey];
+    // prune mapPath containers we emptied
+    const chain: Array<{ container: Record<string, JsonValue>; key: string }> = [];
+    let walker: JsonValue = doc;
+    for (const key of spec.mapPath) {
+      chain.push({ container: walker as Record<string, JsonValue>, key });
+      walker = (walker as Record<string, JsonValue>)[key];
+    }
+    for (let i = chain.length - 1; i >= 0; i -= 1) {
+      const { container, key } = chain[i];
+      const emptied = container[key];
+      if (isJsonObject(emptied) && Object.keys(emptied).length === 0) {
+        delete container[key];
+      }
+    }
+    return serializeJson(doc);
+  }
   const m = markersOf(spec);
   if (m === null) return current; // markerless file assets uninstall by removal
   const lines = splitLines(current);
@@ -567,7 +835,7 @@ const purePlan = (
       // nothing to do in either direction
       if (status === "absent" || status === "current") continue;
 
-      const unforceable = spec.kind === "json"; // invalid JSON is never forced
+      const unforceable = spec.kind === "json" || spec.kind === "jsonEntries"; // invalid JSON is never forced
       if (options.force === true && !unforceable) {
         if (mode === "install") {
           actions.push({
