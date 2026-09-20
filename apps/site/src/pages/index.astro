@@ -1,0 +1,252 @@
+---
+import Brand from "../components/Brand.astro";
+import Header from "../components/Header.astro";
+import Installer from "../components/Installer.astro";
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const description =
+  "Engram gives AI coding agents durable, human-readable memory that lives with your work.";
+---
+
+<BaseLayout title="Engram | Memory for AI agents" {description}>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <Header />
+
+  <main id="main">
+      <section id="top" class="hero page-shell">
+        <div class="hero-copy reveal">
+          <p class="eyebrow"><span></span> Open source. Plain Markdown. Yours forever.</p>
+          <h1>Your agent forgets.<br /><em>Engram remembers.</em></h1>
+          <p class="hero-lede">
+            Give every coding session the decisions, constraints, and hard-won lessons from the
+            sessions before it.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#install">Start remembering</a>
+            <a class="text-link" href="https://github.com/tm0h/engram">
+              View on GitHub <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+          <div class="proof-row" aria-label="Product qualities">
+            <span>No account</span><span>No database</span><span>No lock-in</span>
+          </div>
+        </div>
+
+        <div class="hero-visual reveal" aria-label="An Engram terminal session">
+          <div class="orbit orbit-one"></div>
+          <div class="orbit orbit-two"></div>
+          <div class="terminal">
+            <div class="terminal-bar">
+              <div class="window-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+              <span>~/projects/atlas</span>
+              <span class="terminal-status">engram active</span>
+            </div>
+            <div class="terminal-body">
+              <p><span class="prompt">$</span> engram context</p>
+              <div class="terminal-rule"></div>
+              <p class="terminal-heading"># project engram</p>
+              <p class="muted">12 memories loaded · 2 pinned</p>
+              <div class="memory memory-pinned">
+                <span class="memory-icon">◆</span>
+                <div>
+                  <small>DECISION · PINNED</small>
+                  <strong>Keep the API boundary explicit</strong>
+                  <p>Domain code never imports transport types.</p>
+                </div>
+              </div>
+              <div class="memory">
+                <span class="memory-icon">○</span>
+                <div>
+                  <small>GOTCHA · DATABASE</small>
+                  <strong>Tests need isolated temp storage</strong>
+                  <p>Shared paths leak state between workers.</p>
+                </div>
+              </div>
+              <p class="cursor-line"><span class="prompt">$</span> <span class="cursor"></span></p>
+            </div>
+          </div>
+          <div class="trace-card trace-one"><b>01</b><span>record</span></div>
+          <div class="trace-card trace-two"><b>02</b><span>recall</span></div>
+          <div class="trace-card trace-three"><b>03</b><span>continue</span></div>
+        </div>
+      </section>
+
+      <section class="marquee" aria-label="Compatible tools">
+        <p>Works where you work</p>
+        <div class="tool-list">
+          <span>Pi</span><i></i><span>Claude Code</span><i></i><span>OpenCode</span><i></i
+          ><span>Cursor</span><i></i><span>CI</span><i></i><span>Your next agent</span>
+        </div>
+      </section>
+
+      <section class="problem page-shell reveal">
+        <div class="section-number">01 / The problem</div>
+        <div class="problem-statement">
+          <h2>Context disappears.<br />The mistakes don’t.</h2>
+          <p>
+            A new session starts from zero. The agent rereads the code, repeats old debates, and
+            rediscovers the same traps. Chat history is not team knowledge.
+          </p>
+        </div>
+        <div class="problem-shift" aria-label="From disposable context to durable memory">
+          <div>
+            <span>Before</span>
+            <p>“Why did we build it this way?”</p>
+          </div>
+          <span class="shift-arrow" aria-hidden="true">→</span>
+          <div>
+            <span>With Engram</span>
+            <p>“I found the decision and its rationale.”</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="how-it-works" class="workflow">
+        <div class="page-shell">
+          <div class="section-intro reveal">
+            <div class="section-number">02 / How it works</div>
+            <h2>Memory that lives<br />with the work.</h2>
+            <p>Engram turns useful context into small, readable files. Git handles the rest.</p>
+          </div>
+
+          <ol class="steps">
+            <li class="step reveal">
+              <div class="step-index">01</div>
+              <div class="step-icon capture-icon" aria-hidden="true"><i></i><i></i><i></i></div>
+              <h3>Capture</h3>
+              <p>
+                Record a decision, preference, fact, note, or gotcha while the context is fresh.
+              </p>
+              <code>engram add --type decision</code>
+            </li>
+            <li class="step reveal">
+              <div class="step-index">02</div>
+              <div class="step-icon store-icon" aria-hidden="true"><i></i><i></i><i></i></div>
+              <h3>Keep</h3>
+              <p>Store personal memory at home or commit project memory beside the code.</p>
+              <code>.engram/engrams/*.md</code>
+            </li>
+            <li class="step reveal">
+              <div class="step-index">03</div>
+              <div class="step-icon recall-icon" aria-hidden="true"><i></i><i></i></div>
+              <h3>Recall</h3>
+              <p>Load a focused digest at session start, then search deeper only when needed.</p>
+              <code>engram context</code>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section id="features" class="features page-shell">
+        <div class="section-intro reveal">
+          <div class="section-number">03 / Built to endure</div>
+          <h2>Simple on purpose.<br />Powerful by design.</h2>
+        </div>
+
+        <div class="feature-grid">
+          <article class="feature-card feature-wide reveal">
+            <div>
+              <span class="feature-tag">PORTABLE</span>
+              <h3>Plain text is the exit strategy.</h3>
+              <p>
+                Every memory is Markdown with YAML frontmatter. Read it, edit it, diff it, or move
+                on without asking permission.
+              </p>
+            </div>
+            <div class="file-stack" aria-hidden="true">
+              <div class="file file-back"></div>
+              <div class="file file-mid"></div>
+              <div class="file file-front">
+                <span>decision.md</span>
+                <i></i><i></i><i></i><i></i>
+              </div>
+            </div>
+          </article>
+
+          <article class="feature-card feature-dark reveal">
+            <span class="feature-tag">SEARCH</span>
+            <h3>Find the signal.</h3>
+            <p>BM25 search understands fields, phrases, filters, and relevance.</p>
+            <div class="search-demo" aria-hidden="true">
+              <span>⌕</span><b>database migration</b><kbd>↵</kbd>
+            </div>
+          </article>
+
+          <article class="feature-card feature-accent reveal">
+            <span class="feature-tag">TEAM MEMORY</span>
+            <h3>Commit the context.</h3>
+            <p>Project knowledge travels through git. Every human and agent gets the same story.</p>
+            <div class="commit-graph" aria-hidden="true">
+              <span></span><span></span><span></span><span></span>
+            </div>
+          </article>
+
+          <article class="feature-card feature-safe reveal">
+            <div>
+              <span class="feature-tag">SAFER WRITES</span>
+              <h3>Memory should not become a liability.</h3>
+              <p>
+                Secret and prompt-injection scanning checks content before it reaches disk.
+                Integrity checks keep the store honest.
+              </p>
+            </div>
+            <div class="shield" aria-hidden="true"><span>✓</span></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="philosophy">
+        <div class="page-shell reveal">
+          <svg viewBox="0 0 110 70" aria-hidden="true">
+            <path d="M9 35c18-25 72-25 92 0M17 49c21 16 53 16 76 0M17 21c21-16 53-16 76 0" />
+            <circle cx="9" cy="35" r="4" />
+            <circle cx="101" cy="35" r="4" />
+          </svg>
+          <blockquote>“An engram is the physical trace a memory leaves in the brain.”</blockquote>
+          <p>Give your agents one that survives the session.</p>
+        </div>
+      </section>
+
+      <section id="install" class="install page-shell">
+        <div class="install-copy reveal">
+          <div class="section-number">04 / Get started</div>
+          <h2>One command.<br />Long memory.</h2>
+          <p>Open source under the MIT license. Requires Node.js 20 or newer.</p>
+        </div>
+        <Installer />
+      </section>
+  </main>
+
+  <footer>
+    <div class="page-shell footer-inner">
+      <Brand footer />
+      <p>Durable memory for AI-assisted work.</p>
+      <nav aria-label="Footer navigation">
+        <a href="https://github.com/tm0h/engram">GitHub</a>
+        <a href="https://www.npmjs.com/package/engram-cli">npm</a>
+        <a href="https://github.com/tm0h/engram/blob/main/LICENSE">MIT License</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script>
+    const revealItems = document.querySelectorAll(".reveal");
+
+    if ("IntersectionObserver" in window) {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
+            entry.target.classList.add("is-visible");
+            observer.unobserve(entry.target);
+          });
+        },
+        { threshold: 0.12 },
+      );
+
+      revealItems.forEach((item) => observer.observe(item));
+    } else {
+      revealItems.forEach((item) => item.classList.add("is-visible"));
+    }
+  </script>
+</BaseLayout>

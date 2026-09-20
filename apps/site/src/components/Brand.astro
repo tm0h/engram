@@ -1,0 +1,16 @@
+---
+interface Props {
+  footer?: boolean;
+}
+
+const { footer = false } = Astro.props;
+---
+
+<a class:list={["brand", { "footer-brand": footer }]} href="#top" aria-label="Engram home">
+  <svg class="brand-mark" viewBox="0 0 42 42" aria-hidden="true">
+    <path d="M8 13c6-6 18-5 23 2M6 21c6-7 20-8 29 0M8 30c6 5 17 5 23-2"></path>
+    <circle cx="6" cy="21" r="2"></circle>
+    <circle cx="35" cy="21" r="2"></circle>
+  </svg>
+  <span>engram</span>
+</a>
