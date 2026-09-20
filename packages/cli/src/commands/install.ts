@@ -60,6 +60,13 @@ const targetFor = (target: string): TargetModule | null => {
   return null;
 };
 
+/**
+ * CLI output never advertises a force flag the install command does not
+ * expose; the ENG-34 core reasons stay force-aware for direct core users.
+ */
+const renderReason = (reason: string): string =>
+  reason.replace(/\s*\(use force to (?:overwrite|remove)\)$/, "");
+
 const describePlan = (plan: InstallPlan): ReadonlyArray<string> => {
   const lines: string[] = [];
   for (const action of plan.actions) {
@@ -78,7 +85,11 @@ const describePlan = (plan: InstallPlan): ReadonlyArray<string> => {
     );
   }
   for (const blocked of plan.blocked) {
-    lines.push(`  BLOCKED ${blocked.id} (${blocked.status}): ${blocked.reasons.join("; ")}`);
+    lines.push(
+      `  BLOCKED ${blocked.id} (${blocked.status}): ${blocked.reasons
+        .map(renderReason)
+        .join("; ")}`,
+    );
   }
   return lines;
 };
@@ -133,8 +144,13 @@ export const installCommand = (opts: InstallOptions) =>
       for (const state of scan.states) {
         yield* out(
           `${state.spec.path}: ${state.status}${
-            state.reasons.length > 0 ? ` (${state.reasons.join("; ")})` : ""
+            state.reasons.length > 0 ? ` (${state.reasons.map(renderReason).join("; ")})` : ""
           }`,
+        );
+      }
+      if (scan.states.some((s) => s.status === "blocked" || s.status === "drift")) {
+        yield* out(
+          'tip: repair with "engram install <target> --yes", then remove with "engram install <target> --yes --uninstall"',
         );
       }
       for (const line of extra) yield* out(line);

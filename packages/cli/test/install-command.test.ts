@@ -178,6 +178,28 @@ describe("engram install command", () => {
     expect(ledger?.entries).toHaveLength(3);
   });
 
+  it("blocked reasons never advertise a nonexistent --force flag; status carries the F6 remedy (F5, F6)", async () => {
+    const homeDir = path.join(tmp, "home");
+    // a foreign file at the sidecar path blocks the sidecar asset
+    writeHomeFile("home/.claude/engram-managed.json", "{}\n");
+
+    await runInstall({ target: "claude-code", status: true, home: homeDir });
+    expect(output()).toContain("engram-managed.json: blocked");
+    expect(output()).toContain("unmanaged file exists at target path");
+    expect(output()).not.toContain("use force");
+    expect(output()).toContain("tip: repair with");
+    expect(output()).toContain("--uninstall");
+
+    outLines = [];
+    await runInstall({ target: "claude-code", dryRun: true, home: homeDir });
+    expect(output()).toContain("BLOCKED engram-claude-code-sidecar");
+    expect(output()).not.toContain("use force");
+    // dry-run still writes nothing (A4)
+    expect(fs.readFileSync(path.join(tmp, "home/.claude/engram-managed.json"), "utf8")).toBe(
+      "{}\n",
+    );
+  });
+
   it("codex: status reports the feature flag; install manages hooks.json only", async () => {
     const homeDir = path.join(tmp, "home");
     const hooks = writeHomeFile("home/.codex/hooks.json", userCodexHooks());
