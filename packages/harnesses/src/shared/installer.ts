@@ -229,7 +229,7 @@ const registryIdentities = (doc: Record<string, JsonValue>, registryKey: string)
 };
 
 /** Canonical JSON text of a value (sorted keys) for content-addressing. */
-const canonical = (v: JsonValue): string => {
+export const canonical = (v: JsonValue): string => {
   if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`;
   if (isJsonObject(v)) {
     return `{${Object.keys(v)
@@ -239,6 +239,9 @@ const canonical = (v: JsonValue): string => {
   }
   return JSON.stringify(v);
 };
+
+/** Key-order-insensitive equality for jsonEntries matching (review P1c). */
+const canonicalEqual = (a: JsonValue, b: JsonValue): boolean => canonical(a) === canonical(b);
 
 /** Remove entries matched by `matches` from every event array. */
 const stripEntries = (
@@ -523,7 +526,7 @@ const classifyInstall = (spec: AssetSpec, current: string | null): AssetState =>
         for (const g of arr) {
           if (!isJsonObject(g)) continue;
           refs.forEach((ref, i) => {
-            if (jsonEqual(g, ref.group)) {
+            if (canonicalEqual(g, ref.group)) {
               counts[i]! += 1;
               matched += 1;
             }
@@ -559,11 +562,12 @@ const classifyInstall = (spec: AssetSpec, current: string | null): AssetState =>
       const matches = found.get(ref.identity) ?? [];
       return (
         matches.length === 1 &&
-        jsonEqual(matches[0]!, markEntry(ref.group, entryMarker, ref.identity))
+        canonicalEqual(matches[0]!, markEntry(ref.group, entryMarker, ref.identity))
       );
     });
     const registryOk =
-      Array.isArray(reg) && jsonEqual(reg as JsonValue, refs.map((r) => r.identity).sort());
+      Array.isArray(reg) &&
+      canonicalEqual([...reg] as JsonValue, refs.map((r) => r.identity).sort());
     const ok = entriesOk && registryOk;
     return {
       spec,
@@ -745,7 +749,7 @@ const installActionFor = (spec: AssetSpec, current: string | null): string => {
     const registryKey = spec.registryKey;
     if (entryMarker === undefined || registryKey === undefined) {
       const specGroups = refs.map((r) => r.group);
-      stripEntries(map, (g) => specGroups.some((s) => jsonEqual(g, s)));
+      stripEntries(map, (g) => specGroups.some((s) => canonicalEqual(g, s)));
       for (const entry of spec.entries) {
         const existing = map[entry.key];
         const arr = Array.isArray(existing) ? existing : [];
@@ -848,11 +852,34 @@ const uninstallAfterFor = (spec: AssetSpec, current: string): string => {
       node = next;
     }
     if (!isJsonObject(node)) return current;
+    const map = node as Record<string, JsonValue>;
     if (entryMarker === undefined || spec.registryKey === undefined) {
-      // content-addressed removal: only groups byte-equal (semantically) to a
-      // spec group are ours; everything else is left untouched
-      const specGroups = entriesRefs(spec).map((r) => r.group);
-      if (!stripEntries(node, (g) => specGroups.some((s) => jsonEqual(g, s)))) return current;
+      // Content-addressed removal with ledger-counted ownership (review
+      // P1b): at most ONE group per spec entry is engram's, so a foreign
+      // hook identical to an engram hook survives uninstall. Matches are
+      // scoped to the spec's event keys; anything else is left untouched.
+      const pending = new Map<string, number>();
+      for (const ref of entriesRefs(spec)) pending.set(canonical(ref.group), 1);
+      let removed = false;
+      for (const entry of spec.entries) {
+        const arr = map[entry.key];
+        if (!Array.isArray(arr)) continue;
+        const kept: JsonValue[] = [];
+        for (const g of arr) {
+          const key = isJsonObject(g) ? canonical(g) : null;
+          if (key !== null && (pending.get(key) ?? 0) > 0) {
+            pending.set(key, (pending.get(key) ?? 0) - 1);
+            removed = true;
+            continue;
+          }
+          kept.push(g);
+        }
+        if (kept.length !== arr.length) {
+          if (kept.length > 0) map[entry.key] = kept;
+          else delete map[entry.key];
+        }
+      }
+      if (!removed) return current;
     } else {
       const registry = registryIdentities(doc, spec.registryKey);
       // Registry absent: fall back to the spec identities so removal stays

@@ -110,6 +110,13 @@ export const codexHooksFlagState = (
   for (const raw of configToml.split("\n")) {
     const line = raw.trim();
     if (line === "" || line.startsWith("#")) continue;
+    // inline table form: features = { hooks = false } (review P2b)
+    const inline = /^features\s*=\s*\{([^}]*)\}/.exec(line);
+    if (inline) {
+      const kv = /(?:^|[,{])\s*hooks\s*=\s*(true|false)\b/.exec(inline[1]);
+      if (kv) return kv[1] === "true" ? "enabled" : "disabled";
+      continue;
+    }
     const table = /^\[+([^\]]+)\]+/.exec(line);
     if (table) {
       inFeatures = table[1].trim() === "features";

@@ -46,7 +46,7 @@ import {
   TRUNCATION_MARKER,
 } from "../src/installer/constants.js";
 import { claudeCodeSpec, claudeCodeRoot } from "../src/installer/claude-code.js";
-import { codexSpec, codexRoot } from "../src/installer/codex.js";
+import { codexHooksFlagState, codexSpec, codexRoot } from "../src/installer/codex.js";
 import { parseSidecarLedger, SIDECAR_FILENAME } from "../src/installer/sidecar.js";
 
 /* ------------------------------ helpers ------------------------------ */
@@ -615,6 +615,21 @@ describe("codex target spec", () => {
   it("root is <home>/.codex", () => {
     expect(codexRoot("/h").endsWith(".codex")).toBe(true);
   });
+
+  it("codexHooksFlagState detects inline and section table forms (P2b)", () => {
+    expect(codexHooksFlagState('model = "x"\n\n[features]\nhooks = false\n')).toBe("disabled");
+    expect(codexHooksFlagState("[features]\nhooks = true\n")).toBe("enabled");
+    expect(codexHooksFlagState("features = { hooks = false }\n")).toBe("disabled");
+    expect(codexHooksFlagState("features = {hooks=false}\n")).toBe("disabled");
+    expect(codexHooksFlagState("features = { hooks = true, other = 1 }\n")).toBe("enabled");
+    expect(codexHooksFlagState("features = { other = true }\n")).toBe("default");
+    expect(codexHooksFlagState(null)).toBe("default");
+    expect(codexHooksFlagState('model = "x"\n')).toBe("default");
+    // commented-out lines never count
+    expect(codexHooksFlagState("# hooks = false\n")).toBe("default");
+    // a hooks key outside [features] is not the feature flag
+    expect(codexHooksFlagState("[other]\nhooks = false\n")).toBe("default");
+  });
 });
 
 /* ----------------- core: jsonEntries markerless mode (F2) ----------------- */
@@ -748,5 +763,62 @@ describe("installer core / jsonEntries markerless mode", () => {
     expect(groups).toHaveLength(1);
     const scan2 = await run(scanAssets(tmp, spec));
     expect(scan2.states[0]?.status).toBe("current");
+  });
+
+  it("recognizes entries whose keys are reordered (P1c)", async () => {
+    // same values as the spec group, keys reordered at both nesting levels
+    writeRoot(
+      "config/hooks.json",
+      canon({
+        hooks: {
+          SessionStart: [
+            { hooks: [{ timeout: 10, type: "command", command: "engram hook plain startup" }] },
+          ],
+        },
+      }),
+    );
+    const spec: InstallSpec = { assets: [plainAsset()] };
+    const scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]?.status).toBe("current");
+    expect(planInstall(scan).actions).toHaveLength(0);
+
+    // uninstall removes the reordered entry too (container then prunes)
+    await run(applyPlan(tmp, planUninstall(scan)));
+    const after = installedDoc() as any;
+    expect(after.hooks?.SessionStart ?? []).toHaveLength(0);
+  });
+
+  it("uninstall keeps a foreign duplicate of an engram hook (P1b)", async () => {
+    writeRoot("config/hooks.json", canon({}));
+    const spec: InstallSpec = { assets: [plainAsset()] };
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, spec)))));
+
+    // the user independently adds a hook identical to engram's
+    const doc = installedDoc() as any;
+    doc.hooks.SessionStart.push(doc.hooks.SessionStart[0]);
+    fs.writeFileSync(path.join(tmp, "config/hooks.json"), `${JSON.stringify(doc, null, 2)}\n`);
+
+    await run(applyPlan(tmp, planUninstall(await run(scanAssets(tmp, spec)))));
+    const groups = (installedDoc() as any).hooks.SessionStart as Array<Record<string, unknown>>;
+    expect(groups).toHaveLength(1); // only the foreign duplicate survives
+    expect(groups[0]?.hooks).toEqual([
+      { type: "command", command: "engram hook plain startup", timeout: 10 },
+    ]);
+  });
+
+  it("cross-event copies of engram entries are foreign and survive uninstall (P1b)", async () => {
+    writeRoot("config/hooks.json", canon({}));
+    const spec: InstallSpec = { assets: [plainAsset()] };
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, spec)))));
+
+    // user copies the engram group under a different event key
+    const doc = installedDoc() as any;
+    doc.hooks.SessionEnd = [doc.hooks.SessionStart[0]];
+    fs.writeFileSync(path.join(tmp, "config/hooks.json"), `${JSON.stringify(doc, null, 2)}\n`);
+
+    await run(applyPlan(tmp, planUninstall(await run(scanAssets(tmp, spec)))));
+    const after = installedDoc() as any;
+    expect(after.hooks.SessionStart).toBeUndefined(); // ours removed
+    expect(after.hooks.SessionEnd).toHaveLength(1); // the copy is foreign
   });
 });
