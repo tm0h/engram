@@ -1264,3 +1264,85 @@ describe("shared ops / ENG-42 related", () => {
     expect(cleared.text).not.toMatch(/^related:/m);
   });
 });
+
+describe("shared ops / showOp related header budget (ENG-42 turn 2)", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject("note");
+    home = mkHome();
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    if (origHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = origHome;
+    }
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  /** A valid 26-character generated-style id (digits then base32 'a's). */
+  const wideId = (n: number): string => (String(1000 + n) + "a".repeat(26)).slice(0, 26);
+
+  const writeWide = (relatedCount: number, bodyTail = ""): void => {
+    const ids = Array.from({ length: relatedCount }, (_, i) => wideId(i));
+    const fm = [
+      "---",
+      'id: "0001"',
+      'title: "Wide linked"',
+      "type: note",
+      "tags: []",
+      "scope: project",
+      "created: 2026-08-16T10:00:00.000Z",
+      "updated: 2026-08-16T10:00:00.000Z",
+      "related:",
+      ...ids.map((i) => `  - "${i}"`),
+      "---",
+      "start-of-body",
+      bodyTail,
+      "end-of-body",
+      "",
+    ].join("\n");
+    fs.writeFileSync(path.join(projectEngramsDir(tmp), "0001-wide-linked.md"), fm);
+  };
+
+  it("a very long related list cannot squeeze the body out of the show budget", async () => {
+    // ~400 x 28 chars of related header previously pushed the header past
+    // MAX_RESULT_CHARS - footerReserve, zeroing the body slice and dropping
+    // the continuation footer entirely.
+    writeWide(400, "x".repeat(11000));
+    const first = await run(showOp({ id: "0001" }));
+    expect(first.isError).toBe(false);
+    expect(first.text).toContain("start-of-body");
+    expect(first.text).toContain("(body truncated");
+    expect(first.details.nextOffset).toBeGreaterThan(0);
+    // the line is bounded with an explicit remainder marker, never silently cut
+    expect(first.text).toMatch(/related: .*\u2026 \(\+\d+ more\)/);
+    expect(first.text).not.toContain(wideId(399));
+
+    // the continuation offset makes the rest of the body reachable
+    const second = await run(showOp({ id: "0001", offset: first.details.nextOffset as number }));
+    expect(second.isError).toBe(false);
+    expect(second.text).toContain("end-of-body");
+  });
+
+  it("a related line within the header budget renders every id without a marker", async () => {
+    writeWide(10);
+    const res = await run(showOp({ id: "0001" }));
+    expect(res.isError).toBe(false);
+    const ids = Array.from({ length: 10 }, (_, i) => wideId(i));
+    expect(res.text).toContain(`related: ${ids.join(", ")}`);
+    expect(res.text).not.toMatch(/\(\+\d+ more\)/);
+    expect(res.text).toContain("start-of-body");
+    expect(res.text).toContain("end-of-body");
+    expect(res.details.nextOffset).toBeNull();
+  });
+});

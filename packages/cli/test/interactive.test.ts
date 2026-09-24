@@ -114,6 +114,15 @@ describe("related in the editor document (ENG-42)", () => {
     expect(doc).toMatch(/^related:$/m);
   });
 
+  it("renders a stored explicit empty list as the same blank line (P2 premise)", () => {
+    // undefined and [] are indistinguishable in the editor document by
+    // design; the edit diff, not the renderer, preserves the [] distinction
+    const unset = renderEditorDocument({ title: "T", tags: [], body: "b" });
+    const emptied = renderEditorDocument({ title: "T", tags: [], body: "b", related: [] });
+    expect(emptied).toMatch(/^related:$/m);
+    expect(emptied).toBe(unset);
+  });
+
   it("round-trips a populated list through parse", () => {
     const initial = { title: "T", type: "note", tags: [], body: "b", related: ["0002", "0003"] };
     expect(parseEditorDocument(renderEditorDocument(initial)).related).toEqual(["0002", "0003"]);

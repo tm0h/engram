@@ -102,12 +102,18 @@ const lifecyclePatchFromEditor = (
 
 /** Editor-driven ENG-42 related patch (leader note: unchanged-preserves is
  * parsed array equality, so reformatting the line without changing the ids
- * preserves, while reordering or editing replaces, and blanking clears). */
+ * preserves, while reordering or editing replaces, and blanking clears).
+ * A stored explicit empty list renders as the same blank line as an absent
+ * one, so a blank parse over an empty stored list preserves instead of
+ * clearing: the explicit-empty distinction survives an unchanged save
+ * (turn 2, PR comment P2). Flags still clear it via --clear-related. */
 const relatedPatchFromEditor = (
   mem: Engram,
   next: ReadonlyArray<string> | undefined,
 ): Partial<EngramPatch> => {
-  if (next === undefined) return mem.related === undefined ? {} : { related: null };
+  if (next === undefined) {
+    return mem.related !== undefined && mem.related.length > 0 ? { related: null } : {};
+  }
   const unchanged =
     mem.related !== undefined &&
     mem.related.length === next.length &&

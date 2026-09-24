@@ -406,6 +406,27 @@ const lifecycleEnumError = (
 ): string | null =>
   valid.includes(value) ? null : `invalid ${field} "${value}". Valid: ${valid.join(", ")}.`;
 
+/** ENG-42 (turn 2): the show header must never squeeze the paginated body
+ * out of the result budget. The related list is the one unbounded header
+ * field, so its line renders at most this many characters of ids and names
+ * the remainder explicitly instead of silently dropping ids or the body. */
+const RELATED_HEADER_BUDGET = 1024;
+
+const relatedHeaderLine = (related: ReadonlyArray<string> | undefined): string | null => {
+  if (related === undefined || related.length === 0) return null;
+  let used = 0;
+  let shown = 0;
+  for (const id of related) {
+    const cost = id.length + (shown === 0 ? 0 : 2);
+    if (used + cost > RELATED_HEADER_BUDGET) break;
+    used += cost;
+    shown += 1;
+  }
+  const line = `related: ${related.slice(0, shown).join(", ")}`;
+  const rest = related.length - shown;
+  return rest > 0 ? `${line} \u2026 (+${rest} more)` : line;
+};
+
 /** Full view of one engram; body sliced by char offset/limit. */
 export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, EngramStore> =>
   capture(
@@ -427,6 +448,7 @@ export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, Engram
       // source line. Part of the header, so pagination's body-capacity math
       // sees the growth. Plain text; no authority implication.
       const source = [m.sourceType, m.sourceRef].filter((p) => p !== undefined).join(" \u00b7 ");
+      const relatedLine = relatedHeaderLine(m.related);
 
       const header = [
         `# [${m.id}] ${m.title}`,
@@ -438,11 +460,9 @@ export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, Engram
         ...(m.pinned ? ["pinned: true"] : []),
         ...(m.status !== undefined ? [`status: ${m.status}`] : []),
         ...(m.supersedes !== undefined ? [`supersedes: ${m.supersedes}`] : []),
-        /* ENG-42: part of the header like every other metadata line, so
-         * pagination's body-capacity math sees the growth. */
-        ...(m.related !== undefined && m.related.length > 0
-          ? [`related: ${m.related.join(", ")}`]
-          : []),
+        /* ENG-42: one bounded ordered line (see RELATED_HEADER_BUDGET), part
+         * of the header so pagination's body-capacity math sees its size. */
+        ...(relatedLine !== null ? [relatedLine] : []),
         ...(m.reviewAfter !== undefined ? [`review-after: ${m.reviewAfter}`] : []),
         ...(m.expires !== undefined ? [`expires: ${m.expires}`] : []),
         ...(source !== "" ? [`source: ${source}`] : []),

@@ -269,6 +269,36 @@ describe("engram add/edit related flags", () => {
     expect(readEntry("0001").data).not.toHaveProperty("related");
   });
 
+  it("the editor preserves a stored explicit empty list across an unchanged save", async () => {
+    seedLegacyId("0001", "Empty list", "empty-list");
+    fs.writeFileSync(
+      path.join(engramsDir(), "0001-empty-list.md"),
+      stringifyFrontmatter("Body\n", {
+        id: "0001",
+        title: "Empty list",
+        type: "note",
+        tags: [],
+        scope: "project",
+        created: "2025-08-15T10:00:00.000Z",
+        updated: "2025-08-15T11:00:00.000Z",
+        related: [],
+      }),
+    );
+
+    // the stored [] renders as a blank related line; a blank parse must not
+    // clear it (the explicit-empty distinction survives the editor)
+    openEditorMock.mockReturnValue(Effect.succeed(edited({ related: undefined })));
+    await run(editCommand("0001", {}));
+    expect(readEntry("0001").data.related).toEqual([]);
+
+    // a changed list still replaces; --clear-related can still remove the key
+    openEditorMock.mockReturnValue(Effect.succeed(edited({ related: ["0002"] })));
+    await run(editCommand("0001", {}));
+    expect(readEntry("0001").data.related).toEqual(["0002"]);
+    await run(editCommand("0001", { clearRelated: true, content: "Cleared" }));
+    expect(readEntry("0001").data).not.toHaveProperty("related");
+  });
+
   it("the editor on add: a populated line links, a blank line records no key", async () => {
     openEditorMock.mockReturnValue(
       Effect.succeed(edited({ title: "From editor", related: ["0002"] })),
