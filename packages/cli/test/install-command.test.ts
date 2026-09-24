@@ -239,7 +239,7 @@ describe("engram install command", () => {
     expect(ledger?.entries).toHaveLength(3);
   });
 
-  it("blocked reasons never advertise a nonexistent --force flag; status carries the F6 remedy (F5, F6)", async () => {
+  it("blocked reasons never advertise a nonexistent --force flag; status tips differentiate blocked vs drift (F5, F6)", async () => {
     const homeDir = path.join(tmp, "home");
     // a foreign file at the sidecar path blocks the sidecar asset
     writeHomeFile("home/.claude/engram-managed.json", "{}\n");
@@ -248,7 +248,8 @@ describe("engram install command", () => {
     expect(output()).toContain("engram-managed.json: blocked");
     expect(output()).toContain("unmanaged file exists at target path");
     expect(output()).not.toContain("use force");
-    expect(output()).toContain("tip: repair with");
+    // blocked-state tip: manual removal first, then reinstall or uninstall
+    expect(output()).toContain("remove or rename them manually");
     expect(output()).toContain("--uninstall");
 
     outLines = [];
@@ -259,6 +260,20 @@ describe("engram install command", () => {
     expect(fs.readFileSync(path.join(tmp, "home/.claude/engram-managed.json"), "utf8")).toBe(
       "{}\n",
     );
+
+    // drift-state tip: --yes repairs (sidecar markers intact, ledger stale);
+    // fresh second home so the foreign blocked sidecar above does not apply
+    const driftHome = path.join(tmp, "drift-home");
+    await runInstall({ target: "claude-code", yes: true, home: driftHome });
+    const sidecarPath = path.join(driftHome, ".claude/engram-managed.json");
+    fs.writeFileSync(
+      sidecarPath,
+      fs.readFileSync(sidecarPath, "utf8").replace('"version": 1', '"version": 99'),
+    );
+    outLines = [];
+    await runInstall({ target: "claude-code", status: true, home: driftHome });
+    expect(output()).toContain("engram-managed.json: drift");
+    expect(output()).toContain("tip: repair with");
   });
 
   it("codex: status reports the feature flag; install manages hooks.json only", async () => {

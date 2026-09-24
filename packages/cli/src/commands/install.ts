@@ -205,7 +205,16 @@ export const installCommand = (opts: InstallOptions) =>
           }`,
         );
       }
-      if (scan.states.some((s) => s.status === "blocked" || s.status === "drift")) {
+      const blockedStates = scan.states.filter((s) => s.status === "blocked");
+      const driftStates = scan.states.filter((s) => s.status === "drift");
+      if (blockedStates.length > 0) {
+        // Review F6/leader follow-up: a blocked file is not recognizable as
+        // engram's, so --yes cannot repair it (P1a refuses); the ledger file
+        // must go first.
+        yield* out(
+          'tip: blocked files are not recognizable as engram\'s — remove or rename them manually, then "engram install <target> --yes" reinstalls (rebuilding the ledger) or "engram install <target> --yes --uninstall" removes engram\'s entries',
+        );
+      } else if (driftStates.length > 0) {
         yield* out(
           'tip: repair with "engram install <target> --yes", then remove with "engram install <target> --yes --uninstall"',
         );
