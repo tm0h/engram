@@ -21,12 +21,14 @@ import process from "node:process";
 import readline from "node:readline/promises";
 import {
   applyPlan,
+  canonical,
   planInstall,
   planUninstall,
   scanAssets,
+  type AssetState,
   type InstallPlan,
   type InstallSpec,
-  type ScanResult,
+  type JsonValue,
 } from "@engram/harnesses/shared";
 import {
   CLAUDE_CODE_TARGET,
@@ -45,7 +47,11 @@ export interface InstallOptions {
   readonly status?: boolean;
   readonly dryRun?: boolean;
   readonly yes?: boolean;
-  /** Home override (tests and unusual setups); defaults to the OS home. */
+  /**
+   * Home override (tests and unusual setups). Precedence: --home wins over
+   * the target's config-dir env override (CODEX_HOME / CLAUDE_CONFIG_DIR),
+   * which wins over the OS home default.
+   */
   readonly home?: string;
 }
 
@@ -94,16 +100,48 @@ const describePlan = (plan: InstallPlan): ReadonlyArray<string> => {
   return lines;
 };
 
-const ownedIdentities = (scan: ScanResult): ReadonlyArray<string> => {
-  const ids: string[] = [];
-  for (const state of scan.states) {
-    if (state.spec.kind === "jsonEntries") {
-      for (const entry of state.spec.entries) {
-        ids.push(...entry.groups.map((g) => g.identity));
+/**
+ * Identities of engram-owned entries actually PRESENT in the scanned files
+ * (review P2a): marker mode reads the per-entry markers; markerless mode
+ * matches spec groups by canonical content. Absent or unparsable files
+ * contribute nothing.
+ */
+const presentIdentities = (state: AssetState): ReadonlyArray<string> => {
+  const spec = state.spec;
+  if (spec.kind !== "jsonEntries" || state.current === null) return [];
+  let doc: JsonValue;
+  try {
+    doc = JSON.parse(state.current) as JsonValue;
+  } catch {
+    return [];
+  }
+  let node: JsonValue = doc;
+  for (const key of spec.mapPath) {
+    if (typeof node !== "object" || node === null || Array.isArray(node)) return [];
+    const next: JsonValue | undefined = (node as Record<string, JsonValue>)[key];
+    if (next === undefined) return [];
+    node = next;
+  }
+  if (typeof node !== "object" || node === null || Array.isArray(node)) return [];
+  const found = new Set<string>();
+  for (const entry of spec.entries) {
+    const arr = (node as Record<string, JsonValue>)[entry.key];
+    if (!Array.isArray(arr)) continue;
+    for (const g of arr) {
+      if (typeof g !== "object" || g === null || Array.isArray(g)) continue;
+      for (const group of entry.groups) {
+        if (canonical(group.group) === canonical(g as JsonValue)) {
+          found.add(group.identity);
+        } else if (
+          spec.entryMarker !== undefined &&
+          (g as Record<string, JsonValue>)[spec.entryMarker] === group.identity
+        ) {
+          found.add(group.identity);
+        }
       }
     }
   }
-  return ids;
+  return [...found];
 };
 
 export const installCommand = (opts: InstallOptions) =>
@@ -119,16 +157,35 @@ export const installCommand = (opts: InstallOptions) =>
     }
     const fs = yield* FileSystem;
     const path = yield* Path;
-    const home = opts.home ?? os.homedir();
-    const root = t.root(home);
+    // Review P1d: respect the hosts' documented config-dir overrides.
+    // --home wins (explicit test/power-user override); otherwise CODEX_HOME
+    // and CLAUDE_CONFIG_DIR point at the config directory itself; otherwise
+    // the OS home default applies.
+    const envDir =
+      opts.target === CODEX_TARGET
+        ? process.env.CODEX_HOME
+        : opts.target === CLAUDE_CODE_TARGET
+          ? process.env.CLAUDE_CONFIG_DIR
+          : undefined;
+    // CODEX_HOME and CLAUDE_CONFIG_DIR point at the config directory itself,
+    // so they replace the derived root instead of nesting under it.
+    const root =
+      opts.home !== undefined
+        ? t.root(opts.home)
+        : envDir !== undefined && envDir !== ""
+          ? envDir
+          : t.root(os.homedir());
     const scan = yield* scanAssets(root, t.spec);
     const verb = opts.uninstall ? "Uninstall" : "Install";
 
     // status is a strictly read-only view
     if (opts.status) {
       const extra: string[] = [];
-      const identities = ownedIdentities(scan);
-      if (identities.length > 0) extra.push(`engram-owned entries: ${identities.join(", ")}`);
+      const identities = scan.states.flatMap(presentIdentities);
+      if (identities.length > 0)
+        extra.push(
+          `engram-owned entries: ${identities.sort((a, b) => a.localeCompare(b)).join(", ")}`,
+        );
       if (opts.target === CODEX_TARGET) {
         const configPath = path.join(root, "config.toml");
         const text = (yield* fs.exists(configPath)) ? yield* fs.readFileString(configPath) : null;
@@ -170,6 +227,20 @@ export const installCommand = (opts: InstallOptions) =>
       for (const line of actionLines) yield* out(line);
       yield* out("Dry run: no changes were written.");
       return;
+    }
+
+    // Review P1a: never apply a plan with blocked assets — for installs this
+    // would write hooks without their ownership ledger. Dry-run above is the
+    // read-only preview; a real run refuses until the block is resolved.
+    if (plan.blocked.length > 0) {
+      return yield* Effect.fail(
+        new Error(
+          `refusing to ${verb.toLowerCase()} hooks for ${opts.target}: blocked asset(s): ` +
+            plan.blocked
+              .map((b) => `${b.id} (${b.status}): ${b.reasons.map(renderReason).join("; ")}`)
+              .join("; "),
+        ),
+      );
     }
 
     // A4: explicit confirmation before modifying user config, including

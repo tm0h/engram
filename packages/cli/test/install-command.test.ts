@@ -97,7 +97,68 @@ describe("engram install command", () => {
     expect(output()).toContain("target: claude-code");
     expect(output()).toContain(`root: ${path.join(tmp, "home", ".claude")}`);
     expect(output()).toContain("settings.json: absent");
+    // P2a: nothing is installed, so no owned entries are reported
+    expect(output()).not.toContain("engram-owned entries");
     expect(fs.readFileSync(settings, "utf8")).toBe(userClaudeSettings());
+  });
+
+  it("status reports owned entries from scanned state after install (P2a)", async () => {
+    const homeDir = path.join(tmp, "home");
+    await runInstall({ target: "claude-code", yes: true, home: homeDir });
+    outLines = [];
+    await runInstall({ target: "claude-code", status: true, home: homeDir });
+    const ids = output()
+      .split("\n")
+      .find((l) => l.startsWith("engram-owned entries:"));
+    expect(ids).toBeDefined();
+    for (const event of ["startup", "resume", "compact"]) {
+      expect(ids).toContain(`engram-hook:claude-code:${event}`);
+    }
+  });
+
+  it("install refuses a plan with a blocked sidecar and writes no hooks (P1a)", async () => {
+    const settings = writeHomeFile("home/.claude/settings.json", userClaudeSettings());
+    // foreign file at the sidecar path blocks the sidecar asset
+    writeHomeFile("home/.claude/engram-managed.json", "{}\n");
+
+    await expect(
+      runInstall({ target: "claude-code", yes: true, home: path.join(tmp, "home") }),
+    ).rejects.toThrow(/refusing to install.*blocked asset\(s\).*engram-claude-code-sidecar/);
+    // no hooks written without the ownership ledger
+    const doc = JSON.parse(fs.readFileSync(settings, "utf8")) as Record<string, any>;
+    expect(doc.hooks.SessionStart).toHaveLength(1); // user entry only
+    expect(Object.keys(doc)).toEqual(["hooks"]);
+  });
+
+  it("respects CODEX_HOME and CLAUDE_CONFIG_DIR config-dir overrides (P1d)", async () => {
+    const origCodex = process.env.CODEX_HOME;
+    const origClaude = process.env.CLAUDE_CONFIG_DIR;
+    try {
+      const codexHome = path.join(tmp, "codex-home");
+      const claudeDir = path.join(tmp, "claude-dir");
+      fs.mkdirSync(codexHome, { recursive: true });
+      fs.mkdirSync(claudeDir, { recursive: true });
+      process.env.CODEX_HOME = codexHome;
+      process.env.CLAUDE_CONFIG_DIR = claudeDir;
+
+      await runInstall({ target: "codex", yes: true });
+      expect(fs.existsSync(path.join(codexHome, "hooks.json"))).toBe(true);
+      expect(fs.existsSync(path.join(codexHome, "engram-managed.json"))).toBe(true);
+
+      await runInstall({ target: "claude-code", yes: true });
+      expect(fs.existsSync(path.join(claudeDir, "settings.json"))).toBe(true);
+
+      // --home still wins over the env override
+      const explicit = path.join(tmp, "explicit-home");
+      await runInstall({ target: "codex", yes: true, home: explicit });
+      expect(fs.existsSync(path.join(explicit, ".codex", "hooks.json"))).toBe(true);
+      expect(fs.existsSync(path.join(codexHome, ".codex"))).toBe(false);
+    } finally {
+      if (origCodex === undefined) delete process.env.CODEX_HOME;
+      else process.env.CODEX_HOME = origCodex;
+      if (origClaude === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+      else process.env.CLAUDE_CONFIG_DIR = origClaude;
+    }
   });
 
   it("dry-run prints the exact plan and never writes (A4, A8)", async () => {
