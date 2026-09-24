@@ -30,9 +30,20 @@ import { evaluateCase } from "@engram/core/corpus";
 import { ContractCorpusAdapter, DEFAULT_CORPUS_DIR } from "./adapter.js";
 import { round6 } from "./metrics.js";
 import { runBenchmark } from "./runner.js";
-import type { MetricReport } from "./types.js";
+import type { MetricReport, QueryMetrics } from "./types.js";
 
 export const K_VALUES = [1, 3, 5];
+
+/** Metric report as persisted in the benchmark JSON: latency-free at the
+ * top level and per query. Latency is inherently nonreproducible, never
+ * participates in the gate, and would churn every regeneration (PR #43
+ * review: incidental timing churn). */
+type BaselineMetrics = Omit<
+  MetricReport,
+  "latencyP50" | "latencyP95" | "latencyP99" | "latencySamplesNs" | "perQuery"
+> & {
+  perQuery: ReadonlyArray<Omit<QueryMetrics, "latencyNs">>;
+};
 
 export interface RepoBenchmarkJson {
   benchmark: "engram-retrieval-benchmark";
@@ -44,8 +55,11 @@ export interface RepoBenchmarkJson {
   contractHash: string;
   config: { kValues: ReadonlyArray<number>; abstainThreshold: number };
   generatedAtUtc: string;
-  /** Aggregate metrics; latency fields excluded. */
-  metrics: Omit<MetricReport, "latencyP50" | "latencyP95" | "latencyP99" | "latencySamplesNs">;
+  /** Aggregate metrics; latency fields excluded, including per-query
+   * timing samples: latency is inherently nonreproducible, never
+   * participates in the gate, and would churn every regeneration
+   * (PR #43 review: incidental timing churn). */
+  metrics: BaselineMetrics;
   /** 6-decimal comparable form of the aggregate metrics (the regression
    * gate compares exactly this). */
   comparableMetrics: ReturnType<typeof comparableMetrics>;
@@ -75,13 +89,22 @@ export interface RepoBenchmarkJson {
   >;
 }
 
-function stripLatency(metrics: MetricReport) {
+/** Strip every latency measurement: the four top-level latency fields and
+ * the per-query timing samples. Latency is inherently nonreproducible and
+ * never participates in comparisons, so the persisted JSON records none. */
+function stripLatency(metrics: MetricReport): BaselineMetrics {
   const { latencyP50, latencyP95, latencyP99, latencySamplesNs, ...rest } = metrics;
   void latencyP50;
   void latencyP95;
   void latencyP99;
   void latencySamplesNs;
-  return rest;
+  return {
+    ...rest,
+    perQuery: rest.perQuery.map(({ latencyNs, ...row }) => {
+      void latencyNs;
+      return row;
+    }),
+  };
 }
 
 /** Snapshot hash over the corpus files, per the contract README recipe:
@@ -168,9 +191,13 @@ export function runRepoBenchmark(): RepoBenchmarkJson {
 
 /** Round a metric report down to its comparable (6-decimal) form, latency
  * excluded: the regression gate compares exactly this shape. Accepts the
- * latency-stripped metrics emitted by runRepoBenchmark. */
+ * latency-stripped metrics emitted by runRepoBenchmark; per-query rows are
+ * not part of the comparable shape. */
 export function comparableMetrics(
-  metrics: Omit<MetricReport, "latencyP50" | "latencyP95" | "latencyP99" | "latencySamplesNs">,
+  metrics: Omit<
+    MetricReport,
+    "latencyP50" | "latencyP95" | "latencyP99" | "latencySamplesNs" | "perQuery"
+  >,
 ) {
   return {
     queryCount: metrics.queryCount,
