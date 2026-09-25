@@ -629,6 +629,11 @@ describe("codex target spec", () => {
     expect(codexHooksFlagState("# hooks = false\n")).toBe("default");
     // a hooks key outside [features] is not the feature flag
     expect(codexHooksFlagState("[other]\nhooks = false\n")).toBe("default");
+    // turn-5: inline tables under other tables belong to that table
+    expect(codexHooksFlagState("[other]\nfeatures = { hooks = false }\n")).toBe("default");
+    // quoted keys and headers are honored
+    expect(codexHooksFlagState('["features"]\nhooks = false\n')).toBe("disabled");
+    expect(codexHooksFlagState('features = { "hooks" = false }\n')).toBe("disabled");
   });
 });
 

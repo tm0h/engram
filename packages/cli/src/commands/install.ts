@@ -25,10 +25,10 @@ import {
   planInstall,
   planUninstall,
   scanAssets,
-  type AssetState,
   type InstallPlan,
   type InstallSpec,
   type JsonValue,
+  type ScanResult,
 } from "@engram/harnesses/shared";
 import {
   CLAUDE_CODE_TARGET,
@@ -38,6 +38,8 @@ import {
   codexHooksFlagState,
   codexRoot,
   codexSpec,
+  parseSidecarLedger,
+  SIDECAR_FILENAME,
 } from "@engram/harnesses/installer";
 import { out } from "../io.js";
 
@@ -101,47 +103,66 @@ const describePlan = (plan: InstallPlan): ReadonlyArray<string> => {
 };
 
 /**
- * Identities of engram-owned entries actually PRESENT in the scanned files
- * (review P2a): marker mode reads the per-entry markers; markerless mode
- * matches spec groups by canonical content. Absent or unparsable files
- * contribute nothing.
+ * Ownership report from scanned state (reviews P2a + turn-5 P2): the
+ * sidecar is the ownership record, so identities count as owned only when
+ * the sidecar is present and exactly the managed block AND the entry is
+ * present in the host config. Entries that merely match the spec content
+ * without a ledger claim are reported separately, never as owned.
  */
-const presentIdentities = (state: AssetState): ReadonlyArray<string> => {
-  const spec = state.spec;
-  if (spec.kind !== "jsonEntries" || state.current === null) return [];
-  let doc: JsonValue;
-  try {
-    doc = JSON.parse(state.current) as JsonValue;
-  } catch {
-    return [];
-  }
-  let node: JsonValue = doc;
-  for (const key of spec.mapPath) {
-    if (typeof node !== "object" || node === null || Array.isArray(node)) return [];
-    const next: JsonValue | undefined = (node as Record<string, JsonValue>)[key];
-    if (next === undefined) return [];
-    node = next;
-  }
-  if (typeof node !== "object" || node === null || Array.isArray(node)) return [];
-  const found = new Set<string>();
-  for (const entry of spec.entries) {
-    const arr = (node as Record<string, JsonValue>)[entry.key];
-    if (!Array.isArray(arr)) continue;
-    for (const g of arr) {
-      if (typeof g !== "object" || g === null || Array.isArray(g)) continue;
-      for (const group of entry.groups) {
-        if (canonical(group.group) === canonical(g as JsonValue)) {
-          found.add(group.identity);
-        } else if (
-          spec.entryMarker !== undefined &&
-          (g as Record<string, JsonValue>)[spec.entryMarker] === group.identity
-        ) {
-          found.add(group.identity);
+const ownershipReport = (
+  scan: ScanResult,
+): { owned: ReadonlyArray<string>; unownedMatches: ReadonlyArray<string> } => {
+  const owned = new Set<string>();
+  const unowned = new Set<string>();
+  const sidecarState = scan.states.find(
+    (s) => s.spec.kind === "file" && s.spec.path === SIDECAR_FILENAME,
+  );
+  const ledger =
+    sidecarState !== undefined && sidecarState.status === "current" && sidecarState.current !== null
+      ? parseSidecarLedger(sidecarState.current)
+      : null;
+  const ledgerIds = new Set((ledger?.entries ?? []).map((e: { identity: string }) => e.identity));
+
+  for (const state of scan.states) {
+    const spec = state.spec;
+    if (spec.kind !== "jsonEntries" || state.current === null) continue;
+    let doc: JsonValue;
+    try {
+      doc = JSON.parse(state.current) as JsonValue;
+    } catch {
+      continue;
+    }
+    let node: JsonValue = doc;
+    for (const key of spec.mapPath) {
+      if (typeof node !== "object" || node === null || Array.isArray(node)) {
+        return { owned: [...owned], unownedMatches: [...unowned] };
+      }
+      const next: JsonValue | undefined = (node as Record<string, JsonValue>)[key];
+      if (next === undefined) return { owned: [...owned], unownedMatches: [...unowned] };
+      node = next;
+    }
+    if (typeof node !== "object" || node === null || Array.isArray(node)) continue;
+    for (const entry of spec.entries) {
+      const arr = (node as Record<string, JsonValue>)[entry.key];
+      if (!Array.isArray(arr)) continue;
+      for (const g of arr) {
+        if (typeof g !== "object" || g === null || Array.isArray(g)) continue;
+        for (const group of entry.groups) {
+          if (canonical(group.group) !== canonical(g as JsonValue)) continue;
+          if (
+            (spec.entryMarker !== undefined &&
+              (g as Record<string, JsonValue>)[spec.entryMarker] === group.identity) ||
+            ledgerIds.has(group.identity)
+          ) {
+            owned.add(group.identity);
+          } else {
+            unowned.add(group.identity);
+          }
         }
       }
     }
   }
-  return [...found];
+  return { owned: [...owned], unownedMatches: [...unowned] };
 };
 
 export const installCommand = (opts: InstallOptions) =>
@@ -181,11 +202,19 @@ export const installCommand = (opts: InstallOptions) =>
     // status is a strictly read-only view
     if (opts.status) {
       const extra: string[] = [];
-      const identities = scan.states.flatMap(presentIdentities);
-      if (identities.length > 0)
+      const report = ownershipReport(scan);
+      if (report.owned.length > 0) {
         extra.push(
-          `engram-owned entries: ${identities.sort((a, b) => a.localeCompare(b)).join(", ")}`,
+          `engram-owned entries: ${[...report.owned].sort((a, b) => a.localeCompare(b)).join(", ")}`,
         );
+      }
+      if (report.unownedMatches.length > 0) {
+        extra.push(
+          `matches engram spec but not owned: ${[...report.unownedMatches]
+            .sort((a, b) => a.localeCompare(b))
+            .join(", ")}`,
+        );
+      }
       if (opts.target === CODEX_TARGET) {
         const configPath = path.join(root, "config.toml");
         const text = (yield* fs.exists(configPath)) ? yield* fs.readFileString(configPath) : null;

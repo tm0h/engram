@@ -106,24 +106,31 @@ export const codexHooksFlagState = (
   configToml: string | null,
 ): "default" | "enabled" | "disabled" => {
   if (configToml === null) return "default";
+  const unquote = (key: string): string => {
+    const t = key.trim();
+    return /^".*"$|^'.*'$/.test(t) ? t.slice(1, -1) : t;
+  };
   let inFeatures = false;
+  // Review turn-5: an inline `features = { ... }` line only counts at the
+  // top level; under any [table] it belongs to that table, not the root.
+  let atTopLevel = true;
   for (const raw of configToml.split("\n")) {
     const line = raw.trim();
     if (line === "" || line.startsWith("#")) continue;
-    // inline table form: features = { hooks = false } (review P2b)
-    const inline = /^features\s*=\s*\{([^}]*)\}/.exec(line);
+    const inline = atTopLevel && /^"?features"?\s*=\s*\{([^}]*)\}/.exec(line);
     if (inline) {
-      const kv = /(?:^|[,{])\s*hooks\s*=\s*(true|false)\b/.exec(inline[1]);
+      const kv = /(?:^|[,{])\s*"?hooks"?\s*=\s*(true|false)\b/.exec(inline[1]);
       if (kv) return kv[1] === "true" ? "enabled" : "disabled";
       continue;
     }
     const table = /^\[+([^\]]+)\]+/.exec(line);
     if (table) {
-      inFeatures = table[1].trim() === "features";
+      atTopLevel = false;
+      inFeatures = unquote(table[1]) === "features";
       continue;
     }
     if (!inFeatures) continue;
-    const kv = /^hooks\s*=\s*(true|false)\b/.exec(line);
+    const kv = /^"?hooks"?\s*=\s*(true|false)\b/.exec(line);
     if (kv) return kv[1] === "true" ? "enabled" : "disabled";
   }
   return "default";

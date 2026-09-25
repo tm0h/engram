@@ -12,7 +12,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { installCommand } from "../src/commands/install.js";
-import { parseSidecarLedger, SIDECAR_FILENAME } from "@engram/harnesses/installer";
+import { claudeCodeSpec, parseSidecarLedger, SIDECAR_FILENAME } from "@engram/harnesses/installer";
+import type { AssetSpec } from "@engram/harnesses/shared";
 
 /* ------------------------------ helpers ------------------------------ */
 
@@ -97,8 +98,9 @@ describe("engram install command", () => {
     expect(output()).toContain("target: claude-code");
     expect(output()).toContain(`root: ${path.join(tmp, "home", ".claude")}`);
     expect(output()).toContain("settings.json: absent");
-    // P2a: nothing is installed, so no owned entries are reported
+    // P2a + turn-5 P2: nothing installed, so no ownership claims at all
     expect(output()).not.toContain("engram-owned entries");
+    expect(output()).not.toContain("matches engram spec but not owned");
     expect(fs.readFileSync(settings, "utf8")).toBe(userClaudeSettings());
   });
 
@@ -114,6 +116,52 @@ describe("engram install command", () => {
     for (const event of ["startup", "resume", "compact"]) {
       expect(ids).toContain(`engram-hook:claude-code:${event}`);
     }
+    expect(output()).not.toContain("matches engram spec but not owned");
+  });
+
+  it("status reports spec-matching hooks as not owned without the sidecar (turn-5 P2)", async () => {
+    const homeDir = path.join(tmp, "home");
+    // user-written settings containing hooks identical to the engram spec,
+    // but no sidecar: ownership cannot be claimed from content alone
+    const spec = claudeCodeSpec();
+    const engramGroups = (
+      spec.assets[0] as Extract<AssetSpec, { kind: "jsonEntries" }>
+    ).entries[0]!.groups.map((g) => g.group);
+    writeHomeFile(
+      "home/.claude/settings.json",
+      `${JSON.stringify(
+        {
+          hooks: {
+            SessionStart: [
+              { hooks: [{ type: "command", command: "user-own-hook" }] },
+              ...engramGroups,
+            ],
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    await runInstall({ target: "claude-code", status: true, home: homeDir });
+    expect(output()).not.toContain("engram-owned entries:");
+    const unowned = output()
+      .split("\n")
+      .find((l) => l.startsWith("matches engram spec but not owned:"));
+    expect(unowned).toBeDefined();
+    for (const event of ["startup", "resume", "compact"]) {
+      expect(unowned).toContain(`engram-hook:claude-code:${event}`);
+    }
+  });
+
+  it("status drops owned claims when the sidecar is missing (turn-5 P2)", async () => {
+    const homeDir = path.join(tmp, "home");
+    await runInstall({ target: "claude-code", yes: true, home: homeDir });
+    fs.rmSync(path.join(homeDir, ".claude", SIDECAR_FILENAME));
+    outLines = [];
+    await runInstall({ target: "claude-code", status: true, home: homeDir });
+    expect(output()).not.toContain("engram-owned entries:");
+    expect(output()).toContain("matches engram spec but not owned:");
   });
 
   it("install refuses a plan with a blocked sidecar and writes no hooks (P1a)", async () => {
