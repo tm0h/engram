@@ -13,6 +13,7 @@ import { parseTags, detectAuthor } from "@engram/core";
 import { readStdin, out } from "../io.js";
 import { checkLifecycleValues } from "../lifecycle.js";
 import type { LifecycleValueFlags } from "../lifecycle.js";
+import { relatedFromFlag } from "../related.js";
 
 export interface AddOptions extends LifecycleValueFlags {
   readonly title?: string;
@@ -23,6 +24,9 @@ export interface AddOptions extends LifecycleValueFlags {
   readonly pinned?: boolean;
   readonly author?: string;
   readonly content?: string;
+  /** ENG-42: comma-separated same-scope related ids (Q1: a value that
+   * trims to nothing records no key; Q2: empty tokens are a usage error). */
+  readonly related?: string;
   /** ENG-15: explicit per-write override for a blocking scan policy. */
   readonly allowSecrets?: boolean;
 }
@@ -49,6 +53,7 @@ export const addCommand = (opts: AddOptions) =>
     // Enum flags fail fast here, before anything is created. Timestamp, id,
     // and sourceRef value errors surface from the store write boundary.
     let lifecycle = yield* checkLifecycleValues(opts);
+    let related = yield* relatedFromFlag(opts.related);
 
     if (opts.stdin) {
       body = (yield* readStdin()).trim();
@@ -60,7 +65,8 @@ export const addCommand = (opts: AddOptions) =>
         body = (yield* readStdin()).trim();
       } else {
         // flags prefill the editor and survive an unchanged save; blank or
-        // removed lifecycle lines mean unset
+        // removed lifecycle lines mean unset, a blank related line means no
+        // list (Q1)
         const edited = yield* openEditor({
           title,
           type: type ?? "note",
@@ -72,6 +78,7 @@ export const addCommand = (opts: AddOptions) =>
           expires: opts.expires,
           sourceType: opts.sourceType,
           sourceRef: opts.sourceRef,
+          related,
         });
         if (!edited || !edited.title) {
           yield* out(chalk.gray("Aborted: a title is required."));
@@ -82,6 +89,7 @@ export const addCommand = (opts: AddOptions) =>
         tags = edited.tags;
         body = edited.body;
         lifecycle = yield* checkLifecycleValues(edited);
+        related = edited.related;
       }
     }
 
@@ -118,6 +126,7 @@ export const addCommand = (opts: AddOptions) =>
         author,
         status: lifecycle.status,
         supersedes: lifecycle.supersedes,
+        related,
         reviewAfter: lifecycle.reviewAfter,
         expires: lifecycle.expires,
         sourceType: lifecycle.sourceType,

@@ -79,6 +79,10 @@ export const FrontmatterSchema = Schema.Struct({
   status: Schema.optional(StatusSchema),
   /** id of the older entry this one replaces. */
   supersedes: Schema.optional(Schema.String),
+  /* ENG-42 same-scope related links: optional ordered list of exact entry
+   * ids. Shape and list invariants are enforced by the staged validator;
+   * target existence is advisory (scan warning only). */
+  related: Schema.optional(Schema.Array(Schema.String)),
   /** ISO 8601 timestamp with explicit zone (same contract as created/updated). */
   reviewAfter: Schema.optional(Schema.String),
   /** ISO 8601 timestamp with explicit zone (same contract as created/updated). */
@@ -107,6 +111,9 @@ export interface Engram {
    * default is ever serialized. */
   readonly status?: Status | undefined;
   readonly supersedes?: string | undefined;
+  /* ENG-42 same-scope related links: exact ids, supplied order is preserved,
+   * never sorted or deduplicated. Absent means no list. */
+  readonly related?: ReadonlyArray<string> | undefined;
   readonly reviewAfter?: string | undefined;
   readonly expires?: string | undefined;
   readonly sourceType?: SourceType | undefined;
@@ -137,6 +144,8 @@ export interface EngramInput {
   /* ENG-13 lifecycle metadata (optional; absent means "not set"). */
   readonly status?: Status | undefined;
   readonly supersedes?: string | undefined;
+  /** ENG-42: same-scope related ids, exact values, order preserved. */
+  readonly related?: ReadonlyArray<string> | undefined;
   readonly reviewAfter?: string | undefined;
   readonly expires?: string | undefined;
   readonly sourceType?: SourceType | undefined;
@@ -148,7 +157,12 @@ export interface EngramInput {
  * value, null clears the field (it becomes absent, never serialized), and
  * a concrete value replaces it. Non-lifecycle fields keep the simpler
  * undefined-means-unchanged rule; there is no clearing representation for
- * them. */
+ * them.
+ *
+ * ENG-42: `related` joins the three-state fields. `undefined` preserves the
+ * list, `null` clears it (the YAML key disappears, never serialized), and
+ * an array replaces the whole list in its supplied order (an explicitly
+ * empty array is a concrete empty list, distinct from clearing). */
 export interface EngramPatch {
   readonly title?: string;
   readonly type?: EngramType;
@@ -158,6 +172,7 @@ export interface EngramPatch {
   readonly author?: string;
   readonly status?: Status | null | undefined;
   readonly supersedes?: string | null | undefined;
+  readonly related?: ReadonlyArray<string> | null | undefined;
   readonly reviewAfter?: string | null | undefined;
   readonly expires?: string | null | undefined;
   readonly sourceType?: SourceType | null | undefined;

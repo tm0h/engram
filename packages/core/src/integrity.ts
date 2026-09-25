@@ -33,6 +33,12 @@ export type StoreDiagnosticCode =
   | "expires_invalid"
   | "source_type_invalid"
   | "source_ref_invalid"
+  /* ENG-42 related entry validation (packages/core/src/frontmatter.ts):
+   * shape/id defects, self-links, and duplicate values are entry-preventing
+   * errors. */
+  | "related_invalid"
+  | "self_relation"
+  | "duplicate_relation"
   /* ENG-41 entry format version (packages/core/src/frontmatter.ts). Only
    * schema_version_unsupported is a warning: a future-format entry still
    * reads; an invalid shape is entry-preventing. */
@@ -51,6 +57,10 @@ export type StoreDiagnosticCode =
   | "supersedes_not_found"
   | "review_due"
   | "expired"
+  /* ENG-42 related advisory condition (packages/core/src/store.ts:
+   * lifecycleDiagnostics). One warning per same-scope missing target;
+   * never omits the source entry and never fails a check on its own. */
+  | "related_not_found"
   /* config validation (packages/core/src/config.ts) */
   | "config_unreadable"
   | "config_json_invalid"

@@ -8,7 +8,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { engramContextTool as piContext, engramTools as piTools } from "../src/pi/tools.js";
-import { engramContextTool as ocContext } from "../src/opencode/tools.js";
+import {
+  engramContextTool as ocContext,
+  engramAddTool as ocAdd,
+  engramEditTool as ocEdit,
+} from "../src/opencode/tools.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../../..");
@@ -173,5 +177,51 @@ describe("guidance / skills stay aligned", () => {
       expect(skill, `${name}: project scan policy`).toContain("secretScan");
       expect(skill, `${name}: personal scan policy`).toContain("personalSecretScan");
     }
+  });
+});
+
+describe("guidance / related links (ENG-42)", () => {
+  const piAdd = piTools.find((t) => t.name === "engram_add")!;
+  const piEdit = piTools.find((t) => t.name === "engram_edit")!;
+  const readSkill = (rel: string): string => fs.readFileSync(path.join(repoRoot, rel), "utf8");
+  const piSkillText = readSkill("packages/harnesses/src/pi/skills/engram/SKILL.md");
+  const claudeSkillText = readSkill("packages/harnesses/claude/skills/engram/SKILL.md");
+
+  it("add guidance states exact ids, same scope, and advisory missing targets", () => {
+    for (const [name, desc] of [
+      ["pi", piAdd.description],
+      ["opencode", ocAdd.description],
+    ] as const) {
+      expect(desc, `${name}: exact ids`).toMatch(/exact/i);
+      expect(desc, `${name}: same scope`).toMatch(/same[- ]scope/i);
+      expect(desc, `${name}: advisory missing targets`).toMatch(/dangle|missing|advisory/i);
+    }
+  });
+
+  it("edit guidance states the three-state related contract", () => {
+    for (const [name, desc] of [
+      ["pi", piEdit.description],
+      ["opencode", ocEdit.description],
+    ] as const) {
+      expect(desc, `${name}: related mentioned`).toContain("related");
+      expect(desc, `${name}: null clears`).toMatch(/null clears|clears/i);
+    }
+  });
+
+  it("both skills document related links together", () => {
+    for (const [name, skill] of [
+      ["pi", piSkillText],
+      ["claude", claudeSkillText],
+    ] as const) {
+      expect(skill, `${name}: related guidance`).toMatch(/`?related`?/);
+      expect(skill, `${name}: directional`).toMatch(/directional|one[- ]way/i);
+      expect(skill, `${name}: same scope`).toMatch(/same[- ]scope/i);
+      expect(skill, `${name}: dangling warning`).toMatch(/dangle|missing/i);
+      expect(skill, `${name}: whole-list replacement`).toMatch(/whole list|replaces/i);
+    }
+    // clear surface, named per harness
+    expect(piSkillText).toMatch(/related: null|related: \[\]/);
+    expect(claudeSkillText).toContain("--clear-related");
+    expect(claudeSkillText).toContain("--related");
   });
 });

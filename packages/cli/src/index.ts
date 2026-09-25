@@ -114,6 +114,10 @@ program
   .option("--source-type <type>", "conversation | file | url | command | other.")
   .option("--source-ref <ref>", "Source reference: path, URL, command, or conversation.")
   .option(
+    "--related <ids>",
+    "Comma-separated exact entry ids to link (same scope; missing targets are a warning).",
+  )
+  .option(
     "--allow-secrets",
     "Write even if the secret scanner flags this content (project policy may block by default).",
   )
@@ -130,6 +134,7 @@ program
         author: opts.author as string | undefined,
         status: opts.status as string | undefined,
         supersedes: opts.supersedes as string | undefined,
+        related: opts.related as string | undefined,
         reviewAfter: opts.reviewAfter as string | undefined,
         expires: opts.expires as string | undefined,
         sourceType: opts.sourceType as string | undefined,
@@ -219,6 +224,10 @@ program
   .option("--source-type <type>", "conversation | file | url | command | other.")
   .option("--source-ref <ref>", "Source reference: path, URL, command, or conversation.")
   .option(
+    "--related <ids>",
+    "Comma-separated exact entry ids to link (replaces the list; same scope; missing targets are a warning).",
+  )
+  .option(
     "--allow-secrets",
     "Write even if the secret scanner flags the resulting entry (project policy may block by default).",
   )
@@ -228,6 +237,7 @@ program
   .option("--clear-expires", "Remove the expiry timestamp.")
   .option("--clear-source-type", "Remove the source type.")
   .option("--clear-source-ref", "Remove the source reference.")
+  .option("--clear-related", "Remove the related list.")
   .action(
     (id: string, content: string | undefined, opts: Record<string, string | boolean | undefined>) =>
       run(
@@ -242,6 +252,7 @@ program
           author: opts.author as string | undefined,
           status: opts.status as string | undefined,
           supersedes: opts.supersedes as string | undefined,
+          related: opts.related as string | undefined,
           reviewAfter: opts.reviewAfter as string | undefined,
           expires: opts.expires as string | undefined,
           sourceType: opts.sourceType as string | undefined,
@@ -253,6 +264,7 @@ program
           clearExpires: opts.clearExpires as boolean | undefined,
           clearSourceType: opts.clearSourceType as boolean | undefined,
           clearSourceRef: opts.clearSourceRef as boolean | undefined,
+          clearRelated: opts.clearRelated as boolean | undefined,
         }),
       ),
   );

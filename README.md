@@ -215,6 +215,8 @@ updated: 2025-01-15T10:30:00.000Z
 pinned: true
 status: superseded
 supersedes: "0001"
+related:
+  - "0002"
 reviewAfter: 2026-01-01T00:00:00.000Z
 expires: 2026-06-01T00:00:00.000Z
 sourceType: conversation
@@ -225,10 +227,11 @@ moment.js is frozen/in-maintenance and ships a large bundle…
 ```
 
 The frontmatter fields `id`, `title`, `type`, `tags`, `scope`, `created`, and
-`updated` are required; `author`, `pinned`, and the six lifecycle fields shown
-above are optional. Entries without lifecycle fields need no migration. Unknown
-fields with other names are tolerated on read but still dropped on edit, while
-the six modeled lifecycle fields are preserved.
+`updated` are required; `author`, `pinned`, the six lifecycle fields shown
+above, and `related` are optional. Entries without lifecycle fields need no
+migration. Unknown fields with other names are tolerated on read but still
+dropped on edit, while the six modeled lifecycle fields and `related` are
+preserved.
 
 ### Lifecycle fields
 
@@ -243,6 +246,13 @@ the six modeled lifecycle fields are preserved.
 - `sourceType`: exactly `conversation`, `file`, `url`, `command`, or `other`.
   `sourceRef`: a non-empty reference such as a relative path, URL, command, or
   conversation note. The two are independent; neither is required.
+- `related`: an optional ordered list of exact entry ids in the same scope.
+  Links are directional one-way metadata: engram never writes a reciprocal
+  key to the target, target existence is advisory (a missing id is only a
+  `related_not_found` warning, so forward references are fine), and prefixes
+  are rejected as ids. `engram add --related 0002,0003` sets it,
+  `engram edit --related` replaces the whole list, and
+  `engram edit --clear-related` removes it.
 
 **Authority warning.** Lifecycle and provenance fields are notes anyone (and
 any agent) can write. Engram does not authenticate them, does not resolve or
@@ -253,6 +263,7 @@ over recorded memory.
 
 `engram check` reports advisory lifecycle conditions as warnings:
 `supersedes_not_found` (a `supersedes` id with no claimant in the same scope),
+`related_not_found` (a `related` id with no claimant in the same scope),
 `review_due`, and `expired` (the timestamp is at or before the check time).
 Warnings print as `warning [code]` and never make `check` fail; errors and
 unchecked scopes still exit nonzero. `check --json` may therefore return

@@ -63,6 +63,12 @@ export function renderFull(m: Engram): string {
   const lifecycle: string[] = [];
   if (m.status !== undefined) lifecycle.push(`status: ${m.status}`);
   if (m.supersedes !== undefined) lifecycle.push(`supersedes: ${m.supersedes}`);
+  /* ENG-42: one ordered line when the list is defined and non-empty; absent
+   * and empty lists print nothing (an empty list is a stored value, but it
+   * has nothing to show). */
+  if (m.related !== undefined && m.related.length > 0) {
+    lifecycle.push(`related: ${m.related.join(", ")}`);
+  }
   if (m.reviewAfter !== undefined) lifecycle.push(`review-after: ${m.reviewAfter}`);
   if (m.expires !== undefined) lifecycle.push(`expires: ${m.expires}`);
   const source = [m.sourceType, m.sourceRef].filter((p) => p !== undefined).join(" · ");

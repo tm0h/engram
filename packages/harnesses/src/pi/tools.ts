@@ -155,7 +155,9 @@ export const engramAddTool = {
     `debugging time. Do not record transient state, secrets, or anything the user says not to store. ` +
     `Project scope is committed to git and shared with the team; pass scope "personal" only for notes ` +
     `that must stay on this machine. Optional lifecycle/provenance metadata (status, supersedes, ` +
-    `reviewAfter, expires, sourceType, sourceRef) is an unauthenticated claim, not a verified truth.`,
+    `reviewAfter, expires, sourceType, sourceRef) is an unauthenticated claim, not a verified truth. ` +
+    `Optional related links exact same-scope entry ids as directional metadata: the whole list is ` +
+    `stored as given, and missing targets only dangle as a warning.`,
   promptSnippet:
     "Record durable decisions (with rationale), gotchas, and conventions as you discover them; ask scope personal only for machine-private notes.",
   parameters: Type.Object({
@@ -211,6 +213,12 @@ export const engramAddTool = {
           "Source reference: path, URL, command, or conversation note. Optional; validated when saved.",
       }),
     ),
+    related: Type.Optional(
+      Type.Array(Type.String(), {
+        description:
+          'Exact engram ids in the same scope, e.g. ["0002"]. Replaces the whole list in this order; duplicates are rejected. Missing targets are advisory (a warning on check, not an error). Optional.',
+      }),
+    ),
     allowSecrets: Type.Optional(
       Type.Boolean({
         description:
@@ -234,6 +242,7 @@ export const engramAddTool = {
           expires: params.expires,
           sourceType: params.sourceType,
           sourceRef: params.sourceRef,
+          related: params.related,
           allowSecrets: params.allowSecrets,
         }),
       ),
@@ -248,7 +257,9 @@ export const engramEditTool = {
     `Update an existing engram by id (unique prefixes work). Ordinary fields (title, type, tags, body, ` +
     `pinned, author) are replaced when passed and preserved when omitted. The six lifecycle fields ` +
     `(status, supersedes, reviewAfter, expires, sourceType, sourceRef) are three-state: a concrete ` +
-    `value replaces, null clears, omission preserves. Use this to correct a title or tags, change a ` +
+    `value replaces, null clears, omission preserves. related is three-state the same way: an array ` +
+    `replaces the whole list with exact same-scope ids, null clears it, omission preserves; links are ` +
+    `directional and may dangle with a warning. Use this to correct a title or tags, change a ` +
     `type, pin or unpin, or clear a lifecycle field after acting on it. Scope defaults to project ` +
     `inside a project and personal outside one.`,
   promptSnippet:
@@ -314,6 +325,12 @@ export const engramEditTool = {
           "Source reference: path, URL, command, or conversation note. Null clears; omit to preserve. Validated when saved.",
       }),
     ),
+    related: Type.Optional(
+      Type.Union([Type.Array(Type.String()), Type.Null()], {
+        description:
+          "Replace the whole related list with exact same-scope ids in this order. Null clears; omit to preserve. Missing targets are advisory (a warning on check, not an error).",
+      }),
+    ),
     allowSecrets: Type.Optional(
       Type.Boolean({
         description:
@@ -339,6 +356,7 @@ export const engramEditTool = {
           expires: params.expires,
           sourceType: params.sourceType,
           sourceRef: params.sourceRef,
+          related: params.related,
           allowSecrets: params.allowSecrets,
         }),
       ),

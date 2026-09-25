@@ -8,6 +8,7 @@ import { ENGRAM_TYPES } from "@engram/core";
 import type { Engram, EngramPatch, EngramType } from "@engram/core";
 import { InvalidTypeError, ValidationError } from "@engram/core";
 import { isInteractive, openEditor } from "../interactive.js";
+import type { EditedEngram } from "../interactive.js";
 import { resolveScanOptions, reportScanOutcome } from "../scanPolicy.js";
 import { parseTags } from "@engram/core";
 import { readStdin, out } from "../io.js";
@@ -17,6 +18,7 @@ import type {
   LifecycleClearFlags,
   LifecycleValueFlags,
 } from "../lifecycle.js";
+import { checkRelatedConflict, relatedFromFlag } from "../related.js";
 
 export interface EditOptions extends LifecycleValueFlags, LifecycleClearFlags {
   readonly title?: string;
@@ -27,6 +29,11 @@ export interface EditOptions extends LifecycleValueFlags, LifecycleClearFlags {
   readonly pinned?: boolean;
   readonly author?: string;
   readonly content?: string;
+  /** ENG-42: comma-separated same-scope related ids. An empty value
+   * preserves (no instruction); empty tokens are a usage error (Q2). */
+  readonly related?: string;
+  /** ENG-42: remove the related list (mutually exclusive with --related). */
+  readonly clearRelated?: boolean;
   /** ENG-15: explicit per-write override for a blocking scan policy. */
   readonly allowSecrets?: boolean;
 }
@@ -94,6 +101,31 @@ const lifecyclePatchFromEditor = (
   return patch;
 };
 
+/** Editor-driven ENG-42 related patch (leader note: unchanged-preserves is
+ * parsed array equality, so reformatting the line without changing the ids
+ * preserves, while reordering or editing replaces). Semantics by line state
+ * (turn 2 + turn 3, PR comment P2):
+ *   deleted line  -> explicit clear (the renderer always writes the line,
+ *                    so removal is always a user act)
+ *   blank line    -> preserves a stored explicit empty list (an unchanged
+ *                    save of [] renders blank) and clears a populated list
+ *   changed list  -> replaces the whole list
+ * Flags still clear any state via --clear-related. */
+const relatedPatchFromEditor = (mem: Engram, edited: EditedEngram): Partial<EngramPatch> => {
+  if (edited.relatedDeleted === true) {
+    return mem.related !== undefined ? { related: null } : {};
+  }
+  const next = edited.related;
+  if (next === undefined) {
+    return mem.related !== undefined && mem.related.length > 0 ? { related: null } : {};
+  }
+  const unchanged =
+    mem.related !== undefined &&
+    mem.related.length === next.length &&
+    mem.related.every((rel, i) => rel === next[i]);
+  return unchanged ? {} : { related: [...next] };
+};
+
 export const editCommand = (id: string, opts: EditOptions) =>
   Effect.gen(function* () {
     const store = yield* EngramStore;
@@ -102,13 +134,21 @@ export const editCommand = (id: string, opts: EditOptions) =>
     const scope = resolveScope(opts.scope, projectRoot);
 
     // Usage errors fail before anything is read or mutated: a value and its
-    // clear flag on the same field, and unknown enum values.
+    // clear flag on the same field, the related flag pair, and unknown enum
+    // values.
     yield* checkLifecycleConflicts(opts);
+    yield* checkRelatedConflict(opts);
     let lifecycle = yield* checkLifecycleValues(opts);
+    const flagRelated = yield* relatedFromFlag(opts.related);
 
     const mem = yield* store.get(scope, id);
 
     let patch: EngramPatch = { ...lifecyclePatchFromFlags(lifecycle, opts) };
+
+    // ENG-42 three-state mapping: clear wins, a parsed value replaces, an
+    // absent flag (or a value that trims to nothing) preserves.
+    if (opts.clearRelated === true) patch = { ...patch, related: null };
+    else if (flagRelated !== undefined) patch = { ...patch, related: flagRelated };
 
     if (opts.title !== undefined) patch = { ...patch, title: opts.title };
     const type = yield* checkType(opts.type);
@@ -149,6 +189,7 @@ export const editCommand = (id: string, opts: EditOptions) =>
           expires: mem.expires,
           sourceType: mem.sourceType,
           sourceRef: mem.sourceRef,
+          related: mem.related,
         });
         if (!edited) {
           yield* out(chalk.gray("Cancelled."));
@@ -167,6 +208,7 @@ export const editCommand = (id: string, opts: EditOptions) =>
           tags: edited.tags,
           body: edited.body,
           ...lifecyclePatchFromEditor(mem, lifecycle),
+          ...relatedPatchFromEditor(mem, edited),
         };
       }
     }

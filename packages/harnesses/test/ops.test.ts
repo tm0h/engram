@@ -1162,3 +1162,192 @@ describe("shared ops / secret-scan gate (ENG-15)", () => {
     );
   });
 });
+
+describe("shared ops / ENG-42 related", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject("note");
+    home = mkHome();
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    if (origHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = origHome;
+    }
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const rawFile = (needle: string): string => {
+    const dir = projectEngramsDir(tmp);
+    for (const f of fs.readdirSync(dir).sort()) {
+      const raw = fs.readFileSync(path.join(dir, f), "utf8");
+      if (raw.includes(needle)) return raw;
+    }
+    throw new Error(`no entry containing ${needle}`);
+  };
+
+  it("addOp sets an ordered related list without touching missing targets", async () => {
+    const res = await run(addOp({ title: "Op source", body: "b", related: ["0002", "0003"] }));
+    expect(res.isError).toBe(false);
+    const raw = rawFile("Op source");
+    expect(raw).toMatch(/^related:\n  - "0002"\n  - "0003"$/m);
+  });
+
+  it("editOp replaces, preserves on omission, and clears with null", async () => {
+    seed(tmp, "0001", { title: "Op target" });
+    seed(tmp, "0002", { title: "Op other" });
+
+    const set = await run(editOp({ id: "0001", related: ["0002"] }));
+    expect(set.isError).toBe(false);
+    expect(rawFile("Op target")).toMatch(/^related:\n  - "0002"$/m);
+
+    const preserve = await run(editOp({ id: "0001", title: "Op target" }));
+    expect(preserve.isError).toBe(false);
+    expect(rawFile("Op target")).toMatch(/^related:\n  - "0002"$/m);
+
+    const replace = await run(editOp({ id: "0001", related: [] }));
+    expect(replace.isError).toBe(false);
+    expect(rawFile("Op target")).toMatch(/^related: \[\]$/m);
+
+    const clear = await run(editOp({ id: "0001", related: null }));
+    expect(clear.isError).toBe(false);
+    expect(rawFile("Op target")).not.toMatch(/^related:/m);
+  });
+
+  it("exact arrays reach the store boundary: duplicates are the store's error", async () => {
+    seed(tmp, "0001", { title: "Op dup" });
+    const res = await run(editOp({ id: "0001", related: ["0002", "0002"] }));
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain("more than once");
+  });
+
+  it("invalid ids and self-links surface the standard captured validation error", async () => {
+    seed(tmp, "0001", { title: "Op invalid" });
+    const prefix = await run(editOp({ id: "0001", related: ["12"] }));
+    expect(prefix.isError).toBe(true);
+    expect(prefix.text).toContain("not a valid engram id");
+
+    const self = await run(editOp({ id: "0001", related: ["0001"] }));
+    expect(self.isError).toBe(true);
+    expect(self.text).toContain("itself");
+    expect(rawFile("Op invalid")).not.toMatch(/^related:/m);
+  });
+
+  it("a missing same-scope target stays a successful advisory write", async () => {
+    const res = await run(addOp({ title: "Op dangle", body: "b", related: ["0099"] }));
+    expect(res.isError).toBe(false);
+    expect(rawFile("Op dangle")).toMatch(/- "0099"/);
+  });
+
+  it("showOp prints one ordered related header line, or none when unset", async () => {
+    seed(tmp, "0001", { title: "Op shown", related: undefined });
+    seed(tmp, "0002", { title: "Op linked" });
+    await run(editOp({ id: "0001", related: ["0002", "0099"] }));
+
+    const shown = await run(showOp({ id: "0001" }));
+    expect(shown.isError).toBe(false);
+    expect(shown.text).toContain("related: 0002, 0099");
+    expect(shown.text.split("\n").filter((l) => l.startsWith("related:"))).toHaveLength(1);
+
+    await run(editOp({ id: "0001", related: null }));
+    const cleared = await run(showOp({ id: "0001" }));
+    expect(cleared.text).not.toMatch(/^related:/m);
+  });
+});
+
+describe("shared ops / showOp related header budget (ENG-42 turn 2)", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject("note");
+    home = mkHome();
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    if (origHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = origHome;
+    }
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  /** A valid 26-character generated-style id (digits then base32 'a's). */
+  const wideId = (n: number): string => (String(1000 + n) + "a".repeat(26)).slice(0, 26);
+
+  const writeWide = (relatedCount: number, bodyTail = ""): void => {
+    const ids = Array.from({ length: relatedCount }, (_, i) => wideId(i));
+    const fm = [
+      "---",
+      'id: "0001"',
+      'title: "Wide linked"',
+      "type: note",
+      "tags: []",
+      "scope: project",
+      "created: 2026-08-16T10:00:00.000Z",
+      "updated: 2026-08-16T10:00:00.000Z",
+      "related:",
+      ...ids.map((i) => `  - "${i}"`),
+      "---",
+      "start-of-body",
+      bodyTail,
+      "end-of-body",
+      "",
+    ].join("\n");
+    fs.writeFileSync(path.join(projectEngramsDir(tmp), "0001-wide-linked.md"), fm);
+  };
+
+  it("a very long related list cannot squeeze the body out of the show budget", async () => {
+    // ~400 x 28 chars of related header previously pushed the header past
+    // MAX_RESULT_CHARS - footerReserve, zeroing the body slice and dropping
+    // the continuation footer entirely.
+    writeWide(400, "x".repeat(11000));
+    const first = await run(showOp({ id: "0001" }));
+    expect(first.isError).toBe(false);
+    expect(first.text).toContain("start-of-body");
+    expect(first.text).toContain("(body truncated");
+    expect(first.details.nextOffset).toBeGreaterThan(0);
+    // the line is bounded with an explicit remainder marker, never silently cut
+    expect(first.text).toMatch(/related: .*\u2026 \(\+\d+ more\)/);
+    expect(first.text).not.toContain(wideId(399));
+    // the elided ids stay retrievable through the op's machine-readable
+    // details: the full exact list, in stored order, on every page
+    expect(first.details.related).toEqual(Array.from({ length: 400 }, (_, i) => wideId(i)));
+
+    // the continuation offset makes the rest of the body reachable
+    const second = await run(showOp({ id: "0001", offset: first.details.nextOffset as number }));
+    expect(second.isError).toBe(false);
+    expect(second.details.related).toEqual(first.details.related);
+    expect(second.text).toContain("end-of-body");
+  });
+
+  it("a related line within the header budget renders every id without a marker", async () => {
+    writeWide(10);
+    const res = await run(showOp({ id: "0001" }));
+    expect(res.isError).toBe(false);
+    const ids = Array.from({ length: 10 }, (_, i) => wideId(i));
+    expect(res.text).toContain(`related: ${ids.join(", ")}`);
+    expect(res.text).not.toMatch(/\(\+\d+ more\)/);
+    expect(res.text).toContain("start-of-body");
+    expect(res.text).toContain("end-of-body");
+    expect(res.details.nextOffset).toBeNull();
+    expect(res.details.related).toEqual(ids);
+  });
+});

@@ -146,6 +146,8 @@ const toEngram = (
   pinned: fm.pinned ?? false,
   status: fm.status,
   supersedes: fm.supersedes,
+  // copy at the model boundary: the Engram never shares the parsed YAML array
+  related: fm.related === undefined ? undefined : [...fm.related],
   reviewAfter: fm.reviewAfter,
   expires: fm.expires,
   sourceType: fm.sourceType,
@@ -181,6 +183,10 @@ function serialize(m: Engram): string {
    * unusual-but-valid value must not be silently discarded here. */
   if (m.status !== undefined) data.status = m.status;
   if (m.supersedes !== undefined) data.supersedes = m.supersedes;
+  /* ENG-42: emit the related list only when defined, so a cleared value and
+   * an absent value both produce no key. An explicitly empty array is a
+   * concrete value and serializes as `related: []`. */
+  if (m.related !== undefined) data.related = [...m.related];
   if (m.reviewAfter !== undefined) data.reviewAfter = m.reviewAfter;
   if (m.expires !== undefined) data.expires = m.expires;
   if (m.sourceType !== undefined) data.sourceType = m.sourceType;
@@ -191,11 +197,13 @@ function serialize(m: Engram): string {
   return stringifyFrontmatter(m.body ? m.body + "\n" : "", mergeUnknownFields(data, m.metadata));
 }
 
-/** Three-state lifecycle patch merge: `undefined` preserves the current
- * value, `null` clears it (becomes absent, never serialized), and a
- * concrete value replaces it. Explicit branches keep null and preserve
- * distinct; defaulting operators like `??` would collapse them. */
-const applyLifecyclePatch = <T>(
+/** Three-state optional-field patch merge: `undefined` preserves the current
+ * value, `null` clears it (becomes absent, never serialized), and a concrete
+ * value replaces it. Renamed from `applyLifecyclePatch` for ENG-42: it now
+ * also carries the three-state `related` list, which is metadata rather than
+ * lifecycle state. Explicit branches keep null and preserve distinct;
+ * defaulting operators like `??` would collapse them. */
+const applyOptionalPatch = <T>(
   current: T | undefined,
   instruction: T | null | undefined,
 ): T | undefined => {
@@ -255,6 +263,25 @@ export const lifecycleDiagnostics = (
       message: `supersedes "${m.supersedes}" does not match any entry in the ${context.scope} store`,
       hint: 'Check the id, add the older entry it replaces, or remove "supersedes" if the predecessor no longer applies.',
     });
+  }
+  /* ENG-42: one advisory warning per related id absent from this scan's
+   * same-scope claimed-id set (partial ids included, so a target claimed by
+   * an otherwise-invalid file still counts as present). The other scope is
+   * never consulted: a wrong-scope link must warn, not vanish. Forward
+   * references and post-deletion dangles are expected; warnings never omit
+   * the entry. Surviving lists cannot contain duplicates (hard validation),
+   * so one pass emits at most one warning per id, in list order. */
+  if (m.related !== undefined) {
+    for (const relatedId of m.related) {
+      if (!context.knownIds.has(relatedId)) {
+        out.push({
+          ...base,
+          code: "related_not_found",
+          message: `related "${relatedId}" does not match any entry in the ${context.scope} store`,
+          hint: 'Check the id, add the missing entry, or edit "related" to remove it. Missing targets are advisory: the entry still reads and checks stay green.',
+        });
+      }
+    }
   }
   const reviewMs = m.reviewAfter === undefined ? undefined : parseTimestamp(m.reviewAfter);
   if (reviewMs !== undefined && reviewMs <= context.nowMs) {
@@ -647,6 +674,7 @@ const makeEngramStoreLive = (
             pinned: input.pinned,
             status: input.status,
             supersedes: input.supersedes,
+            related: input.related === undefined ? undefined : [...input.related],
             reviewAfter: input.reviewAfter,
             expires: input.expires,
             sourceType: input.sourceType,
@@ -894,12 +922,21 @@ const makeEngramStoreLive = (
             body: patch.body !== undefined ? patch.body.trim() : mem.body,
             pinned: patch.pinned ?? mem.pinned,
             author: patch.author !== undefined ? patch.author : mem.author,
-            status: applyLifecyclePatch(mem.status, patch.status),
-            supersedes: applyLifecyclePatch(mem.supersedes, instruction),
-            reviewAfter: applyLifecyclePatch(mem.reviewAfter, patch.reviewAfter),
-            expires: applyLifecyclePatch(mem.expires, patch.expires),
-            sourceType: applyLifecyclePatch(mem.sourceType, patch.sourceType),
-            sourceRef: applyLifecyclePatch(mem.sourceRef, patch.sourceRef),
+            status: applyOptionalPatch(mem.status, patch.status),
+            supersedes: applyOptionalPatch(mem.supersedes, instruction),
+            /* ENG-42: three-state related merge with no target lookup and no
+             * reciprocal mutation; a replacement array is copied so the
+             * stored model never shares a caller-owned list. */
+            related: applyOptionalPatch(
+              mem.related,
+              patch.related === undefined || patch.related === null
+                ? patch.related
+                : [...patch.related],
+            ),
+            reviewAfter: applyOptionalPatch(mem.reviewAfter, patch.reviewAfter),
+            expires: applyOptionalPatch(mem.expires, patch.expires),
+            sourceType: applyOptionalPatch(mem.sourceType, patch.sourceType),
+            sourceRef: applyOptionalPatch(mem.sourceRef, patch.sourceRef),
             updated: nowISO(),
           };
           const file = path.join(dir, `${next.id}-${slugify(next.title)}.md`);

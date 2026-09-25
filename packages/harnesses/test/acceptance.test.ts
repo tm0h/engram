@@ -349,3 +349,89 @@ describe("PR1 acceptance / first-request delivery", () => {
     expect(occurrences(out2.system[0])).toBe(1);
   });
 });
+
+describe("PR1 acceptance / related link flow (ENG-42)", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "engram-accept-rel-home-"));
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    if (origHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = origHome;
+    }
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("both adapters drive an add-show-edit-clear related flow", async () => {
+    seed(tmp, "0001", { title: "Rel flow target" });
+
+    // Pi: add with a related id, show the header, clear, show again
+    const { pi, tools } = fakePi();
+    engramExtension(pi);
+    const added = (await tools.get("engram_add").execute("c1", {
+      title: "Rel flow source",
+      body: "b",
+      related: ["0001"],
+    })) as { isError: boolean; details: Record<string, unknown>; content: Array<{ text: string }> };
+    expect(added.isError).toBe(false);
+    const addedId = added.details.id as string;
+
+    const shown = (await tools.get("engram_show").execute("c2", { id: addedId })) as {
+      isError: boolean;
+      content: Array<{ text: string }>;
+    };
+    expect(shown.isError).toBe(false);
+    expect(shown.content[0].text).toContain("related: 0001");
+
+    const cleared = (await tools.get("engram_edit").execute("c3", {
+      id: addedId,
+      related: null,
+    })) as { isError: boolean };
+    expect(cleared.isError).toBe(false);
+    const shown2 = (await tools.get("engram_show").execute("c4", { id: addedId })) as {
+      content: Array<{ text: string }>;
+    };
+    expect(shown2.content[0].text).not.toMatch(/^related:/m);
+
+    // OpenCode: the same contract through the plugin tool map
+    const hooks = (await engramPlugin({
+      directory: tmp,
+      worktree: tmp,
+    } as never)) as Record<string, any>;
+    const ocAdded = await hooks.tool.engram_add.execute(
+      { title: "Rel flow source 2", body: "b", related: ["0001"] },
+      { sessionID: "rel", directory: tmp },
+    );
+    expect(ocAdded.metadata.isError).toBe(false);
+    const ocId = ocAdded.metadata.id as string;
+
+    const ocShown = await hooks.tool.engram_show.execute(
+      { id: ocId },
+      { sessionID: "rel", directory: tmp },
+    );
+    expect(ocShown.output).toContain("related: 0001");
+
+    const ocCleared = await hooks.tool.engram_edit.execute(
+      { id: ocId, related: null },
+      { sessionID: "rel", directory: tmp },
+    );
+    expect(ocCleared.metadata.isError).toBe(false);
+    const ocShown2 = await hooks.tool.engram_show.execute(
+      { id: ocId },
+      { sessionID: "rel", directory: tmp },
+    );
+    expect(ocShown2.output).not.toMatch(/^related:/m);
+  });
+});

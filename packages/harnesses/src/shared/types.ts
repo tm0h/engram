@@ -61,6 +61,9 @@ export interface AddOptions {
    * add surface). */
   readonly status?: Status;
   readonly supersedes?: string;
+  /** ENG-42: exact same-scope ids, stored as given (order preserved,
+   * duplicates rejected); missing targets are advisory. */
+  readonly related?: ReadonlyArray<string>;
   readonly reviewAfter?: string;
   readonly expires?: string;
   readonly sourceType?: SourceType;
@@ -74,9 +77,10 @@ export interface AddOptions {
  * Ordinary fields (title, type, tags, body, pinned, author): omitted means
  * unchanged. The six lifecycle fields are three-state: omitted/undefined
  * preserves, `null` clears (the YAML key disappears), a concrete value
- * replaces. Only the closed enums (type, status, sourceType) are checked
- * here; timestamp, id, and sourceRef semantics stay at the store write
- * boundary. */
+ * replaces. ENG-42 `related` is three-state the same way, with an array
+ * meaning whole-list replacement. Only the closed enums (type, status,
+ * sourceType) are checked here; timestamp, id, and sourceRef semantics stay
+ * at the store write boundary. */
 export interface EditOptions {
   readonly id: string;
   readonly scope?: Scope;
@@ -88,6 +92,8 @@ export interface EditOptions {
   readonly author?: string;
   readonly status?: Status | null;
   readonly supersedes?: string | null;
+  /** ENG-42: undefined preserves, null clears, an array replaces the list. */
+  readonly related?: ReadonlyArray<string> | null;
   readonly reviewAfter?: string | null;
   readonly expires?: string | null;
   readonly sourceType?: SourceType | null;

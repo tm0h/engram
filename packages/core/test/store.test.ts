@@ -3550,3 +3550,512 @@ describe("EngramStore / entry schemaVersion (ENG-41)", () => {
     },
   );
 });
+
+/* ------------------------------------------------------------------ */
+/* ENG-42: same-scope related links                                    */
+/* ------------------------------------------------------------------ */
+
+describe("EngramStore / ENG-42 related", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "amem-related-home-"));
+    process.chdir(tmp);
+    process.env.HOME = home;
+    fs.mkdirSync(globalEngramsDir(), { recursive: true });
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const dir = (): string => projectEngramsDir(tmp);
+
+  const BASE = {
+    id: "0001",
+    title: "Linked note",
+    type: "note",
+    tags: ["a"],
+    scope: "project",
+    created: "2025-08-15T10:00:00.000Z",
+    updated: "2025-08-15T11:00:00.000Z",
+  };
+
+  const seed = (name: string, fm: Record<string, unknown>, body = "Body\n"): string => {
+    const file = path.join(dir(), name);
+    fs.writeFileSync(file, stringifyFrontmatter(body, fm));
+    return file;
+  };
+
+  const readData = (file: string): Record<string, unknown> =>
+    (Option.getOrUndefined(Result.getSuccess(parseFrontmatter(fs.readFileSync(file, "utf8"))))
+      ?.data ?? {}) as Record<string, unknown>;
+
+  const bytes = (file: string): string => fs.readFileSync(file, "utf8");
+
+  /* ------------------------ model + write boundary ------------------------ */
+
+  it.live("add round-trips an ordered list through get and the file", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const m = yield* store.add(
+        "project",
+        input({ title: "Source entry", related: ["0002", "0003"] }),
+        NOSCAN,
+      );
+      expect(m.related).toEqual(["0002", "0003"]);
+      expect((yield* store.get("project", m.id)).related).toEqual(["0002", "0003"]);
+      expect(readData(m.path).related).toEqual(["0002", "0003"]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("add omits the key entirely when related is undefined", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const m = yield* store.add("project", input({ title: "Unlinked" }), NOSCAN);
+      expect(readData(m.path)).not.toHaveProperty("related");
+      expect(bytes(m.path)).not.toMatch(/^related:/m);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("add serializes an explicitly empty list", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const m = yield* store.add("project", input({ title: "Empty list", related: [] }), NOSCAN);
+      expect(readData(m.path).related).toEqual([]);
+      expect((yield* store.get("project", m.id)).related).toEqual([]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("update is three-state: omission preserves, value replaces, null clears", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0001-linked-note.md", { ...BASE, related: ["0002", "0003"] });
+
+      // undefined preserves
+      const kept = yield* store.update("project", "0001", { body: "Kept\n" }, NOSCAN);
+      expect(readData(kept.path).related).toEqual(["0002", "0003"]);
+
+      // a value replaces the whole list, order preserved
+      const replaced = yield* store.update(
+        "project",
+        "0001",
+        { related: ["0004", "0005"] },
+        NOSCAN,
+      );
+      expect(readData(replaced.path).related).toEqual(["0004", "0005"]);
+
+      // null clears: the key disappears from the YAML
+      const cleared = yield* store.update("project", "0001", { related: null }, NOSCAN);
+      expect(readData(cleared.path)).not.toHaveProperty("related");
+      expect(bytes(cleared.path)).not.toMatch(/^related:/m);
+      expect((yield* store.get("project", "0001")).related).toBeUndefined();
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("update preserves an explicitly empty list as a concrete value", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0001-linked-note.md", { ...BASE, related: ["0002"] });
+
+      const emptied = yield* store.update("project", "0001", { related: [] }, NOSCAN);
+      expect(readData(emptied.path).related).toEqual([]);
+      expect((yield* store.get("project", "0001")).related).toEqual([]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("caller-owned arrays are copied at both write boundaries", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const caller = ["0002", "0003"];
+      const added = yield* store.add(
+        "project",
+        input({ title: "Copy check", related: caller }),
+        NOSCAN,
+      );
+      caller.push("0004");
+      expect((yield* store.get("project", added.id)).related).toEqual(["0002", "0003"]);
+
+      const patchRelated = ["0005", "0006"];
+      yield* store.update("project", added.id, { related: patchRelated }, NOSCAN);
+      patchRelated.push("0007");
+      // a second write re-serializes the stored model, never the caller array
+      const again = yield* store.update("project", added.id, { body: "Again\n" }, NOSCAN);
+      expect(readData(again.path).related).toEqual(["0005", "0006"]);
+      expect(again.related).toEqual(["0005", "0006"]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("every invalid shape is rejected at the write boundary without mutation", () => {
+    const bads: ReadonlyArray<unknown> = [
+      "0002", // bare string
+      [7], // non-string member
+      [null],
+      [""], // empty id
+      ["12"], // prefix
+      ["0002", "0002"], // adjacent duplicate
+      ["0002", "0003", "0002"], // non-adjacent duplicate
+    ];
+    return Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0001-linked-note.md", { ...BASE });
+      const before = snapshot(dir());
+      for (const related of bads) {
+        const addE = yield* Effect.flip(
+          store.add(
+            "project",
+            { ...input({ title: "Bad add" }), related } as unknown as EngramInput,
+            NOSCAN,
+          ),
+        );
+        expect((addE as { _tag: string })._tag, `add ${JSON.stringify(related)}`).toBe(
+          "FrontmatterParseError",
+        );
+        expect(snapshot(dir()), `add ${JSON.stringify(related)}`).toBe(before);
+
+        const updE = yield* Effect.flip(
+          store.update("project", "0001", { related } as unknown as EngramPatch, NOSCAN),
+        );
+        expect((updE as { _tag: string })._tag, `update ${JSON.stringify(related)}`).toBe(
+          "FrontmatterParseError",
+        );
+        expect(snapshot(dir()), `update ${JSON.stringify(related)}`).toBe(before);
+      }
+      // a retitle update with an invalid list is also rejected, old file intact
+      const e = yield* Effect.flip(
+        store.update(
+          "project",
+          "0001",
+          { title: "Renamed", related: ["nope"] } as unknown as EngramPatch,
+          NOSCAN,
+        ),
+      );
+      expect((e as { _tag: string })._tag).toBe("FrontmatterParseError");
+      expect(snapshot(dir())).toBe(before);
+    }).pipe(Effect.provide(StoreLive));
+  });
+
+  it.live("self-link and duplicate rejections name the defect at the boundary", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0001-linked-note.md", { ...BASE });
+
+      const self = yield* Effect.flip(
+        store.update("project", "0001", { related: ["0001"] } as EngramPatch, NOSCAN),
+      );
+      expect((self as { message: string }).message).toContain("itself");
+
+      const dup = yield* Effect.flip(
+        store.update("project", "0001", { related: ["0002", "0002"] } as EngramPatch, NOSCAN),
+      );
+      expect((dup as { message: string }).message).toContain("more than once");
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  /* --------------------------- scan diagnostics --------------------------- */
+
+  it.live("an existing same-scope target produces no warning", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0002-target-entry.md", { ...BASE, id: "0002", title: "Target entry" });
+      seed("0001-linked-note.md", { ...BASE, related: ["0002"] });
+      const scanned = yield* store.scan("project");
+      expect(scanned.diagnostics).toEqual([]);
+      expect(scanned.omittedFiles).toBe(0);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("a forward reference warns until the target exists, then stops", () =>
+    Effect.gen(function* () {
+      const source = seed("0001-linked-note.md", { ...BASE, related: ["0002"] });
+      const store = yield* EngramStore;
+
+      const before = yield* store.scan("project");
+      expect(before.omittedFiles).toBe(0);
+      expect(before.entries.map((m) => m.id)).toEqual(["0001"]); // source retained
+      expect(before.diagnostics).toHaveLength(1);
+      expect(before.diagnostics[0]).toMatchObject({
+        code: "related_not_found",
+        severity: "warning",
+        scope: "project",
+        file: source,
+      });
+      expect(before.diagnostics[0].message).toContain('"0002"');
+      expect(before.diagnostics[0].hint.length).toBeGreaterThan(0);
+
+      seed("0002-later-target.md", { ...BASE, id: "0002", title: "Later target" });
+      const after = yield* store.scan("project");
+      expect(after.diagnostics).toEqual([]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("a post-deletion dangle warns and keeps the source entry", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const target = seed("0002-target-entry.md", { ...BASE, id: "0002", title: "Target entry" });
+      seed("0001-linked-note.md", { ...BASE, related: ["0002"] });
+      yield* store.remove("project", "0002");
+      expect(fs.existsSync(target)).toBe(false);
+
+      const scanned = yield* store.scan("project");
+      expect(scanned.entries.map((m) => m.id)).toEqual(["0001"]);
+      expect(scanned.diagnostics.map((d) => [d.code, d.severity])).toEqual([
+        ["related_not_found", "warning"],
+      ]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("one warning per missing id in one deterministic scan order", () =>
+    Effect.gen(function* () {
+      seed("0001-linked-note.md", {
+        ...BASE,
+        related: ["0008", "0002", "0009"],
+      });
+      const store = yield* EngramStore;
+
+      const scanned = yield* store.scan("project");
+      const relatedWarnings = scanned.diagnostics.filter((d) => d.code === "related_not_found");
+      expect(relatedWarnings).toHaveLength(3);
+      // the scan sorts a file's findings by message, so the ids emerge in
+      // id order regardless of list order; list order is pinned on the pure
+      // helper below
+      expect(relatedWarnings.map((d) => d.message)).toEqual([
+        expect.stringContaining('"0002"'),
+        expect.stringContaining('"0008"'),
+        expect.stringContaining('"0009"'),
+      ]);
+      expect(relatedWarnings.map((d) => d.scope)).toEqual(["project", "project", "project"]);
+      expect(scanned.omittedFiles).toBe(0);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it("lifecycleDiagnostics emits related warnings in related order, after supersedes", () => {
+    const entry: Engram = {
+      id: "0001",
+      title: "Linked",
+      type: "note",
+      tags: [],
+      scope: "project",
+      created: "2025-08-15T10:00:00.000Z",
+      updated: "2025-08-15T11:00:00.000Z",
+      author: undefined,
+      pinned: false,
+      schemaVersion: 1,
+      body: "",
+      path: "/store/0001-linked.md",
+      supersedes: "0098",
+      related: ["0009", "0008"],
+    };
+    const out = lifecycleDiagnostics(entry, {
+      scope: "project",
+      file: entry.path,
+      nowMs: Date.parse("2026-01-01T00:00:00.000Z"),
+      knownIds: new Set(),
+    });
+    expect(out.map((d) => [d.code, d.severity])).toEqual([
+      ["supersedes_not_found", "warning"],
+      ["related_not_found", "warning"],
+      ["related_not_found", "warning"],
+    ]);
+    expect(out[1].message).toContain('"0009"');
+    expect(out[2].message).toContain('"0008"');
+  });
+
+  it.live("warnings order deterministically across files by path, then id", () =>
+    Effect.gen(function* () {
+      seed("0007-second-source.md", {
+        ...BASE,
+        id: "0007",
+        title: "Second source",
+        related: ["0009"],
+      });
+      seed("0001-linked-note.md", { ...BASE, related: ["0009", "0008"] });
+      const store = yield* EngramStore;
+
+      const scanned = yield* store.scan("project");
+      expect(scanned.diagnostics.map((d) => [d.file, d.message])).toEqual([
+        [path.join(dir(), "0001-linked-note.md"), expect.stringContaining('"0008"')],
+        [path.join(dir(), "0001-linked-note.md"), expect.stringContaining('"0009"')],
+        [path.join(dir(), "0007-second-source.md"), expect.stringContaining('"0009"')],
+      ]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("a target claimed by an otherwise-invalid file still counts as present", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      // the claimant's id is a valid partial claim, but its title is empty
+      seed("0002-target-entry.md", { ...BASE, id: "0002", title: " " });
+      seed("0001-linked-note.md", { ...BASE, related: ["0002"] });
+
+      const scanned = yield* store.scan("project");
+      expect(scanned.diagnostics.some((d) => d.code === "related_not_found")).toBe(false);
+      expect(scanned.diagnostics.some((d) => d.code === "title_invalid")).toBe(true);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("an id present only in the opposite scope warns in the scanning scope", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      // project-only target, personal source
+      fs.writeFileSync(
+        path.join(globalEngramsDir(), "0001-personal-link.md"),
+        stringifyFrontmatter("Body\n", {
+          ...BASE,
+          id: "0001",
+          title: "Personal link",
+          scope: "personal",
+          related: ["0002"],
+        }),
+      );
+      seed("0002-target-entry.md", { ...BASE, id: "0002", title: "Target entry" });
+
+      const personal = yield* store.scan("personal");
+      expect(personal.diagnostics.map((d) => [d.code, d.scope])).toEqual([
+        ["related_not_found", "personal"],
+      ]);
+
+      // and the reverse: personal-only target, project source
+      fs.rmSync(path.join(dir(), "0002-target-entry.md"));
+      fs.writeFileSync(
+        path.join(globalEngramsDir(), "0002-personal-target.md"),
+        stringifyFrontmatter("Body\n", {
+          ...BASE,
+          id: "0002",
+          title: "Personal target",
+          scope: "personal",
+        }),
+      );
+      seed("0003-project-source.md", {
+        ...BASE,
+        id: "0003",
+        title: "Project source",
+        related: ["0002"],
+      });
+      const project = yield* store.scan("project");
+      expect(project.diagnostics.map((d) => [d.code, d.scope])).toEqual([
+        ["related_not_found", "project"],
+      ]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("duplicate related ids stay hard validation errors, not repeated warnings", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0002-target-entry.md", { ...BASE, id: "0002", title: "Target entry" });
+      seed("0001-linked-note.md", { ...BASE, related: ["0002", "0002"] });
+
+      const scanned = yield* store.scan("project");
+      expect(scanned.entries.map((m) => m.id)).toEqual(["0002"]); // target retained
+      expect(scanned.omittedFiles).toBe(1); // the duplicate-listing source
+      expect(scanned.diagnostics.map((d) => [d.code, d.severity])).toEqual([
+        ["duplicate_relation", "error"],
+      ]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  /* ----------------- byte-level reciprocal-write regression ----------------- */
+
+  it.live("adding or updating a related list never writes a reciprocal key to a target", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const t1 = seed("0002-first-target.md", { ...BASE, id: "0002", title: "First target" });
+      const t2 = seed("0003-second-target.md", { ...BASE, id: "0003", title: "Second target" });
+      const t1Before = bytes(t1);
+      const t2Before = bytes(t2);
+
+      const added = yield* store.add(
+        "project",
+        input({ title: "Source entry", related: ["0002", "0003"] }),
+        NOSCAN,
+      );
+      expect(bytes(t1)).toBe(t1Before);
+      expect(bytes(t2)).toBe(t2Before);
+      expect(bytes(t1)).not.toMatch(/^related:/m);
+      expect(bytes(t2)).not.toMatch(/^related:/m);
+
+      // replacing the list touches only the source file
+      const replaced = yield* store.update("project", added.id, { related: ["0003"] }, NOSCAN);
+      expect(bytes(t1)).toBe(t1Before);
+      expect(bytes(t2)).toBe(t2Before);
+      expect(replaced.path).toBe(added.path);
+      expect(readData(replaced.path).related).toEqual(["0003"]);
+
+      // clearing too
+      const cleared = yield* store.update("project", added.id, { related: null }, NOSCAN);
+      expect(bytes(t1)).toBe(t1Before);
+      expect(bytes(t2)).toBe(t2Before);
+      expect(readData(cleared.path)).not.toHaveProperty("related");
+
+      // a retitle rename does not touch targets either
+      const renamed = yield* store.update("project", added.id, { title: "Renamed source" }, NOSCAN);
+      expect(renamed.path).toContain("renamed-source");
+      expect(bytes(t1)).toBe(t1Before);
+      expect(bytes(t2)).toBe(t2Before);
+      expect(fs.readdirSync(dir()).sort()).toEqual(
+        ["0002-first-target.md", "0003-second-target.md", path.basename(renamed.path)].sort(),
+      );
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  /* ----------------- ENG-40/ENG-41 integration (step 8) ----------------- */
+
+  it.live("a legacy related value written as an unknown field becomes modeled on rewrite", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0002-target-entry.md", { ...BASE, id: "0002", title: "Target entry" });
+      const file = seed("0001-linked-note.md", {
+        ...BASE,
+        related: ["0002"],
+        confidence: "high",
+      });
+
+      const scanned = yield* store.scan("project");
+      expect(scanned.diagnostics).toEqual([]);
+      expect(scanned.entries[0].related).toEqual(["0002"]);
+      expect(scanned.entries[0].metadata).not.toHaveProperty("related");
+      expect(scanned.entries[0].metadata).toMatchObject({ confidence: "high" });
+
+      const patched = yield* store.update("project", "0001", { body: "Edited\n" }, NOSCAN);
+      expect(readData(patched.path).related).toEqual(["0002"]);
+      expect(readData(patched.path)).toMatchObject({ confidence: "high" });
+      expect(bytes(patched.path).match(/^related:/gm)).toHaveLength(1);
+      void file;
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("related defects keep ENG-41 severity semantics on unsupported schema versions", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0002-target-entry.md", { ...BASE, id: "0002", title: "Target entry" });
+      // valid related + unsupported version: warning only, entry retained
+      seed("0001-linked-note.md", { ...BASE, schemaVersion: 99, related: ["0002"] });
+      const kept = yield* store.scan("project");
+      expect(kept.omittedFiles).toBe(0);
+      expect(kept.entries[0].related).toEqual(["0002"]);
+      expect(kept.diagnostics.map((d) => [d.code, d.severity])).toEqual([
+        ["schema_version_unsupported", "warning"],
+      ]);
+
+      // malformed related + unsupported version: the related code is the
+      // entry-preventing error; the version warning is unchanged
+      seed("0001-linked-note.md", { ...BASE, schemaVersion: 99, related: "nope" });
+      const rejected = yield* store.scan("project");
+      expect(rejected.entries.map((m) => m.id)).toEqual(["0002"]); // target retained
+      expect(rejected.omittedFiles).toBe(1);
+      expect(rejected.diagnostics.map((d) => `${d.code}:${d.severity}`).sort()).toEqual([
+        "related_invalid:error",
+        "schema_version_unsupported:warning",
+      ]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+});

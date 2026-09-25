@@ -92,11 +92,18 @@ Do **not** record:
 `reviewAfter`, `expires`, `sourceType`, `sourceRef`. Omit them unless they
 add real information.
 
+`related` links related knowledge: `--related 0002,0007` stores an ordered
+list of exact same-scope entry ids under the YAML key `related`. Links are
+directional one-way metadata: no reciprocal link is written to the target,
+and a missing target is only a `related_not_found` warning, so forward
+references are fine. Prefixes are not ids; use exact ids.
+
 `engram edit <id>` changes an existing entry: title, type, tags, body,
 pinned, author, and every lifecycle field. A passed value replaces the
 current one; omitting a flag preserves it; each of the six lifecycle fields
 clears through its paired `--clear-*` flag. Quote multiword values
-(`--title "Two words"`).
+(`--title "Two words"`). `--related` replaces the whole list and
+`--clear-related` removes it.
 
 ```bash
 engram edit 0012 --clear-status --clear-review-after
