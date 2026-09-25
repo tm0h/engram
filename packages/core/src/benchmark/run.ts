@@ -30,7 +30,7 @@ import { evaluateCase } from "@engram/core/corpus";
 import { ContractCorpusAdapter, DEFAULT_CORPUS_DIR } from "./adapter.js";
 import { round6 } from "./metrics.js";
 import { runBenchmark } from "./runner.js";
-import type { MetricReport, QueryMetrics } from "./types.js";
+import type { BenchmarkResult, MetricReport, QueryMetrics } from "./types.js";
 
 export const K_VALUES = [1, 3, 5];
 
@@ -141,9 +141,43 @@ export function runRepoBenchmark(): RepoBenchmarkJson {
   }
   const input = adapter.toRunInput(loaded);
   const result = runBenchmark(evaluateCase, input, { kValues: K_VALUES, abstainThreshold: 0 });
+  return buildBenchmarkJson(result, {
+    contractHash: `sha256:${corpusSnapshotHash()}`,
+    generatedAtUtc: new Date().toISOString(),
+  });
+}
+
+const TOLERANCES_TEXT =
+  "Gate semantics: identical corpus identity and config (corpusVersion, schemaVersion, " +
+  "contract hash, kValues, abstain threshold) and identical case sets are required. Fail " +
+  "on any outcome regression (baseline pass -> live miss); fail on any per-case data " +
+  "change on non-improvement cases (full row: ranked ids, counts, rendered chars, recall, " +
+  "precision, reciprocal rank; still-missing cases included); fail on any aggregate metric " +
+  "drift not exactly attributable to improvements (expected aggregates are recomputed from " +
+  "baseline rows with improvement rows replaced by live rows; latency excluded). " +
+  "Improvements (baseline miss -> live pass) are surfaced with their attributable aggregate " +
+  "deltas and never block, including improvements on recorded measuredMisses; they trigger " +
+  "the regeneration policy: explicit review of the full delta, regressions require leader " +
+  "disposition, corpus labels are never edited to make a ranker pass. Unchanged misses " +
+  "are measured retrieval limitations of the wired search and stay visible.";
+
+const LIMITATIONS_TEXT =
+  "Measured retrieval limitations of the wired search on this corpus snapshot. " +
+  "They are recorded data, not corpus failures: labels are never edited to make " +
+  "a ranker pass, and regressions vs a checked-in baseline require leader disposition.";
+
+/** Build the persisted benchmark JSON from a completed run. Deterministic
+ * apart from the injected identity values (real runs pass the corpus
+ * snapshot hash and the wall-clock instant); latency is stripped here, so
+ * the emitted JSON records no timing samples (see RepoBenchmarkJson.metrics
+ * and the PR #43 timing-churn review). */
+export function buildBenchmarkJson(
+  result: BenchmarkResult,
+  identity: { contractHash: string; generatedAtUtc: string },
+): RepoBenchmarkJson {
   const metrics = stripLatency(result.metrics);
   const cases: RepoBenchmarkJson["cases"] = {};
-  for (const q of result.metrics.perQuery) {
+  for (const q of metrics.perQuery) {
     cases[q.queryId] = {
       category: q.category,
       passed: q.passed,
@@ -162,29 +196,14 @@ export function runRepoBenchmark(): RepoBenchmarkJson {
     benchmark: "engram-retrieval-benchmark",
     corpusVersion: result.corpus.corpusVersion,
     schemaVersion: result.corpus.schemaVersion,
-    contractHash: `sha256:${corpusSnapshotHash()}`,
+    contractHash: identity.contractHash,
     config: { kValues: result.config.kValues, abstainThreshold: result.config.abstainThreshold },
-    generatedAtUtc: new Date().toISOString(),
+    generatedAtUtc: identity.generatedAtUtc,
     metrics,
     comparableMetrics: comparableMetrics(metrics),
-    tolerances:
-      "Gate semantics: identical corpus identity and config (corpusVersion, schemaVersion, " +
-      "contract hash, kValues, abstain threshold) and identical case sets are required. Fail " +
-      "on any outcome regression (baseline pass -> live miss); fail on any per-case data " +
-      "change on non-improvement cases (full row: ranked ids, counts, rendered chars, recall, " +
-      "precision, reciprocal rank; still-missing cases included); fail on any aggregate metric " +
-      "drift not exactly attributable to improvements (expected aggregates are recomputed from " +
-      "baseline rows with improvement rows replaced by live rows; latency excluded). " +
-      "Improvements (baseline miss -> live pass) are surfaced with their attributable aggregate " +
-      "deltas and never block, including improvements on recorded measuredMisses; they trigger " +
-      "the regeneration policy: explicit review of the full delta, regressions require leader " +
-      "disposition, corpus labels are never edited to make a ranker pass. Unchanged misses " +
-      "are measured retrieval limitations of the wired search and stay visible.",
+    tolerances: TOLERANCES_TEXT,
     measuredMisses: Object.keys(cases).filter((id) => !cases[id]!.passed),
-    limitations:
-      "Measured retrieval limitations of the wired search on this corpus snapshot. " +
-      "They are recorded data, not corpus failures: labels are never edited to make " +
-      "a ranker pass, and regressions vs a checked-in baseline require leader disposition.",
+    limitations: LIMITATIONS_TEXT,
     cases,
   };
 }

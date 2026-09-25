@@ -20,7 +20,13 @@ describe("buildBenchmarkJson JSON contract", () => {
     // gate, so the persisted artifact records no timing samples at all.
     const queries = [queryCase({ id: "qx", query: "x", relevantIds: ["e1"] })];
     const outcomes = [
-      outcome({ queryId: "qx", rankedIds: ["e1"], abstained: false, latencyNs: 10, renderedChars: 3 }),
+      outcome({
+        queryId: "qx",
+        rankedIds: ["e1"],
+        abstained: false,
+        latencyNs: 10,
+        renderedChars: 3,
+      }),
     ];
     const metrics = computeMetrics(queries, outcomes, [1], new Map([["e1", engram({ id: "e1" })]]));
     const result: BenchmarkResult = {
