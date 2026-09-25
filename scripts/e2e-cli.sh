@@ -139,6 +139,18 @@ engram search parseHTTPResponse --json |
 engram search 'title:alpha' --json --limit 1 --offset 0 |
   parse_json 'value.total === 2 && value.results.length === 1 && value.nextOffset === 1'
 
+step "Call-form body search"
+callform_output=$(
+  engram add \
+    --title "Call form fixture" \
+    --tags build,release \
+    "The release image step calls exportStatic(outDir) before hashing chunks."
+)
+callform_id=$(printf '%s\n' "$callform_output" | entry_id)
+engram search 'exportStatic(outDir)' --json |
+  parse_json 'value.results.some((item) => item.title === "Call form fixture")'
+engram remove --yes "$callform_id"
+
 step "Edit and lifecycle review"
 engram edit "$replacement_id" \
   --title "Current release database" \
@@ -152,6 +164,30 @@ printf '%s\n' "$review_json" |
 check_json=$(engram check --json)
 printf '%s\n' "$check_json" |
   parse_json 'value.ok === true && value.scopes.includes("project")'
+
+step "Related entry links"
+related_output=$(
+  engram add \
+    --title "Related links probe" \
+    --related "$decision_id" \
+    "This entry links to the release decision."
+)
+related_id=$(printf '%s\n' "$related_output" | entry_id)
+engram show "$related_id" | grep -F "related: $decision_id"
+engram edit "$related_id" --related "$old_id,$decision_id" >/dev/null
+engram show "$related_id" | grep -F "related: $old_id, $decision_id"
+engram edit "$related_id" --clear-related >/dev/null
+if engram show "$related_id" | grep -q 'related:'; then
+  fail "--clear-related left a related line behind"
+fi
+
+# A dangling relation is warning-only: the entry still reads and the check
+# stays green (exit 0) while reporting related_not_found.
+engram edit "$related_id" --related 9999 >/dev/null
+dangling_json="$run_root/dangling-check.json"
+engram check --json >"$dangling_json"
+parse_json 'value.ok === true && value.diagnostics.some((item) => item.code === "related_not_found" && item.severity === "warning")' <"$dangling_json"
+engram remove --yes "$related_id"
 
 step "Lifecycle clearing and validation"
 lifecycle_output=$(
@@ -334,6 +370,62 @@ pipe_status=$?
 set -e
 [[ "$pipe_status" == 141 ]] || fail "early-closing pipe exited ${pipe_status}, expected 141"
 engram remove --yes "$large_id"
+
+step "Host hook install surface"
+hook_home="$run_root/host-home"
+mkdir -p "$hook_home"
+(
+  # ENG-58 respects the hosts' config-dir env overrides, and HOME moves the
+  # engram personal scope; exports stay inside this subshell so the rest of
+  # the audit keeps the container's real home.
+  export HOME="$hook_home"
+  export CLAUDE_CONFIG_DIR="$hook_home/claude-config"
+  export CODEX_HOME="$hook_home/codex-config"
+
+  engram install claude-code --dry-run | grep -F "Dry run: no changes were written."
+  engram install claude-code --status | grep -F "settings.json: absent"
+  engram install codex --status | grep -F "hooks.json: absent"
+  if [[ -n "$(find "$hook_home" -mindepth 1 -print -quit)" ]]; then
+    fail "read-only install views wrote to the isolated home"
+  fi
+
+  engram install claude-code --yes | grep -F "Installed"
+  grep -F "engram hook claude-code startup" "$hook_home/claude-config/settings.json" >/dev/null
+  engram install claude-code --yes |
+    grep -F "Nothing to do: hooks for claude-code are already up to date."
+
+  hook_output=$(engram hook claude-code startup)
+  [[ -n "$hook_output" ]] || fail "claude-code startup hook emitted nothing"
+  hook_bytes=$(printf '%s' "$hook_output" | wc -c)
+  [[ "$hook_bytes" -le 8192 ]] || fail "hook output ${hook_bytes} bytes exceeded the 8 KiB cap"
+
+  # Plant a hand-written foreign entry: uninstall must leave it alone.
+  node -e '
+    const fs = require("fs");
+    const path = process.argv[1];
+    const doc = JSON.parse(fs.readFileSync(path, "utf8"));
+    doc.hooks.SessionStart.push({
+      matcher: "startup",
+      hooks: [{ type: "command", command: "echo foreign-hook", timeout: 10 }],
+    });
+    fs.writeFileSync(path, JSON.stringify(doc, null, 2));
+  ' "$hook_home/claude-config/settings.json"
+
+  engram install claude-code --yes --uninstall | grep -F "Uninstalled"
+  grep -F "echo foreign-hook" "$hook_home/claude-config/settings.json" >/dev/null
+  if grep -F "engram hook claude-code" "$hook_home/claude-config/settings.json" >/dev/null 2>&1; then
+    fail "uninstall left engram-owned entries behind"
+  fi
+
+  engram install codex --yes | grep -F "Installed"
+  grep -F "engram hook codex startup" "$hook_home/codex-config/hooks.json" >/dev/null
+  engram install codex --yes |
+    grep -F "Nothing to do: hooks for codex are already up to date."
+  engram install codex --yes --uninstall | grep -F "Uninstalled"
+  if grep -F "engram hook codex" "$hook_home/codex-config/hooks.json" >/dev/null 2>&1; then
+    fail "codex uninstall left engram-owned entries behind"
+  fi
+)
 
 step "Removal and duplicate no-op"
 engram dedupe --scope project | grep -F "No duplicate ids found"

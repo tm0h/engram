@@ -73,6 +73,9 @@ describe("Docker E2E runner", () => {
       "Secret scanner policies",
       "Duplicate repair",
       "Pipe closure",
+      "Related entry links",
+      "Call-form body search",
+      "Host hook install surface",
     ]) {
       expect(e2e).toContain(`step "${scenario}"`);
     }
@@ -80,11 +83,30 @@ describe("Docker E2E runner", () => {
     expect(e2e).toContain("--clear-review-after");
     expect(e2e).toContain("--clear-supersedes");
     expect(e2e).toContain("--clear-source-ref");
+    expect(e2e).toContain("--clear-related");
+    expect(e2e).toContain("--related");
+    expect(e2e).toContain("related_not_found");
     expect(e2e).toContain("SEC-INJECT-OVERRIDE");
     expect(e2e).toContain("--allow-secrets");
     expect(e2e).toContain("tag:ops AND title:alpha");
     expect(e2e).toContain("engram dedupe --scope project");
     expect(e2e).toContain("head -c 1");
+  });
+
+  it("pins audit coverage for the related, call-form, and hook install surfaces", () => {
+    const e2e = readRepoFile("scripts/e2e-cli.sh");
+
+    expect(e2e).toContain("engram search 'exportStatic(outDir)'");
+    expect(e2e).toContain("CLAUDE_CONFIG_DIR");
+    expect(e2e).toContain("CODEX_HOME");
+    expect(e2e).toContain("engram install claude-code --dry-run");
+    expect(e2e).toContain("engram install claude-code --yes");
+    expect(e2e).toContain("engram install claude-code --yes --uninstall");
+    expect(e2e).toContain("engram install codex --yes");
+    expect(e2e).toContain("engram install codex --yes --uninstall");
+    expect(e2e).toContain("engram hook claude-code startup");
+    expect(e2e).toContain("Dry run: no changes were written.");
+    expect(e2e).toContain("Nothing to do: hooks");
   });
 
   it("exposes executable entry points through the workspace package", () => {
