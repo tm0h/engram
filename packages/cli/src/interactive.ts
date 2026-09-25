@@ -51,6 +51,11 @@ export interface EditedEngram {
   /* ENG-42 same-scope related ids; undefined means the line was absent or
    * blank (add: no list, edit: explicit clear via the command's diff). */
   readonly related?: ReadonlyArray<string> | undefined;
+  /* ENG-42 (turn 3): true only when the document had frontmatter but the
+   * related line itself is missing. The renderer always writes the line, so
+   * a missing line is an explicit user deletion, while a blank line is what
+   * an unchanged save of a stored empty list looks like. */
+  readonly relatedDeleted?: boolean | undefined;
 }
 
 /** Canonical camelCase lifecycle keys, matching the serialized file format
@@ -128,6 +133,7 @@ export const parseEditorDocument = (raw: string): EditedEngram => {
     sourceType: lifecycle("sourceType"),
     sourceRef: lifecycle("sourceRef"),
     related: related.kind === "ids" ? related.ids : undefined,
+    relatedDeleted: !("related" in data) || undefined,
     body: m[2].trim(),
   };
 };

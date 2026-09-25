@@ -8,6 +8,7 @@ import { ENGRAM_TYPES } from "@engram/core";
 import type { Engram, EngramPatch, EngramType } from "@engram/core";
 import { InvalidTypeError, ValidationError } from "@engram/core";
 import { isInteractive, openEditor } from "../interactive.js";
+import type { EditedEngram } from "../interactive.js";
 import { resolveScanOptions, reportScanOutcome } from "../scanPolicy.js";
 import { parseTags } from "@engram/core";
 import { readStdin, out } from "../io.js";
@@ -102,15 +103,19 @@ const lifecyclePatchFromEditor = (
 
 /** Editor-driven ENG-42 related patch (leader note: unchanged-preserves is
  * parsed array equality, so reformatting the line without changing the ids
- * preserves, while reordering or editing replaces, and blanking clears).
- * A stored explicit empty list renders as the same blank line as an absent
- * one, so a blank parse over an empty stored list preserves instead of
- * clearing: the explicit-empty distinction survives an unchanged save
- * (turn 2, PR comment P2). Flags still clear it via --clear-related. */
-const relatedPatchFromEditor = (
-  mem: Engram,
-  next: ReadonlyArray<string> | undefined,
-): Partial<EngramPatch> => {
+ * preserves, while reordering or editing replaces). Semantics by line state
+ * (turn 2 + turn 3, PR comment P2):
+ *   deleted line  -> explicit clear (the renderer always writes the line,
+ *                    so removal is always a user act)
+ *   blank line    -> preserves a stored explicit empty list (an unchanged
+ *                    save of [] renders blank) and clears a populated list
+ *   changed list  -> replaces the whole list
+ * Flags still clear any state via --clear-related. */
+const relatedPatchFromEditor = (mem: Engram, edited: EditedEngram): Partial<EngramPatch> => {
+  if (edited.relatedDeleted === true) {
+    return mem.related !== undefined ? { related: null } : {};
+  }
+  const next = edited.related;
   if (next === undefined) {
     return mem.related !== undefined && mem.related.length > 0 ? { related: null } : {};
   }
@@ -203,7 +208,7 @@ export const editCommand = (id: string, opts: EditOptions) =>
           tags: edited.tags,
           body: edited.body,
           ...lifecyclePatchFromEditor(mem, lifecycle),
-          ...relatedPatchFromEditor(mem, edited.related),
+          ...relatedPatchFromEditor(mem, edited),
         };
       }
     }

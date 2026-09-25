@@ -1327,10 +1327,14 @@ describe("shared ops / showOp related header budget (ENG-42 turn 2)", () => {
     // the line is bounded with an explicit remainder marker, never silently cut
     expect(first.text).toMatch(/related: .*\u2026 \(\+\d+ more\)/);
     expect(first.text).not.toContain(wideId(399));
+    // the elided ids stay retrievable through the op's machine-readable
+    // details: the full exact list, in stored order, on every page
+    expect(first.details.related).toEqual(Array.from({ length: 400 }, (_, i) => wideId(i)));
 
     // the continuation offset makes the rest of the body reachable
     const second = await run(showOp({ id: "0001", offset: first.details.nextOffset as number }));
     expect(second.isError).toBe(false);
+    expect(second.details.related).toEqual(first.details.related);
     expect(second.text).toContain("end-of-body");
   });
 
@@ -1344,5 +1348,6 @@ describe("shared ops / showOp related header budget (ENG-42 turn 2)", () => {
     expect(res.text).toContain("start-of-body");
     expect(res.text).toContain("end-of-body");
     expect(res.details.nextOffset).toBeNull();
+    expect(res.details.related).toEqual(ids);
   });
 });

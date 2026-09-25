@@ -505,6 +505,9 @@ export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, Engram
         nextOffset,
         bodyLength: m.body.length,
         path: m.path,
+        /* ENG-42 (turn 3): the full exact list, so ids elided by the header
+         * budget stay retrievable when the rendered line is truncated. */
+        related: m.related,
       });
     }),
   );

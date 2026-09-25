@@ -291,12 +291,34 @@ describe("engram add/edit related flags", () => {
     await run(editCommand("0001", {}));
     expect(readEntry("0001").data.related).toEqual([]);
 
-    // a changed list still replaces; --clear-related can still remove the key
-    openEditorMock.mockReturnValue(Effect.succeed(edited({ related: ["0002"] })));
+    // deleting the line is still an explicit clear (P2 flip side, turn 3)
+    openEditorMock.mockReturnValue(
+      Effect.succeed(edited({ related: undefined, relatedDeleted: true })),
+    );
     await run(editCommand("0001", {}));
-    expect(readEntry("0001").data.related).toEqual(["0002"]);
-    await run(editCommand("0001", { clearRelated: true, content: "Cleared" }));
     expect(readEntry("0001").data).not.toHaveProperty("related");
+
+    // a second stored-[] entry: a changed editor list still replaces, and
+    // --clear-related still removes the key
+    seedLegacyId("0003", "Empty list three", "empty-list-three");
+    fs.writeFileSync(
+      path.join(engramsDir(), "0003-empty-list-three.md"),
+      stringifyFrontmatter("Body\n", {
+        id: "0003",
+        title: "Empty list three",
+        type: "note",
+        tags: [],
+        scope: "project",
+        created: "2025-08-15T10:00:00.000Z",
+        updated: "2025-08-15T11:00:00.000Z",
+        related: [],
+      }),
+    );
+    openEditorMock.mockReturnValue(Effect.succeed(edited({ related: ["0001"] })));
+    await run(editCommand("0003", {}));
+    expect(readEntry("0003").data.related).toEqual(["0001"]);
+    await run(editCommand("0003", { clearRelated: true, content: "Cleared" }));
+    expect(readEntry("0003").data).not.toHaveProperty("related");
   });
 
   it("the editor on add: a populated line links, a blank line records no key", async () => {
