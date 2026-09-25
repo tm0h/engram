@@ -29,6 +29,11 @@ import * as Inject from "./commands/inject.js";
 import * as Where from "./commands/where.js";
 import * as Dedupe from "./commands/dedupe.js";
 import * as Check from "./commands/check.js";
+// ENG-58 (WU-5 lane): user-level lifecycle hook installation and the
+// fail-open hook entry point. Cross-lane note: this file is shared with
+// WU-1; keep the registration append-only and minimal.
+import * as Install from "./commands/install.js";
+import * as Hook from "./commands/hook.js";
 import { installEpipeGuard } from "./io.js";
 
 // ENG-39: a piped consumer closing stdout/stderr early (e.g. `| head`) must
@@ -366,6 +371,36 @@ program
       }),
     ),
   );
+
+program
+  .command("install <target>")
+  .description(
+    "Install user-level lifecycle hooks for a coding agent host (claude-code | codex). Use --status or --dry-run for read-only views.",
+  )
+  .option("--uninstall", "Remove only engram-owned hook entries for the target.")
+  .option("--status", "Show the current installation state. Never writes.")
+  .option("--dry-run", "Print the exact planned changes. Never writes.")
+  .option("--yes", "Skip the interactive confirmation (required for non-interactive use).")
+  .option("--home <dir>", "Override the user home directory (defaults to your OS home).")
+  .action((target: string, opts: Record<string, string | boolean | undefined>) =>
+    run(
+      Install.installCommand({
+        target,
+        uninstall: Boolean(opts.uninstall),
+        status: Boolean(opts.status),
+        dryRun: Boolean(opts.dryRun),
+        yes: Boolean(opts.yes),
+        home: opts.home as string | undefined,
+      }),
+    ),
+  );
+
+program
+  .command("hook <host> <event>")
+  .description(
+    "Lifecycle hook entry point: print the bounded engram digest for host injection. Always exits 0.",
+  )
+  .action((host: string, event: string) => run(Hook.hookCommand({ host, event })));
 
 program.parseAsync(process.argv).catch((err) => {
   // commander emits its own errors (e.g. unknown command); surface cleanly.

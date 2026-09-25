@@ -116,6 +116,82 @@ describe("engram-cli packaging (pi extension)", () => {
     expect(existsSync(join(pkgDir, "skills", "engram", "SKILL.md"))).toBe(true);
   });
 
+  it("shipped CLI installs and runs ENG-58 hooks from a fresh tarball (ENG-58)", (ctx) => {
+    if (!spawnOk) ctx.skip();
+
+    run(["--filter", "engram-cli", "build"], repoRoot);
+    const parsed = JSON.parse(run(["pack", "--json", "--pack-destination", tmp], pkgDir));
+    const filename = (Array.isArray(parsed) ? parsed[0].filename : parsed.filename) as string;
+    const tarball = join(tmp, basename(filename));
+
+    const installed = join(tmp, "eng58-install-check");
+    mkdirSync(installed, { recursive: true });
+    run(["install", "--ignore-scripts", tarball], installed);
+    const pkgRoot = join(installed, "node_modules", "engram-cli");
+    const bin = join(pkgRoot, "dist", "index.js");
+
+    const home = mkdtempSync(join(tmpdir(), "engram-eng58-home-"));
+    const emptyProject = mkdtempSync(join(tmpdir(), "engram-eng58-proj-"));
+    try {
+      // fresh machine: status is read-only and reports the target absent
+      const status = execFileSync(
+        process.execPath,
+        [bin, "install", "claude-code", "--status", "--home", home],
+        { cwd: pkgRoot, encoding: "utf8" },
+      );
+      expect(status).toContain("target: claude-code");
+      expect(status).toContain("settings.json: absent");
+
+      // install codex hooks into the isolated home
+      const installOut = execFileSync(
+        process.execPath,
+        [bin, "install", "codex", "--yes", "--home", home],
+        { cwd: pkgRoot, encoding: "utf8" },
+      );
+      expect(installOut).toContain("Installed 2 change(s)"); // hooks.json + sidecar
+      const hooksPath = join(home, ".codex", "hooks.json");
+      expect(existsSync(hooksPath)).toBe(true);
+      const hooks = JSON.parse(readFileSync(hooksPath, "utf8")) as Record<string, any>;
+      expect(hooks.hooks.SessionStart).toHaveLength(1);
+      // entries carry only spec-valid keys (turn-2, F2: no marker keys)
+      expect(Object.keys(hooks.hooks.SessionStart[0])).toEqual(["hooks"]);
+      const sidecarPath = join(home, ".codex", "engram-managed.json");
+      expect(existsSync(sidecarPath)).toBe(true);
+      const ledger = JSON.parse(readFileSync(sidecarPath, "utf8")) as any[];
+      expect(ledger[1].target).toBe("codex");
+      expect(ledger[1].configFile).toBe("hooks.json");
+      expect(
+        ledger[1].entries
+          .map((e: any) => e.identity)
+          .sort((a: string, b: string) => a.localeCompare(b)),
+      ).toEqual(["engram-hook:codex:compact", "engram-hook:codex:startup"]);
+
+      // the installed hook entry point runs, fails open, and stays bounded
+      const hookOut = execFileSync(process.execPath, [bin, "hook", "codex", "startup"], {
+        cwd: emptyProject,
+        encoding: "utf8",
+        env: { ...process.env, HOME: home },
+      });
+      expect(hookOut).toContain("(no engrams available)");
+
+      // uninstall removes only engram-owned entries
+      execFileSync(
+        process.execPath,
+        [bin, "install", "codex", "--yes", "--uninstall", "--home", home],
+        { cwd: pkgRoot, encoding: "utf8" },
+      );
+      const after = JSON.parse(readFileSync(hooksPath, "utf8")) as Record<string, any>;
+      // the fresh install was wholly engram-owned: emptied containers prune
+      expect(after.hooks).toBeUndefined();
+      expect(Object.keys(after)).toHaveLength(0);
+      // uninstall removes the sidecar itself (turn-2, F2)
+      expect(existsSync(sidecarPath)).toBe(false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      rmSync(emptyProject, { recursive: true, force: true });
+    }
+  });
+
   it("shipped opencode plugin imports and registers tools + system transform", (ctx) => {
     if (!spawnOk) ctx.skip();
 

@@ -178,6 +178,26 @@ describe("guidance / skills stay aligned", () => {
       expect(skill, `${name}: personal scan policy`).toContain("personalSecretScan");
     }
   });
+
+  it("both skills document the ENG-58 install targets and hook flows", () => {
+    for (const [name, skill] of [
+      ["pi", piSkill],
+      ["claude", claudeSkill],
+    ] as const) {
+      expect(skill, `${name}: claude-code target`).toContain("engram install claude-code");
+      expect(skill, `${name}: codex target`).toContain("engram install codex");
+      expect(skill, `${name}: status flow`).toContain("--status");
+      expect(skill, `${name}: dry-run flow`).toContain("--dry-run");
+      expect(skill, `${name}: uninstall flow`).toContain("--uninstall");
+      expect(skill, `${name}: fail-open note`).toMatch(/fail open/i);
+      expect(skill, `${name}: bounded output note`).toContain("8 KiB");
+      expect(skill, `${name}: hook entry point`).toContain("engram hook");
+      // lane boundary: no ENG-37 target names presented as installable
+      expect(skill, `${name}: no ENG-37 targets`).not.toMatch(
+        /install (generic|cursor)\b|install claude(?!-code)/,
+      );
+    }
+  });
 });
 
 describe("guidance / related links (ENG-42)", () => {

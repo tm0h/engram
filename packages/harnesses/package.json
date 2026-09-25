@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     "./shared": "./src/shared/index.ts",
+    "./installer": "./src/installer/index.ts",
     "./pi": "./src/pi/index.ts",
     "./opencode": "./src/opencode/index.ts"
   },

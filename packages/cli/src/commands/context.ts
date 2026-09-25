@@ -18,7 +18,9 @@ export interface ContextOptions {
   readonly all?: boolean;
 }
 
-export const contextCommand = (opts: ContextOptions) =>
+/** Build the full digest text (bounded preamble + body) without printing it.
+ * Shared by `engram context` and the ENG-58 fail-open hook runner. */
+export const buildContextDigest = (opts: ContextOptions) =>
   Effect.gen(function* () {
     // Output is meant for machine/agent consumption → force plain text.
     chalk.level = 0;
@@ -88,5 +90,11 @@ export const contextCommand = (opts: ContextOptions) =>
     }
 
     const body = blocks.length ? blocks.join("\n\n") : "(no engrams available)";
-    yield* out(preamble.length ? [...preamble, body].join("\n\n") : body);
+    return preamble.length ? [...preamble, body].join("\n\n") : body;
+  });
+
+/** `engram context` — print the digest for injection. */
+export const contextCommand = (opts: ContextOptions) =>
+  Effect.gen(function* () {
+    yield* out(yield* buildContextDigest(opts));
   });
