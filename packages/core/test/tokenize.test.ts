@@ -205,3 +205,18 @@ describe("mixed queries", () => {
     ]);
   });
 });
+
+describe("call-form tokens stay unexpanded (ENG-60 rank-side contract)", () => {
+  it("emits no joined bare identifier for a call-form term", () => {
+    // The bare identifier recovery for call forms lives in the ranker
+    // (ENG-60): the emitted token stream keeps the whole form plus the
+    // camelCase/separator expansion, never the joined components.
+    expect(tokenizeQuery("fetchBundle(outPath)")).toEqual([
+      "fetchbundle(outpath",
+      "fetch",
+      "bundle",
+      "out",
+      "path",
+    ]);
+  });
+});

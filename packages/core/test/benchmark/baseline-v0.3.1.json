@@ -19,7 +19,7 @@
     "kValues": [1, 3, 5],
     "abstainThreshold": 0
   },
-  "generatedAtUtc": "2026-09-06T20:24:09.700Z",
+  "generatedAtUtc": "2026-09-24T18:34:11.360Z",
   "metrics": {
     "queryCount": 187,
     "passedCount": 184,
@@ -93,13 +93,13 @@
     "kMetrics": [
       {
         "k": 1,
-        "recall": 0.8641618497109826,
-        "precision": 0.8670520231213873
+        "recall": 0.8815028901734104,
+        "precision": 0.884393063583815
       },
       {
         "k": 3,
-        "recall": 0.9710982658959537,
-        "precision": 0.32562620423892175
+        "recall": 0.976878612716763,
+        "precision": 0.3275529865125248
       },
       {
         "k": 5,
@@ -107,7 +107,7 @@
         "precision": 0.19884393063583786
       }
     ],
-    "mrr": 0.919524727039178,
+    "mrr": 0.9296403339755941,
     "totalReturned": 2435,
     "staleReturned": 30,
     "forbiddenReturned": 0,
@@ -129,7 +129,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 9678624,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -145,7 +144,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 3577680,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -161,7 +159,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 2949019,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -177,7 +174,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 9975312,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -193,7 +189,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 1670671,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -209,7 +204,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 1720540,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -225,7 +219,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 1350069,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -241,7 +234,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 1449470,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -257,7 +249,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 1454528,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -273,7 +264,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 1437883,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -289,7 +279,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2610,
-        "latencyNs": 3943538,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -305,7 +294,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 5221,
-        "latencyNs": 4765734,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -321,7 +309,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 0,
-        "latencyNs": 3589725,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -337,7 +324,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2556,
-        "latencyNs": 2930896,
         "recall": [null, null, null],
         "precision": [null, null, null],
         "reciprocalRank": null
@@ -353,7 +339,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 564,
-        "latencyNs": 12046644,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -369,7 +354,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 564,
-        "latencyNs": 1645321,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -385,7 +369,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 476,
-        "latencyNs": 2021669,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -401,7 +384,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 476,
-        "latencyNs": 2050941,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -417,7 +399,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 394,
-        "latencyNs": 2005268,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -433,7 +414,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 394,
-        "latencyNs": 1461790,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -449,7 +429,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 256,
-        "latencyNs": 1785129,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -465,7 +444,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 256,
-        "latencyNs": 1857879,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -481,7 +459,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 254,
-        "latencyNs": 1732620,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -497,7 +474,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 254,
-        "latencyNs": 1638139,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -513,7 +489,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 991,
-        "latencyNs": 2032950,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -529,7 +504,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 205,
-        "latencyNs": 1574826,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -545,7 +519,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 610,
-        "latencyNs": 2514356,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -561,7 +534,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 139,
-        "latencyNs": 2395733,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -577,7 +549,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 300,
-        "latencyNs": 2527478,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -593,7 +564,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1107,
-        "latencyNs": 2667867,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -609,7 +579,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 725,
-        "latencyNs": 2375840,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -625,7 +594,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1603,
-        "latencyNs": 4062539,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -641,7 +609,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 888,
-        "latencyNs": 3010727,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -657,7 +624,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 140,
-        "latencyNs": 3576373,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -673,7 +639,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 127,
-        "latencyNs": 2945514,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -689,7 +654,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 582,
-        "latencyNs": 3390559,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -705,7 +669,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 287,
-        "latencyNs": 2461692,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -721,7 +684,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 126,
-        "latencyNs": 2455750,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -737,7 +699,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 113,
-        "latencyNs": 2346835,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -753,7 +714,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 762,
-        "latencyNs": 2604835,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -769,7 +729,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2522,
-        "latencyNs": 2799912,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -785,7 +744,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 273,
-        "latencyNs": 2392173,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -801,7 +759,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 234,
-        "latencyNs": 2533659,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -817,7 +774,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1810,
-        "latencyNs": 2855712,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -833,10 +789,9 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 3676,
-        "latencyNs": 2864464,
-        "recall": [0, 0, 1],
-        "precision": [0, 0, 0.2],
-        "reciprocalRank": 0.25
+        "recall": [1, 1, 1],
+        "precision": [1, 0.3333333333333333, 0.2],
+        "reciprocalRank": 1
       },
       {
         "queryId": "case-code-identifiers-22",
@@ -849,7 +804,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2515,
-        "latencyNs": 2716709,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -865,7 +819,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1014,
-        "latencyNs": 2605417,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -881,7 +834,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 574,
-        "latencyNs": 2615041,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -897,10 +849,9 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 672,
-        "latencyNs": 2439323,
-        "recall": [0, 1, 1],
-        "precision": [0, 0.3333333333333333, 0.2],
-        "reciprocalRank": 0.5
+        "recall": [1, 1, 1],
+        "precision": [1, 0.3333333333333333, 0.2],
+        "reciprocalRank": 1
       },
       {
         "queryId": "case-code-identifiers-26",
@@ -913,7 +864,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 12681,
-        "latencyNs": 2109495,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -929,10 +879,9 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1293,
-        "latencyNs": 1626102,
-        "recall": [0, 1, 1],
-        "precision": [0, 0.3333333333333333, 0.2],
-        "reciprocalRank": 0.5
+        "recall": [1, 1, 1],
+        "precision": [1, 0.3333333333333333, 0.2],
+        "reciprocalRank": 1
       },
       {
         "queryId": "case-code-identifiers-28",
@@ -945,7 +894,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1888,
-        "latencyNs": 1800195,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -961,7 +909,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1239,
-        "latencyNs": 1539942,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -977,7 +924,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1636,
-        "latencyNs": 1276967,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -993,7 +939,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 2,
         "renderedChars": 1636,
-        "latencyNs": 1425901,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.3333333333333333
@@ -1009,7 +954,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1398,
-        "latencyNs": 1612278,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1025,7 +969,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1117,
-        "latencyNs": 1424206,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1041,7 +984,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 725,
-        "latencyNs": 1216717,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1057,7 +999,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1467,
-        "latencyNs": 1521804,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.3333333333333333
@@ -1073,7 +1014,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 446,
-        "latencyNs": 1377944,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1089,7 +1029,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 3,
         "renderedChars": 12634,
-        "latencyNs": 2288287,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1105,7 +1044,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 2062,
-        "latencyNs": 1520520,
         "recall": [0, 0, 1],
         "precision": [0, 0, 0.2],
         "reciprocalRank": 0.2
@@ -1121,7 +1059,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1047,
-        "latencyNs": 1448101,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1137,7 +1074,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 132,
-        "latencyNs": 119491,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1153,7 +1089,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1760,
-        "latencyNs": 1826701,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1169,7 +1104,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1381,
-        "latencyNs": 2427944,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1185,7 +1119,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1460,
-        "latencyNs": 3120266,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1201,7 +1134,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1236,
-        "latencyNs": 2850539,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1217,7 +1149,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1142,
-        "latencyNs": 3031214,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1233,7 +1164,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1598,
-        "latencyNs": 2935134,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1249,7 +1179,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2107,
-        "latencyNs": 2767033,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1265,7 +1194,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1165,
-        "latencyNs": 2717812,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1281,7 +1209,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 648,
-        "latencyNs": 2556762,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1297,7 +1224,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 444,
-        "latencyNs": 2463984,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1313,7 +1239,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 657,
-        "latencyNs": 2725802,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1329,7 +1254,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 4440,
-        "latencyNs": 2925833,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1345,7 +1269,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1774,
-        "latencyNs": 2806625,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1361,7 +1284,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 636,
-        "latencyNs": 2692958,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1377,7 +1299,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 421,
-        "latencyNs": 2616865,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1393,7 +1314,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1168,
-        "latencyNs": 2931594,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1409,7 +1329,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 949,
-        "latencyNs": 2682877,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1425,7 +1344,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 542,
-        "latencyNs": 2504214,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1441,7 +1359,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1028,
-        "latencyNs": 1402012,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -1457,7 +1374,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 132,
-        "latencyNs": 1379527,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1473,7 +1389,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 386,
-        "latencyNs": 1711066,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1489,7 +1404,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 753,
-        "latencyNs": 1611151,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1505,7 +1419,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 783,
-        "latencyNs": 1311091,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1521,7 +1434,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 12810,
-        "latencyNs": 1981507,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1537,7 +1449,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1077,
-        "latencyNs": 1771280,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1553,7 +1464,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 320,
-        "latencyNs": 1341062,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1569,7 +1479,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1500,
-        "latencyNs": 1706044,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1585,7 +1494,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 311,
-        "latencyNs": 1599633,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1601,7 +1509,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 305,
-        "latencyNs": 124240,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1617,7 +1524,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 768,
-        "latencyNs": 1752431,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1633,7 +1539,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1107,
-        "latencyNs": 1684903,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1649,7 +1554,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 880,
-        "latencyNs": 1643183,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1665,7 +1569,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2811,
-        "latencyNs": 1616146,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1681,7 +1584,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1112,
-        "latencyNs": 1485529,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1697,7 +1599,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 405,
-        "latencyNs": 1529000,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1713,7 +1614,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 485,
-        "latencyNs": 1641911,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1729,7 +1629,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 339,
-        "latencyNs": 107086,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1745,7 +1644,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 270,
-        "latencyNs": 1588941,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1761,7 +1659,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2185,
-        "latencyNs": 2007762,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1777,7 +1674,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 525,
-        "latencyNs": 1578253,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1793,7 +1689,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 3419,
-        "latencyNs": 1547508,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1809,7 +1704,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1359,
-        "latencyNs": 1478195,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1825,7 +1719,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 434,
-        "latencyNs": 1446102,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1841,7 +1734,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 386,
-        "latencyNs": 1561975,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1857,7 +1749,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 683,
-        "latencyNs": 1751154,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1873,7 +1764,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1152,
-        "latencyNs": 1860975,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1889,7 +1779,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 255,
-        "latencyNs": 1730697,
         "recall": [0.5, 1, 1],
         "precision": [1, 0.6666666666666666, 0.4],
         "reciprocalRank": 1
@@ -1905,7 +1794,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 4616,
-        "latencyNs": 1718778,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1921,7 +1809,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 12681,
-        "latencyNs": 2141642,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1937,7 +1824,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2028,
-        "latencyNs": 1778971,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -1953,7 +1839,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1583,
-        "latencyNs": 1504790,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.3333333333333333
@@ -1969,7 +1854,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1405,
-        "latencyNs": 2699466,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -1985,7 +1869,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 5448,
-        "latencyNs": 1647216,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2001,7 +1884,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 13067,
-        "latencyNs": 2500778,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2017,7 +1899,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 663,
-        "latencyNs": 1634938,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2033,7 +1914,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2290,
-        "latencyNs": 1818314,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2049,7 +1929,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 3442,
-        "latencyNs": 1888541,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2065,7 +1944,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 455,
-        "latencyNs": 1265999,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2081,7 +1959,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 12476,
-        "latencyNs": 1867590,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2097,7 +1974,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 12476,
-        "latencyNs": 1682131,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2113,7 +1989,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2597,
-        "latencyNs": 1875658,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2129,7 +2004,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1874,
-        "latencyNs": 1822654,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2145,7 +2019,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 12934,
-        "latencyNs": 2168327,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2161,7 +2034,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2587,
-        "latencyNs": 1934999,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2177,7 +2049,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 386,
-        "latencyNs": 1685798,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2193,7 +2064,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1979,
-        "latencyNs": 1639070,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -2209,7 +2079,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1652,
-        "latencyNs": 1734093,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2225,7 +2094,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 132,
-        "latencyNs": 1506509,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2241,7 +2109,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 314,
-        "latencyNs": 1142074,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2257,7 +2124,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1949,
-        "latencyNs": 1975506,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2273,7 +2139,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 13241,
-        "latencyNs": 2361088,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.3333333333333333
@@ -2289,7 +2154,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 12833,
-        "latencyNs": 1674524,
         "recall": [0, 0, 0],
         "precision": [0, 0, 0],
         "reciprocalRank": 0.1111111111111111
@@ -2305,7 +2169,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 4024,
-        "latencyNs": 1785269,
         "recall": [0, 0, 0],
         "precision": [0, 0, 0],
         "reciprocalRank": 0.1
@@ -2321,7 +2184,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 12874,
-        "latencyNs": 2104358,
         "recall": [0, 0, 1],
         "precision": [0, 0, 0.2],
         "reciprocalRank": 0.25
@@ -2337,7 +2199,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2231,
-        "latencyNs": 1818429,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2353,7 +2214,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 12704,
-        "latencyNs": 2222906,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2369,7 +2229,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1494,
-        "latencyNs": 1887221,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -2385,7 +2244,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 289,
-        "latencyNs": 1436482,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2401,7 +2259,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 515,
-        "latencyNs": 1544106,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2417,7 +2274,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1338,
-        "latencyNs": 2700669,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2433,7 +2289,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 876,
-        "latencyNs": 1485427,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2449,7 +2304,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 623,
-        "latencyNs": 1471545,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2465,7 +2319,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 578,
-        "latencyNs": 1563108,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2481,7 +2334,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1458,
-        "latencyNs": 1730942,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2497,7 +2349,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 137,
-        "latencyNs": 1566718,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2513,7 +2364,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 133,
-        "latencyNs": 1288084,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2529,7 +2379,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1049,
-        "latencyNs": 1510054,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2545,7 +2394,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1458,
-        "latencyNs": 1548477,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2561,7 +2409,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1865,
-        "latencyNs": 1630542,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2577,7 +2424,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1095,
-        "latencyNs": 2032176,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2593,7 +2439,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 680,
-        "latencyNs": 2196695,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2609,7 +2454,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 273,
-        "latencyNs": 2241379,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2625,7 +2469,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1438,
-        "latencyNs": 1832421,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2641,7 +2484,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 498,
-        "latencyNs": 2256151,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2657,7 +2499,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 393,
-        "latencyNs": 1643917,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2673,7 +2514,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1271,
-        "latencyNs": 1775960,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2689,7 +2529,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 725,
-        "latencyNs": 1314137,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2705,7 +2544,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1584,
-        "latencyNs": 1950603,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2721,7 +2559,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2392,
-        "latencyNs": 1591629,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2737,7 +2574,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 716,
-        "latencyNs": 1766008,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2753,7 +2589,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 695,
-        "latencyNs": 1354201,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2769,7 +2604,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1993,
-        "latencyNs": 1953964,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2785,7 +2619,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 762,
-        "latencyNs": 1275024,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.3333333333333333
@@ -2801,7 +2634,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 746,
-        "latencyNs": 1679354,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2817,7 +2649,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 548,
-        "latencyNs": 1335241,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2833,7 +2664,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 827,
-        "latencyNs": 1525196,
         "recall": [0, 1, 1],
         "precision": [0, 0.3333333333333333, 0.2],
         "reciprocalRank": 0.5
@@ -2849,7 +2679,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 500,
-        "latencyNs": 1758816,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2865,7 +2694,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1409,
-        "latencyNs": 1591037,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2881,7 +2709,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 645,
-        "latencyNs": 1705075,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2897,7 +2724,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2334,
-        "latencyNs": 1538042,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2913,7 +2739,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 2783,
-        "latencyNs": 2275390,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2929,7 +2754,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1913,
-        "latencyNs": 3041551,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2945,7 +2769,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 2823,
-        "latencyNs": 1798137,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2961,7 +2784,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1983,
-        "latencyNs": 1379185,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2977,7 +2799,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 1367,
-        "latencyNs": 1710098,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -2993,7 +2814,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 301,
-        "latencyNs": 1586135,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -3009,7 +2829,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1455,
-        "latencyNs": 1722682,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -3025,7 +2844,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1077,
-        "latencyNs": 1421991,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -3041,7 +2859,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 1,
         "renderedChars": 514,
-        "latencyNs": 1768611,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -3057,7 +2874,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1712,
-        "latencyNs": 1800265,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -3073,7 +2889,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 1236,
-        "latencyNs": 1763856,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -3089,7 +2904,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 521,
-        "latencyNs": 1534899,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -3105,7 +2919,6 @@
         "forbiddenReturned": 0,
         "supportingReturned": 0,
         "renderedChars": 116,
-        "latencyNs": 1288906,
         "recall": [1, 1, 1],
         "precision": [1, 0.3333333333333333, 0.2],
         "reciprocalRank": 1
@@ -3116,7 +2929,7 @@
     "queryCount": 187,
     "passedCount": 184,
     "passRate": 0.983957,
-    "mrr": 0.919525,
+    "mrr": 0.92964,
     "staleRate": 0.01232,
     "forbiddenRate": 0,
     "abstentionAccuracy": 0.785714,
@@ -3129,13 +2942,13 @@
     "kMetrics": [
       {
         "k": 1,
-        "recall": 0.864162,
-        "precision": 0.867052
+        "recall": 0.881503,
+        "precision": 0.884393
       },
       {
         "k": 3,
-        "recall": 0.971098,
-        "precision": 0.325626
+        "recall": 0.976879,
+        "precision": 0.327553
       },
       {
         "k": 5,
@@ -3977,10 +3790,10 @@
       "passed": true,
       "returned": 26,
       "rankedIds": [
+        "01jwq3zgn0000000000000002q",
         "01jwpzmbh0000000000000000b",
         "01jwq1sy30000000000000001h",
         "01jwq08g20000000000000000p",
-        "01jwq3zgn0000000000000002q",
         "01jwq13yz00000000000000015",
         "01jwq4tzj00000000000000036",
         "01jwq4qac00000000000000034",
@@ -4008,9 +3821,9 @@
       "forbiddenReturned": 0,
       "supportingReturned": 0,
       "renderedChars": 3676,
-      "recall": [0, 0, 1],
-      "precision": [0, 0, 0.2],
-      "reciprocalRank": 0.25
+      "recall": [1, 1, 1],
+      "precision": [1, 0.3333333333333333, 0.2],
+      "reciprocalRank": 1
     },
     "case-code-identifiers-22": {
       "category": "code-identifiers",
@@ -4087,8 +3900,8 @@
       "passed": true,
       "returned": 5,
       "rankedIds": [
-        "01jwq39hh0000000000000002b",
         "01jwq46v10000000000000002v",
+        "01jwq39hh0000000000000002b",
         "01jwq3bc40000000000000002c",
         "01jwq1p8x0000000000000001f",
         "01jwq1eyh0000000000000001b"
@@ -4097,9 +3910,9 @@
       "forbiddenReturned": 0,
       "supportingReturned": 0,
       "renderedChars": 672,
-      "recall": [0, 1, 1],
-      "precision": [0, 0.3333333333333333, 0.2],
-      "reciprocalRank": 0.5
+      "recall": [1, 1, 1],
+      "precision": [1, 0.3333333333333333, 0.2],
+      "reciprocalRank": 1
     },
     "case-code-identifiers-26": {
       "category": "code-identifiers",
@@ -4208,8 +4021,8 @@
       "passed": true,
       "returned": 9,
       "rankedIds": [
-        "01jwq3t0w0000000000000002m",
         "01jwq4ag70000000000000002x",
+        "01jwq3t0w0000000000000002m",
         "01jwq0dzv0000000000000000s",
         "01jwq3gvx0000000000000002f",
         "01jwq55z40000000000000003c",
@@ -4222,9 +4035,9 @@
       "forbiddenReturned": 0,
       "supportingReturned": 0,
       "renderedChars": 1293,
-      "recall": [0, 1, 1],
-      "precision": [0, 0.3333333333333333, 0.2],
-      "reciprocalRank": 0.5
+      "recall": [1, 1, 1],
+      "precision": [1, 0.3333333333333333, 0.2],
+      "reciprocalRank": 1
     },
     "case-code-identifiers-28": {
       "category": "code-identifiers",

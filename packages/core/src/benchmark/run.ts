@@ -30,9 +30,20 @@ import { evaluateCase } from "@engram/core/corpus";
 import { ContractCorpusAdapter, DEFAULT_CORPUS_DIR } from "./adapter.js";
 import { round6 } from "./metrics.js";
 import { runBenchmark } from "./runner.js";
-import type { MetricReport } from "./types.js";
+import type { BenchmarkResult, MetricReport, QueryMetrics } from "./types.js";
 
 export const K_VALUES = [1, 3, 5];
+
+/** Metric report as persisted in the benchmark JSON: latency-free at the
+ * top level and per query. Latency is inherently nonreproducible, never
+ * participates in the gate, and would churn every regeneration (PR #43
+ * review: incidental timing churn). */
+type BaselineMetrics = Omit<
+  MetricReport,
+  "latencyP50" | "latencyP95" | "latencyP99" | "latencySamplesNs" | "perQuery"
+> & {
+  perQuery: ReadonlyArray<Omit<QueryMetrics, "latencyNs">>;
+};
 
 export interface RepoBenchmarkJson {
   benchmark: "engram-retrieval-benchmark";
@@ -44,8 +55,11 @@ export interface RepoBenchmarkJson {
   contractHash: string;
   config: { kValues: ReadonlyArray<number>; abstainThreshold: number };
   generatedAtUtc: string;
-  /** Aggregate metrics; latency fields excluded. */
-  metrics: Omit<MetricReport, "latencyP50" | "latencyP95" | "latencyP99" | "latencySamplesNs">;
+  /** Aggregate metrics; latency fields excluded, including per-query
+   * timing samples: latency is inherently nonreproducible, never
+   * participates in the gate, and would churn every regeneration
+   * (PR #43 review: incidental timing churn). */
+  metrics: BaselineMetrics;
   /** 6-decimal comparable form of the aggregate metrics (the regression
    * gate compares exactly this). */
   comparableMetrics: ReturnType<typeof comparableMetrics>;
@@ -75,13 +89,22 @@ export interface RepoBenchmarkJson {
   >;
 }
 
-function stripLatency(metrics: MetricReport) {
+/** Strip every latency measurement: the four top-level latency fields and
+ * the per-query timing samples. Latency is inherently nonreproducible and
+ * never participates in comparisons, so the persisted JSON records none. */
+function stripLatency(metrics: MetricReport): BaselineMetrics {
   const { latencyP50, latencyP95, latencyP99, latencySamplesNs, ...rest } = metrics;
   void latencyP50;
   void latencyP95;
   void latencyP99;
   void latencySamplesNs;
-  return rest;
+  return {
+    ...rest,
+    perQuery: rest.perQuery.map(({ latencyNs, ...row }) => {
+      void latencyNs;
+      return row;
+    }),
+  };
 }
 
 /** Snapshot hash over the corpus files, per the contract README recipe:
@@ -118,9 +141,43 @@ export function runRepoBenchmark(): RepoBenchmarkJson {
   }
   const input = adapter.toRunInput(loaded);
   const result = runBenchmark(evaluateCase, input, { kValues: K_VALUES, abstainThreshold: 0 });
+  return buildBenchmarkJson(result, {
+    contractHash: `sha256:${corpusSnapshotHash()}`,
+    generatedAtUtc: new Date().toISOString(),
+  });
+}
+
+const TOLERANCES_TEXT =
+  "Gate semantics: identical corpus identity and config (corpusVersion, schemaVersion, " +
+  "contract hash, kValues, abstain threshold) and identical case sets are required. Fail " +
+  "on any outcome regression (baseline pass -> live miss); fail on any per-case data " +
+  "change on non-improvement cases (full row: ranked ids, counts, rendered chars, recall, " +
+  "precision, reciprocal rank; still-missing cases included); fail on any aggregate metric " +
+  "drift not exactly attributable to improvements (expected aggregates are recomputed from " +
+  "baseline rows with improvement rows replaced by live rows; latency excluded). " +
+  "Improvements (baseline miss -> live pass) are surfaced with their attributable aggregate " +
+  "deltas and never block, including improvements on recorded measuredMisses; they trigger " +
+  "the regeneration policy: explicit review of the full delta, regressions require leader " +
+  "disposition, corpus labels are never edited to make a ranker pass. Unchanged misses " +
+  "are measured retrieval limitations of the wired search and stay visible.";
+
+const LIMITATIONS_TEXT =
+  "Measured retrieval limitations of the wired search on this corpus snapshot. " +
+  "They are recorded data, not corpus failures: labels are never edited to make " +
+  "a ranker pass, and regressions vs a checked-in baseline require leader disposition.";
+
+/** Build the persisted benchmark JSON from a completed run. Deterministic
+ * apart from the injected identity values (real runs pass the corpus
+ * snapshot hash and the wall-clock instant); latency is stripped here, so
+ * the emitted JSON records no timing samples (see RepoBenchmarkJson.metrics
+ * and the PR #43 timing-churn review). */
+export function buildBenchmarkJson(
+  result: BenchmarkResult,
+  identity: { contractHash: string; generatedAtUtc: string },
+): RepoBenchmarkJson {
   const metrics = stripLatency(result.metrics);
   const cases: RepoBenchmarkJson["cases"] = {};
-  for (const q of result.metrics.perQuery) {
+  for (const q of metrics.perQuery) {
     cases[q.queryId] = {
       category: q.category,
       passed: q.passed,
@@ -139,38 +196,27 @@ export function runRepoBenchmark(): RepoBenchmarkJson {
     benchmark: "engram-retrieval-benchmark",
     corpusVersion: result.corpus.corpusVersion,
     schemaVersion: result.corpus.schemaVersion,
-    contractHash: `sha256:${corpusSnapshotHash()}`,
+    contractHash: identity.contractHash,
     config: { kValues: result.config.kValues, abstainThreshold: result.config.abstainThreshold },
-    generatedAtUtc: new Date().toISOString(),
+    generatedAtUtc: identity.generatedAtUtc,
     metrics,
     comparableMetrics: comparableMetrics(metrics),
-    tolerances:
-      "Gate semantics: identical corpus identity and config (corpusVersion, schemaVersion, " +
-      "contract hash, kValues, abstain threshold) and identical case sets are required. Fail " +
-      "on any outcome regression (baseline pass -> live miss); fail on any per-case data " +
-      "change on non-improvement cases (full row: ranked ids, counts, rendered chars, recall, " +
-      "precision, reciprocal rank; still-missing cases included); fail on any aggregate metric " +
-      "drift not exactly attributable to improvements (expected aggregates are recomputed from " +
-      "baseline rows with improvement rows replaced by live rows; latency excluded). " +
-      "Improvements (baseline miss -> live pass) are surfaced with their attributable aggregate " +
-      "deltas and never block, including improvements on recorded measuredMisses; they trigger " +
-      "the regeneration policy: explicit review of the full delta, regressions require leader " +
-      "disposition, corpus labels are never edited to make a ranker pass. Unchanged misses " +
-      "are measured retrieval limitations of the wired search and stay visible.",
+    tolerances: TOLERANCES_TEXT,
     measuredMisses: Object.keys(cases).filter((id) => !cases[id]!.passed),
-    limitations:
-      "Measured retrieval limitations of the wired search on this corpus snapshot. " +
-      "They are recorded data, not corpus failures: labels are never edited to make " +
-      "a ranker pass, and regressions vs a checked-in baseline require leader disposition.",
+    limitations: LIMITATIONS_TEXT,
     cases,
   };
 }
 
 /** Round a metric report down to its comparable (6-decimal) form, latency
  * excluded: the regression gate compares exactly this shape. Accepts the
- * latency-stripped metrics emitted by runRepoBenchmark. */
+ * latency-stripped metrics emitted by runRepoBenchmark; per-query rows are
+ * not part of the comparable shape. */
 export function comparableMetrics(
-  metrics: Omit<MetricReport, "latencyP50" | "latencyP95" | "latencyP99" | "latencySamplesNs">,
+  metrics: Omit<
+    MetricReport,
+    "latencyP50" | "latencyP95" | "latencyP99" | "latencySamplesNs" | "perQuery"
+  >,
 ) {
   return {
     queryCount: metrics.queryCount,
