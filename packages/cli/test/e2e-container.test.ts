@@ -96,9 +96,13 @@ describe("Docker E2E runner", () => {
   it("pins audit coverage for the related, call-form, and hook install surfaces", () => {
     const e2e = readRepoFile("scripts/e2e-cli.sh");
 
-    expect(e2e).toContain("engram search 'exportStatic(outDir)'");
+    expect(e2e).toContain("engram search 'abConfig(xyFoo)'");
+    expect(e2e).toContain('part.token === "abconfig"');
+    expect(e2e).toContain("engram hook codex compact");
     expect(e2e).toContain("CLAUDE_CONFIG_DIR");
     expect(e2e).toContain("CODEX_HOME");
+    expect(e2e).toContain('dirname "$ENGRAM_E2E_BIN"');
+    expect(e2e).toContain('bash -c "$hook_command"');
     expect(e2e).toContain("engram install claude-code --dry-run");
     expect(e2e).toContain("engram install claude-code --yes");
     expect(e2e).toContain("engram install claude-code --yes --uninstall");

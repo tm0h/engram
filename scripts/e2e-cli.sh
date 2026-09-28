@@ -140,15 +140,22 @@ engram search 'title:alpha' --json --limit 1 --offset 0 |
   parse_json 'value.total === 2 && value.results.length === 1 && value.nextOffset === 1'
 
 step "Call-form body search"
+# The call form is the fixture's only carrier of these tokens: the camel
+# pieces (ab, config, xy, foo) cannot match the document tokens abconfig and
+# xyfoo by exact or prefix match, so rank 1 plus the abconfig scoring token
+# specifically prove ENG-60's derived bare-identifier matching rather than
+# token-expansion noise. The pinned decision is the only other result (the
+# 0.5 pinned-boost quirk), which the fixture out-scores.
 callform_output=$(
   engram add \
     --title "Call form fixture" \
     --tags build,release \
-    "The release image step calls exportStatic(outDir) before hashing chunks."
+    "Bundle hashing calls abConfig(xyFoo) before emit."
 )
 callform_id=$(printf '%s\n' "$callform_output" | entry_id)
-engram search 'exportStatic(outDir)' --json |
-  parse_json 'value.results.some((item) => item.title === "Call form fixture")'
+engram search 'abConfig(xyFoo)' --json --explain |
+  parse_json 'value.results[0]?.title === "Call form fixture" && value.results[0].explanation.contributions.some((part) => part.token === "abconfig")'
+engram search 'abConfig(xyFoo)' | grep -F "Call form fixture"
 engram remove --yes "$callform_id"
 
 step "Edit and lifecycle review"
@@ -394,8 +401,28 @@ mkdir -p "$hook_home"
   engram install claude-code --yes |
     grep -F "Nothing to do: hooks for claude-code are already up to date."
 
-  hook_output=$(engram hook claude-code startup)
+  # Run the EXACT command string installed in settings.json, with the
+  # installed binary directory on PATH the way the host resolves it at hook
+  # runtime (A5): the audit's engram() wrapper must not stand in for the
+  # shipped entry. The digest must contain a known project entry, which also
+  # rejects the empty "(no engrams available)" context.
+  export PATH="$(dirname "$ENGRAM_E2E_BIN"):$PATH"
+  hook_command=$(node -e '
+    const fs = require("fs");
+    const doc = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    for (const group of doc.hooks.SessionStart ?? []) {
+      for (const hook of group.hooks ?? []) {
+        if (typeof hook.command === "string" && hook.command.includes("startup")) {
+          process.stdout.write(hook.command);
+          return;
+        }
+      }
+    }
+    process.exit(1);
+  ' "$hook_home/claude-config/settings.json")
+  hook_output=$(bash -c "$hook_command")
   [[ -n "$hook_output" ]] || fail "claude-code startup hook emitted nothing"
+  printf '%s\n' "$hook_output" | grep -F "Use the release database"
   hook_bytes=$(printf '%s' "$hook_output" | wc -c)
   [[ "$hook_bytes" -le 8192 ]] || fail "hook output ${hook_bytes} bytes exceeded the 8 KiB cap"
 
@@ -419,6 +446,16 @@ mkdir -p "$hook_home"
 
   engram install codex --yes | grep -F "Installed"
   grep -F "engram hook codex startup" "$hook_home/codex-config/hooks.json" >/dev/null
+  grep -F "engram hook codex compact" "$hook_home/codex-config/hooks.json" >/dev/null
+  # Config-level check that the compact command lives under the PostCompact
+  # event key, not just anywhere in the document.
+  node -e '
+    const doc = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+    const commands = (doc.hooks.PostCompact ?? []).flatMap((group) =>
+      (group.hooks ?? []).map((hook) => hook.command),
+    );
+    if (!commands.includes("engram hook codex compact")) process.exit(1);
+  ' "$hook_home/codex-config/hooks.json"
   engram install codex --yes |
     grep -F "Nothing to do: hooks for codex are already up to date."
   engram install codex --yes --uninstall | grep -F "Uninstalled"
