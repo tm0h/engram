@@ -410,15 +410,16 @@ mkdir -p "$hook_home"
   hook_command=$(node -e '
     const fs = require("fs");
     const doc = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    let found = "";
     for (const group of doc.hooks.SessionStart ?? []) {
       for (const hook of group.hooks ?? []) {
         if (typeof hook.command === "string" && hook.command.includes("startup")) {
-          process.stdout.write(hook.command);
-          return;
+          found = hook.command;
         }
       }
     }
-    process.exit(1);
+    if (found === "") process.exit(1);
+    process.stdout.write(found);
   ' "$hook_home/claude-config/settings.json")
   hook_output=$(bash -c "$hook_command")
   [[ -n "$hook_output" ]] || fail "claude-code startup hook emitted nothing"
