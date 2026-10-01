@@ -53,6 +53,12 @@ export interface RepoBenchmarkJson {
    * (sha256 over <relpath>\n<byte length>\n<bytes> in lexicographic path
    * order over manifest.json + cases/*.json + engrams/*.md). */
   contractHash: string;
+  /** Generation-time provenance block (ENG-76): carried through unchanged
+   * from an existing `--out` target exactly when that target parses as JSON
+   * and its `source` value is a plain object; never synthesized. The writer
+   * re-emits it between `contractHash` and `config`, the position the
+   * checked-in baseline has carried since PR #43. */
+  source?: Record<string, unknown>;
   config: { kValues: ReadonlyArray<number>; abstainThreshold: number };
   generatedAtUtc: string;
   /** Aggregate metrics; latency fields excluded, including per-query
@@ -173,7 +179,7 @@ const LIMITATIONS_TEXT =
  * and the PR #43 timing-churn review). */
 export function buildBenchmarkJson(
   result: BenchmarkResult,
-  identity: { contractHash: string; generatedAtUtc: string },
+  identity: { contractHash: string; generatedAtUtc: string; source?: Record<string, unknown> },
 ): RepoBenchmarkJson {
   const metrics = stripLatency(result.metrics);
   const cases: RepoBenchmarkJson["cases"] = {};
@@ -197,6 +203,7 @@ export function buildBenchmarkJson(
     corpusVersion: result.corpus.corpusVersion,
     schemaVersion: result.corpus.schemaVersion,
     contractHash: identity.contractHash,
+    ...(identity.source === undefined ? {} : { source: identity.source }),
     config: { kValues: result.config.kValues, abstainThreshold: result.config.abstainThreshold },
     generatedAtUtc: identity.generatedAtUtc,
     metrics,
@@ -206,6 +213,115 @@ export function buildBenchmarkJson(
     limitations: LIMITATIONS_TEXT,
     cases,
   };
+}
+
+/** Canonical serialized form of the benchmark JSON (SPEC ENG-76, review
+ * finding F1 option A): the checked-in baseline's historical format, now
+ * pinned as the writer's output. Derived empirically from
+ * baseline-v0.3.1.json and locked by the round-trip identity test:
+ * 2-space indent, a trailing newline, non-empty objects always expanded,
+ * empty containers inline, and primitive-element arrays inlined as
+ * `[1, 2, 3]` exactly when the member's `"key": [...]` form fits the
+ * 96-char budget below (the leading indent is not counted). The budget is
+ * a file-pinned constant: the largest inline member in the baseline
+ * measures 85, the smallest expanded scalar array 135, and the boundary
+ * probes bracket it at 96 inline / 97 expanded. It is not keyed to any
+ * specific field: any primitive-array member of any size formats by the
+ * same rule, which is what makes the whole-file round-trip byte-identical. */
+const INLINE_MEMBER_BUDGET = 96;
+
+const isPrimitiveJson = (value: unknown): boolean => value === null || typeof value !== "object";
+
+/** Single-line form of a JSON value, or null when the pinned rules never
+ * inline it (non-empty objects, arrays containing objects or arrays). */
+const inlineJson = (value: unknown): string | null => {
+  if (isPrimitiveJson(value)) return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "[]";
+    if (!value.every(isPrimitiveJson)) return null;
+    return `[${value.map((element) => JSON.stringify(element)).join(", ")}]`;
+  }
+  return Object.keys(value as Record<string, unknown>).length === 0 ? "{}" : null;
+};
+
+const printJson = (value: unknown, indent: number, key: string | null): string => {
+  const label = key === null ? "" : `${JSON.stringify(key)}: `;
+  const pad = " ".repeat(indent);
+  // Primitives (including long strings) always render inline: there is no
+  // expanded form for a scalar. Only container members are budget-fitted.
+  if (isPrimitiveJson(value)) return `${pad}${label}${JSON.stringify(value)}`;
+  const inline = inlineJson(value);
+  if (inline !== null && label.length + inline.length <= INLINE_MEMBER_BUDGET) {
+    return `${pad}${label}${inline}`;
+  }
+  if (Array.isArray(value)) {
+    const items = value.map((element) => printJson(element, indent + 2, null));
+    return `${pad}${label}[\n${items.join(",\n")}\n${pad}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>).map(([k, v]) =>
+    printJson(v, indent + 2, k),
+  );
+  return `${pad}${label}{\n${entries.join(",\n")}\n${pad}}`;
+};
+
+/** Render `value` in the canonical pinned format (trailing newline
+ * included). Applying it to the parsed checked-in baseline reproduces the
+ * file's exact bytes; fresh regeneration output uses the same format. */
+export function serializeBenchmarkJson(value: unknown): string {
+  return `${printJson(value, 0, null)}\n`;
+}
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** The carried block from an existing `--out` target (F2): exactly when the
+ * target parses as JSON and its `source` value is a plain object; any
+ * malformed or missing source is omitted silently, never synthesized. */
+const readCarriedSource = (outPath: string): Record<string, unknown> | undefined => {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(outPath, "utf8"));
+    if (isPlainObject(parsed) && isPlainObject(parsed.source)) return parsed.source;
+  } catch {
+    // Unparseable or unreadable target: fresh-generation semantics.
+  }
+  return undefined;
+};
+
+/** Re-emit `json` with `source` in its canonical position between
+ * `contractHash` and `config` (the checked-in baseline's position; object
+ * literal order is the serializer's emission order). */
+const withCarriedSource = (
+  json: RepoBenchmarkJson,
+  source: Record<string, unknown>,
+): RepoBenchmarkJson => ({
+  benchmark: json.benchmark,
+  corpusVersion: json.corpusVersion,
+  schemaVersion: json.schemaVersion,
+  contractHash: json.contractHash,
+  source,
+  config: json.config,
+  generatedAtUtc: json.generatedAtUtc,
+  metrics: json.metrics,
+  comparableMetrics: json.comparableMetrics,
+  tolerances: json.tolerances,
+  measuredMisses: json.measuredMisses,
+  limitations: json.limitations,
+  cases: json.cases,
+});
+
+/** Write the benchmark JSON to `out` (ENG-76 F3): when the target already
+ * contains a parseable benchmark JSON with a plain-object `source` block,
+ * the regenerated output carries that block unchanged; otherwise the output
+ * is exactly fresh generation. Returns the canonical text (also written to
+ * `out` when given); the caller prints it to stdout when `out` is
+ * undefined. */
+export function writeBenchmarkJson(json: RepoBenchmarkJson, out: string | undefined): string {
+  const carried = out !== undefined && existsSync(out) ? readCarriedSource(out) : undefined;
+  const text = serializeBenchmarkJson(
+    carried === undefined ? json : withCarriedSource(json, carried),
+  );
+  if (out !== undefined) writeFileSync(out, text);
+  return text;
 }
 
 /** Round a metric report down to its comparable (6-decimal) form, latency
@@ -247,6 +363,15 @@ export function comparableMetrics(
   };
 }
 
+/** CLI argument validation for `--out` (ENG-76 F3): kept byte-compatible
+ * with the historical messages and exit path; pure so the messages stay
+ * testable. The invocation block prints the error and exits 1. */
+export function outArgError(out: string | undefined): string | null {
+  if (out === undefined) return "--out requires a path";
+  if (existsSync(out) && statSync(out).isDirectory()) return `--out points at a directory: ${out}`;
+  return null;
+}
+
 const invokedDirectly =
   process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 
@@ -256,19 +381,14 @@ if (invokedDirectly) {
   const outIndex = args.indexOf("--out");
   if (outIndex >= 0) {
     out = args[outIndex + 1];
-    if (out === undefined) {
-      console.error("--out requires a path");
-      process.exit(1);
-    }
-    if (existsSync(out) && statSync(out).isDirectory()) {
-      console.error(`--out points at a directory: ${out}`);
+    const error = outArgError(out);
+    if (error !== null) {
+      console.error(error);
       process.exit(1);
     }
   }
-  const json = runRepoBenchmark();
-  const text = `${JSON.stringify(json, null, 2)}\n`;
+  const text = writeBenchmarkJson(runRepoBenchmark(), out);
   if (out !== undefined) {
-    writeFileSync(out, text);
     console.log(`benchmark: wrote ${out}`);
   } else {
     process.stdout.write(text);
