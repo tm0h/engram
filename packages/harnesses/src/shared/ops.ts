@@ -407,9 +407,10 @@ const lifecycleEnumError = (
   valid.includes(value) ? null : `invalid ${field} "${value}". Valid: ${valid.join(", ")}.`;
 
 /** ENG-42 (turn 2): the show header must never squeeze the paginated body
- * out of the result budget. The related list is the one unbounded header
- * field, so its line renders at most this many characters of ids and names
- * the remainder explicitly instead of silently dropping ids or the body. */
+ * out of the result budget. The related line, the title, and the tags line
+ * are all bounded header fields (ENG-77 added the latter two), so each one
+ * renders at most a fixed character budget of content and names the
+ * remainder explicitly instead of silently dropping content or the body. */
 const RELATED_HEADER_BUDGET = 1024;
 
 const relatedHeaderLine = (related: ReadonlyArray<string> | undefined): string | null => {
@@ -425,6 +426,45 @@ const relatedHeaderLine = (related: ReadonlyArray<string> | undefined): string |
   const line = `related: ${related.slice(0, shown).join(", ")}`;
   const rest = related.length - shown;
   return rest > 0 ? `${line} \u2026 (+${rest} more)` : line;
+};
+
+/** ENG-77: the tags line uses the same bounded pattern; the cost model
+ * mirrors relatedHeaderLine on the rendered `#tag` units plus `, `
+ * separator cost beyond the first (the `tags:` prefix and the remainder
+ * marker are excluded from the budget). */
+const TAGS_HEADER_BUDGET = 1024;
+
+const tagsHeaderLine = (tags: ReadonlyArray<string>): string => {
+  let used = 0;
+  let shown = 0;
+  for (const tag of tags) {
+    const cost = tag.length + 1 + (shown === 0 ? 0 : 2);
+    if (used + cost > TAGS_HEADER_BUDGET) break;
+    used += cost;
+    shown += 1;
+  }
+  const line = `tags: ${tags
+    .slice(0, shown)
+    .map((t) => `#${t}`)
+    .join(" ")}`;
+  const rest = tags.length - shown;
+  return rest > 0 ? `${line} \u2026 (+${rest} more)` : line;
+};
+
+/** ENG-77: the title content budget. A fitting title renders exactly as
+ * before, newlines included; truncation always renders a single line, cut
+ * at the first newline when present, with an explicit `… (+N chars)`
+ * marker naming the elided characters. The `# [id]` prefix always
+ * survives. */
+const TITLE_HEADER_BUDGET = 1024;
+
+const titleHeaderLine = (id: string, title: string): string => {
+  if (title.length <= TITLE_HEADER_BUDGET) return `# [${id}] ${title}`;
+  const newlineIndex = title.indexOf("\n");
+  const keep =
+    newlineIndex === -1 ? TITLE_HEADER_BUDGET : Math.min(TITLE_HEADER_BUDGET, newlineIndex);
+  const elided = title.length - keep;
+  return `# [${id}] ${title.slice(0, keep)} \u2026 (+${elided} chars)`;
 };
 
 /** Full view of one engram; body sliced by char offset/limit. */
@@ -451,9 +491,9 @@ export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, Engram
       const relatedLine = relatedHeaderLine(m.related);
 
       const header = [
-        `# [${m.id}] ${m.title}`,
+        titleHeaderLine(m.id, m.title),
         `type: ${m.type}`,
-        ...(m.tags.length ? [`tags:${tagsSuffix(m.tags)}`] : []),
+        ...(m.tags.length ? [tagsHeaderLine(m.tags)] : []),
         `scope: ${m.scope}`,
         `created: ${dateShort(m.created)} (updated: ${dateShort(m.updated)})`,
         ...(m.author ? [`author: ${m.author}`] : []),
@@ -508,6 +548,10 @@ export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, Engram
         /* ENG-42 (turn 3): the full exact list, so ids elided by the header
          * budget stay retrievable when the rendered line is truncated. */
         related: m.related,
+        /* ENG-77: the full untruncated title and the full tags list,
+         * mirroring the related precedent so no header elision is silent. */
+        title: m.title,
+        tags: m.tags,
       });
     }),
   );

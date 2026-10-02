@@ -1351,3 +1351,236 @@ describe("shared ops / showOp related header budget (ENG-42 turn 2)", () => {
     expect(res.details.related).toEqual(ids);
   });
 });
+
+describe("shared ops / showOp header budgets (ENG-77)", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject("note");
+    home = mkHome();
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    if (origHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = origHome;
+    }
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  /** A valid 26-character generated-style id (digits then base32 'a's). */
+  const wideId = (n: number): string => (String(1000 + n) + "a".repeat(26)).slice(0, 26);
+
+  const writeRaw = (fmLines: string[], body = "start-of-body"): void => {
+    const fm = fmLines.join("\n");
+    fs.writeFileSync(
+      path.join(projectEngramsDir(tmp), "0001-entry.md"),
+      `---\n${fm}\n---\n${body}\n`,
+    );
+  };
+
+  const baseFm = (over: string[] = []): string[] => {
+    // the default `tags` line is dropped when `over` supplies its own
+    const overridden = (prefix: string): boolean => over.some((l) => l.startsWith(prefix));
+    return [
+      'id: "0001"',
+      `title: ${JSON.stringify("Some title")}`,
+      "type: note",
+      ...(overridden("tags:") ? [] : ["tags: []"]),
+      "scope: project",
+      "created: 2026-08-16T10:00:00.000Z",
+      "updated: 2026-08-16T10:00:00.000Z",
+      ...over,
+    ];
+  };
+
+  const lineOf = (text: string, prefix: string): string => {
+    const line = text.split("\n").find((l) => l.startsWith(prefix));
+    if (line === undefined) throw new Error(`no line starting with ${prefix}`);
+    return line;
+  };
+
+  it("golden: a small entry renders byte-identical to today", async () => {
+    seed(tmp, "0004", {
+      title: "Use date-fns",
+      type: "decision",
+      tags: ["deps", "time"],
+      author: "Tester",
+      body: "moment is deprecated; date-fns is tree-shakeable.",
+    });
+    const res = await run(showOp({ id: "0004", scope: "project" }));
+    expect(res.isError).toBe(false);
+    expect(res.text).toBe(
+      [
+        "# [0004] Use date-fns",
+        "type: decision",
+        "tags: #deps #time",
+        "scope: project",
+        "created: 2026-08-16 (updated: 2026-08-16)",
+        "author: Tester",
+        "moment is deprecated; date-fns is tree-shakeable.",
+      ].join("\n"),
+    );
+  });
+
+  it("tags: a list exactly at the 1024 content budget renders whole and unmarked", async () => {
+    // unit = 24-char tag -> #tag cost 25, +2 separator cost beyond first:
+    // 25 + 37*27 = 1024 exactly -> all 38 render, no marker.
+    const tags = Array.from({ length: 38 }, (_, i) =>
+      `t${String(i).padStart(2, "0")}`.padEnd(24, "a"),
+    );
+    writeRaw(baseFm([`tags: [${tags.map((t) => JSON.stringify(t)).join(", ")}]`]));
+    const res = await run(showOp({ id: "0001" }));
+    expect(res.isError).toBe(false);
+    const line = lineOf(res.text, "tags:");
+    expect(line).toBe(`tags: ${tags.map((t) => `#${t}`).join(" ")}`);
+    expect(line).not.toContain("\u2026");
+  });
+
+  it("tags: one char over the budget truncates with an exact marker and no partial tag", async () => {
+    const tags = Array.from({ length: 39 }, (_, i) =>
+      `t${String(i).padStart(2, "0")}`.padEnd(24, "a"),
+    );
+    writeRaw(baseFm([`tags: [${tags.map((t) => JSON.stringify(t)).join(", ")}]`]));
+    const res = await run(showOp({ id: "0001" }));
+    expect(res.isError).toBe(false);
+    const line = lineOf(res.text, "tags:");
+    const shown = tags.slice(0, 38);
+    expect(line).toBe(`tags: ${shown.map((t) => `#${t}`).join(" ")} \u2026 (+1 more)`);
+    expect(line).not.toContain(`#${tags[38]}`);
+  });
+
+  it("tags: an oversized list names the exact remainder and renders only whole tags", async () => {
+    // unit = 20-char tag -> #tag cost 21, +2 beyond first: 44 tags fit
+    // (21 + 43*23 = 1010); 45 would not (1033 > 1024) -> rest = 56.
+    const tags = Array.from({ length: 100 }, (_, i) =>
+      `t${String(i).padStart(2, "0")}`.padEnd(20, "a"),
+    );
+    writeRaw(baseFm([`tags: [${tags.map((t) => JSON.stringify(t)).join(", ")}]`]));
+    const res = await run(showOp({ id: "0001" }));
+    expect(res.isError).toBe(false);
+    const line = lineOf(res.text, "tags:");
+    expect(line).toBe(
+      `tags: ${tags
+        .slice(0, 44)
+        .map((t) => `#${t}`)
+        .join(" ")} \u2026 (+56 more)`,
+    );
+    expect(line).not.toContain(`#${tags[44]}`);
+    expect(res.details.tags).toEqual(tags);
+  });
+
+  it("tags: a single oversized tag renders the marker, never a partial tag", async () => {
+    const giant = "g".repeat(2000);
+    writeRaw(baseFm([`tags: [${JSON.stringify(giant)}]`]));
+    const res = await run(showOp({ id: "0001" }));
+    expect(res.isError).toBe(false);
+    expect(lineOf(res.text, "tags:")).toBe("tags:  \u2026 (+1 more)");
+  });
+
+  it("title: exactly at the 1024-char budget renders byte-identical and unmarked", async () => {
+    const title = "t".repeat(1024);
+    writeRaw([`id: "0001"`, `title: ${JSON.stringify(title)}`, ...baseFm().slice(2)]);
+    const res = await run(showOp({ id: "0001" }));
+    expect(res.isError).toBe(false);
+    expect(res.text.split("\n")[0]).toBe(`# [0001] ${title}`);
+  });
+
+  it("title: one char over truncates with the marker and keeps the id prefix", async () => {
+    const title = "t".repeat(1025);
+    writeRaw([`id: "0001"`, `title: ${JSON.stringify(title)}`, ...baseFm().slice(2)]);
+    const res = await run(showOp({ id: "0001" }));
+    expect(res.isError).toBe(false);
+    expect(res.text.split("\n")[0]).toBe(`# [0001] ${"t".repeat(1024)} \u2026 (+1 chars)`);
+    expect(res.details.title).toBe(title);
+  });
+
+  it("title: a multi-line oversized title truncates to one line cut at the first newline", async () => {
+    const title = `${"a".repeat(600)}\n${"b".repeat(600)}`;
+    writeRaw([`id: "0001"`, `title: ${JSON.stringify(title)}`, ...baseFm().slice(2)]);
+    const res = await run(showOp({ id: "0001" }));
+    expect(res.isError).toBe(false);
+    expect(res.text.split("\n")[0]).toBe(`# [0001] ${"a".repeat(600)} \u2026 (+601 chars)`);
+    expect(res.text).not.toContain("bbbbbb");
+  });
+
+  it("title: a newline past the budget truncates at the budget, still one line", async () => {
+    const title = `${"a".repeat(1080)}\n${"b".repeat(100)}`;
+    writeRaw([`id: "0001"`, `title: ${JSON.stringify(title)}`, ...baseFm().slice(2)]);
+    const res = await run(showOp({ id: "0001" }));
+    expect(res.isError).toBe(false);
+    expect(res.text.split("\n")[0]).toBe(`# [0001] ${"a".repeat(1024)} \u2026 (+157 chars)`);
+  });
+
+  it("combined worst case: header stays bounded, body stays reachable page by page", async () => {
+    const title = "t".repeat(1100);
+    const tags = Array.from({ length: 400 }, (_, i) =>
+      `t${String(i).padStart(3, "0")}`.padEnd(20, "a"),
+    );
+    const related = Array.from({ length: 400 }, (_, i) => wideId(i));
+    writeRaw(
+      [
+        `id: "0001"`,
+        `title: ${JSON.stringify(title)}`,
+        "type: note",
+        `tags: [${tags.map((t) => JSON.stringify(t)).join(", ")}]`,
+        "scope: project",
+        "created: 2026-08-16T10:00:00.000Z",
+        "updated: 2026-08-16T10:00:00.000Z",
+        "related:",
+        ...related.map((r) => `  - "${r}"`),
+      ],
+      `start-of-body\n${"x".repeat(11000)}\nend-of-body`,
+    );
+    const first = await run(showOp({ id: "0001" }));
+    expect(first.isError).toBe(false);
+    expect(first.text.length).toBeLessThanOrEqual(8192);
+    expect(first.text).toContain("start-of-body");
+    expect(first.text).toContain("(body truncated");
+    expect(first.details.nextOffset).toBeGreaterThan(0);
+    // no silent loss: the full values stay in details on every page
+    expect(first.details.title).toBe(title);
+    expect(first.details.tags).toEqual(tags);
+    expect(first.details.related).toEqual(related);
+    // the continuation cursor reassembles the full body; header and footer
+    // contain no "x", so counting x per page reassembles exactly the body
+    let offset = 0;
+    let xCount = 0;
+    let lastText = "";
+    for (let guard = 0; guard < 10; guard++) {
+      const page = await run(showOp({ id: "0001", offset }));
+      lastText = page.text;
+      xCount += (page.text.match(/x/g) ?? []).length;
+      const next = page.details.nextOffset as number | null;
+      if (next === null) break;
+      offset = next;
+    }
+    expect(xCount).toBe(11000);
+    expect(lastText).toContain("end-of-body");
+  });
+
+  it("F6: author and source lines stay unbounded", async () => {
+    const longAuthor = "a".repeat(2000);
+    const longRef = "s".repeat(2000);
+    writeRaw(
+      baseFm([
+        `author: ${JSON.stringify(longAuthor)}`,
+        "sourceType: conversation",
+        `sourceRef: ${JSON.stringify(longRef)}`,
+      ]),
+    );
+    const res = await run(showOp({ id: "0001" }));
+    expect(res.isError).toBe(false);
+    expect(lineOf(res.text, "author: ")).toBe(`author: ${longAuthor}`);
+    expect(lineOf(res.text, "source: ")).toBe(`source: conversation \u00b7 ${longRef}`);
+    expect(res.text).not.toContain("\u2026 (+");
+  });
+});
