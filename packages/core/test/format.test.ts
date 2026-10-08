@@ -253,10 +253,31 @@ describe("renderLinks (ENG-45)", () => {
         ],
       }),
       page([
-        { direction: "outgoing", resolution: res({ status: "found", id: "0003", entry: mem({ id: "0003", title: "Auth decision", type: "decision", tags: ["auth"] }) }) },
+        {
+          direction: "outgoing",
+          resolution: res({
+            status: "found",
+            id: "0003",
+            entry: mem({ id: "0003", title: "Auth decision", type: "decision", tags: ["auth"] }),
+          }),
+        },
         { direction: "outgoing", resolution: res({ status: "missing", id: "9999" }) },
-        { direction: "outgoing", resolution: res({ status: "ambiguous", id: "0004", claimants: ["/s/0004-a.md", "/s/0004-b.md"] }) },
-        { direction: "outgoing", resolution: res({ status: "found", id: "0002", entry: mem({ id: "0002", title: "Older note" }) }) },
+        {
+          direction: "outgoing",
+          resolution: res({
+            status: "ambiguous",
+            id: "0004",
+            claimants: ["/s/0004-a.md", "/s/0004-b.md"],
+          }),
+        },
+        {
+          direction: "outgoing",
+          resolution: res({
+            status: "found",
+            id: "0002",
+            entry: mem({ id: "0002", title: "Older note" }),
+          }),
+        },
       ]),
     );
     expect(out.indexOf("0003")).toBeLessThan(out.indexOf("9999"));
@@ -330,17 +351,46 @@ describe("renderLinks (ENG-45)", () => {
     const out = renderLinks(
       foundAdjacency({
         outgoing: [
-          res({ status: "found", id: "0003", entry: mem({ id: "0003", title: "Auth", type: "decision", tags: ["auth"], pinned: true }) }),
+          res({
+            status: "found",
+            id: "0003",
+            entry: mem({
+              id: "0003",
+              title: "Auth",
+              type: "decision",
+              tags: ["auth"],
+              pinned: true,
+            }),
+          }),
           res({ status: "missing", id: "9999" }),
           res({ status: "ambiguous", id: "0004", claimants: ["/s/a.md"] }),
         ],
         incoming: [mem({ id: "0007", title: "Early link", type: "fact", tags: ["x"] })],
       }),
       page([
-        { direction: "outgoing", resolution: res({ status: "found", id: "0003", entry: mem({ id: "0003", title: "Auth", type: "decision", tags: ["auth"], pinned: true }) }) },
+        {
+          direction: "outgoing",
+          resolution: res({
+            status: "found",
+            id: "0003",
+            entry: mem({
+              id: "0003",
+              title: "Auth",
+              type: "decision",
+              tags: ["auth"],
+              pinned: true,
+            }),
+          }),
+        },
         { direction: "outgoing", resolution: res({ status: "missing", id: "9999" }) },
-        { direction: "outgoing", resolution: res({ status: "ambiguous", id: "0004", claimants: ["/s/a.md"] }) },
-        { direction: "incoming", entry: mem({ id: "0007", title: "Early link", type: "fact", tags: ["x"] }) },
+        {
+          direction: "outgoing",
+          resolution: res({ status: "ambiguous", id: "0004", claimants: ["/s/a.md"] }),
+        },
+        {
+          direction: "incoming",
+          entry: mem({ id: "0007", title: "Early link", type: "fact", tags: ["x"] }),
+        },
       ]),
     );
     // eslint-disable-next-line no-control-regex -- intentionally detecting ANSI escapes

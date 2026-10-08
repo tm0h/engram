@@ -44,7 +44,14 @@ import {
   type ScanOptions,
 } from "@engram/core";
 import { PERSONAL_ONLY_NOTE, projectUninitialized } from "./degraded.js";
-import { MAX_LINKS_LIMIT, MAX_RESULT_CHARS, capText, pageFooter, paginate, type Page } from "./pagination.js";
+import {
+  MAX_LINKS_LIMIT,
+  MAX_RESULT_CHARS,
+  capText,
+  pageFooter,
+  paginate,
+  type Page,
+} from "./pagination.js";
 import type {
   AddOptions,
   ContextOptions,

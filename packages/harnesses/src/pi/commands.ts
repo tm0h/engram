@@ -357,8 +357,7 @@ interface ParsedLinks {
   limit?: number;
 }
 
-const LINKS_USAGE =
-  "Usage: /engram links <id> [--scope project|personal] [--offset n] [--limit n]";
+const LINKS_USAGE = "Usage: /engram links <id> [--scope project|personal] [--offset n] [--limit n]";
 
 /** Recognized links flags: a bare one is a missing value, never a literal. */
 const LINKS_FLAGS = new Set(["--scope", "--offset", "--limit"]);
@@ -366,7 +365,7 @@ const LINKS_FLAGS = new Set(["--scope", "--offset", "--limit"]);
 const parseLinksError = (error: string): { ok: false; error: string } => ({ ok: false, error });
 
 const isNonNegativeInteger = (v: string): boolean =>
- /^\d+$/.test(v) && Number.isSafeInteger(Number(v));
+  /^\d+$/.test(v) && Number.isSafeInteger(Number(v));
 
 /** Parse `/engram links` arguments: exact id first, then value flags. Rejects
  * missing ids, unknown flags, repeated value flags, non-integers, negative
@@ -539,8 +538,7 @@ export interface RegisterCommandOptions {
 
 export function registerEngramCommand(pi: ExtensionAPI, opts: RegisterCommandOptions = {}): void {
   pi.registerCommand("engram", {
-    description:
-      "engram memory: context | search | show | links | add | edit | init | help",
+    description: "engram memory: context | search | show | links | add | edit | init | help",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       await dispatch(args, ctx, opts.onWriteSuccess);
     },

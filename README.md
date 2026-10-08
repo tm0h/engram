@@ -290,23 +290,23 @@ You can edit these by hand (they're just files), but never invent an id:
 
 ## Commands
 
-| Command                                                   | Purpose                                                                                     |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `engram init [--tracked\|--untracked]`                    | Initialize project memory and choose whether git tracks it.                                 |
-| `engram add [content]`                                    | Record an entry from an argument, standard input, or `$EDITOR`.                             |
-| `engram list [options]`                                   | List entries, with scope, type, tag, and lifecycle filters.                                 |
-| `engram search <query> [options]`                         | Run BM25 search with query syntax, JSON output, explanations, and pagination.               |
-| `engram show <id>`                                        | Show one entry by id or unique prefix.                                                      |
+| Command                                                   | Purpose                                                                                                |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `engram init [--tracked\|--untracked]`                    | Initialize project memory and choose whether git tracks it.                                            |
+| `engram add [content]`                                    | Record an entry from an argument, standard input, or `$EDITOR`.                                        |
+| `engram list [options]`                                   | List entries, with scope, type, tag, and lifecycle filters.                                            |
+| `engram search <query> [options]`                         | Run BM25 search with query syntax, JSON output, explanations, and pagination.                          |
+| `engram show <id>`                                        | Show one entry by id or unique prefix.                                                                 |
 | `engram links <id> [options]`                             | Show the link graph around one entry: outgoing related plus incoming backlinks, exact ids, same scope. |
-| `engram edit <id> [content]`                              | Replace selected fields or edit the entry interactively.                                    |
-| `engram remove <id> [-y]`                                 | Delete an entry.                                                                            |
-| `engram context [options]`                                | Emit an agent-ready digest, optionally with full bodies or a focused query.                 |
-| `engram review [--scope personal\|project\|all] [--json]` | Find superseded, archived, expired, review-due, or broken-lineage entries.                  |
-| `engram check [--scope personal\|project\|all] [--json]`  | Check store integrity, configuration, lifecycle warnings, and secret-scan findings.         |
-| `engram dedupe [--scope personal\|project]`               | Replace duplicate ids with fresh globally unique ids.                                       |
-| `engram config [get\|set] [key] [value]`                  | Manage tracking, defaults, automatic context, and project or personal secret-scan policies. |
-| `engram inject`                                           | Print generic agent instructions for a system prompt or project rule.                       |
-| `engram where`                                            | Show resolved storage paths and the current default scope.                                  |
+| `engram edit <id> [content]`                              | Replace selected fields or edit the entry interactively.                                               |
+| `engram remove <id> [-y]`                                 | Delete an entry.                                                                                       |
+| `engram context [options]`                                | Emit an agent-ready digest, optionally with full bodies or a focused query.                            |
+| `engram review [--scope personal\|project\|all] [--json]` | Find superseded, archived, expired, review-due, or broken-lineage entries.                             |
+| `engram check [--scope personal\|project\|all] [--json]`  | Check store integrity, configuration, lifecycle warnings, and secret-scan findings.                    |
+| `engram dedupe [--scope personal\|project]`               | Replace duplicate ids with fresh globally unique ids.                                                  |
+| `engram config [get\|set] [key] [value]`                  | Manage tracking, defaults, automatic context, and project or personal secret-scan policies.            |
+| `engram inject`                                           | Print generic agent instructions for a system prompt or project rule.                                  |
+| `engram where`                                            | Show resolved storage paths and the current default scope.                                             |
 
 ### Structured search
 

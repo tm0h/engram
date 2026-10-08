@@ -120,6 +120,7 @@ describe("engram links command", () => {
     expect(out).toContain("Incoming");
     expect(out.indexOf("0007")).toBeLessThan(out.indexOf("0008"));
     expect(out.indexOf("0008")).toBeLessThan(out.indexOf("0006"));
+    // eslint-disable-next-line no-control-regex -- intentionally detecting ANSI escapes
     expect(out).not.toMatch(/\u001b\[/);
   });
 
@@ -160,7 +161,20 @@ describe("engram links command", () => {
   });
 
   it("paginates with the CLI-form footer and follows the continuation", async () => {
-    const authored = ["0005", "0002", "0013", "0004", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0003"];
+    const authored = [
+      "0005",
+      "0002",
+      "0013",
+      "0004",
+      "0006",
+      "0007",
+      "0008",
+      "0009",
+      "0010",
+      "0011",
+      "0012",
+      "0003",
+    ];
     seedEntry("0001", "Root entry", { related: authored });
     for (const id of authored) seedEntry(id, `Peer ${id}`);
 
@@ -168,12 +182,16 @@ describe("engram links command", () => {
     expect(output()).toContain(
       "(showing 1-10 of 12 - call engram links 0001 --scope project --offset 10 for more)",
     );
-    const page1Rows = output().split("\n").filter((l) => /^  \d{4} note /.test(l));
+    const page1Rows = output()
+      .split("\n")
+      .filter((l) => /^  \d{4} note /.test(l));
     expect(page1Rows).toHaveLength(10);
 
     outLines = [];
     await run(linksCommand("0001", { scope: "project", offset: 10 }));
-    const page2Rows = output().split("\n").filter((l) => /^  \d{4} note /.test(l));
+    const page2Rows = output()
+      .split("\n")
+      .filter((l) => /^  \d{4} note /.test(l));
     expect(page2Rows).toHaveLength(2);
     expect(output()).not.toContain("call engram links");
     const combined = [
@@ -185,13 +203,19 @@ describe("engram links command", () => {
 
   it("rejects invalid numeric options before scanning", async () => {
     seedEntry("0001", "Root");
-    await expect(runFail(linksCommand("0001", { scope: "project", offset: -1 }))).resolves.toMatchObject({
+    await expect(
+      runFail(linksCommand("0001", { scope: "project", offset: -1 })),
+    ).resolves.toMatchObject({
       message: "offset must be a nonnegative safe integer",
     });
-    await expect(runFail(linksCommand("0001", { scope: "project", limit: 0 }))).resolves.toMatchObject({
+    await expect(
+      runFail(linksCommand("0001", { scope: "project", limit: 0 })),
+    ).resolves.toMatchObject({
       message: "limit must be a positive safe integer",
     });
-    await expect(runFail(linksCommand("0001", { scope: "project", limit: 101 }))).resolves.toMatchObject({
+    await expect(
+      runFail(linksCommand("0001", { scope: "project", limit: 101 })),
+    ).resolves.toMatchObject({
       message: "limit must be at most 100",
     });
   });

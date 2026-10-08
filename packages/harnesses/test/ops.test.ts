@@ -1733,7 +1733,9 @@ describe("shared ops / linksOp", () => {
   const rowIds = (text: string): string[] =>
     text
       .split("\n")
-      .filter((l) => /^  \S+ (note|decision|fact|preference|issue|context) |^  \S+ (MISSING|AMBIGUOUS)/.test(l))
+      .filter((l) =>
+        /^  \S+ (note|decision|fact|preference|issue|context) |^  \S+ (MISSING|AMBIGUOUS)/.test(l),
+      )
       .map((l) => l.trimStart().split(" ")[0]!);
 
   it("defaults to project scope inside a project", async () => {
@@ -1931,7 +1933,20 @@ describe("shared ops / linksOp", () => {
 
   it("defaults to the shared search limit of 10 and footers the slash continuation", async () => {
     seedWithRelated(projectEngramsDir(tmp), "project", "0001", {
-      related: ["0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013"],
+      related: [
+        "0002",
+        "0003",
+        "0004",
+        "0005",
+        "0006",
+        "0007",
+        "0008",
+        "0009",
+        "0010",
+        "0011",
+        "0012",
+        "0013",
+      ],
     });
     for (let i = 2; i <= 13; i++) {
       seedWithRelated(projectEngramsDir(tmp), "project", String(i).padStart(4, "0"), {
@@ -1947,12 +1962,12 @@ describe("shared ops / linksOp", () => {
   });
 
   it("passes explicit scope and limit through to the continuation footer", async () => {
-    seedWithRelated(projectEngramsDir(tmp), "project", "0001", { related: ["0002", "0003", "0004"] });
+    seedWithRelated(projectEngramsDir(tmp), "project", "0001", {
+      related: ["0002", "0003", "0004"],
+    });
     for (const i of ["0002", "0003", "0004"]) seed(tmp, i, { title: `Peer ${i}` });
     const res = await run(linksOp({ id: "0001", scope: "project", limit: 2 }));
-    expect(res.text).toContain(
-      "/engram links 0001 --scope project --offset 2 --limit 2 for more",
-    );
+    expect(res.text).toContain("/engram links 0001 --scope project --offset 2 --limit 2 for more");
   });
 
   it("rejects negative offsets, zero limits, and limits over the shared maximum", async () => {
@@ -2010,12 +2025,43 @@ describe("shared ops / linksOp", () => {
 
   it("reconstructs the whole stream over multiple pages: authored outgoing then chronological incoming", async () => {
     const dir = projectEngramsDir(tmp);
-    const authored = ["0005", "0002", "0013", "0004", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0003"];
+    const authored = [
+      "0005",
+      "0002",
+      "0013",
+      "0004",
+      "0006",
+      "0007",
+      "0008",
+      "0009",
+      "0010",
+      "0011",
+      "0012",
+      "0003",
+    ];
     seedWithRelated(dir, "project", "0001", { related: authored });
     for (const id of authored) seedWithRelated(dir, "project", id, { title: `Peer ${id}` });
-    seedWithRelated(dir, "project", "0020", { title: "Backlink 0020", related: ["0001"] }, "2026-08-15T10:00:00.000Z");
-    seedWithRelated(dir, "project", "0015", { title: "Backlink 0015", related: ["0001"] }, "2026-08-16T11:00:00.000Z");
-    seedWithRelated(dir, "project", "0014", { title: "Backlink 0014", related: ["0001"] }, "2026-08-16T11:00:00.000Z");
+    seedWithRelated(
+      dir,
+      "project",
+      "0020",
+      { title: "Backlink 0020", related: ["0001"] },
+      "2026-08-15T10:00:00.000Z",
+    );
+    seedWithRelated(
+      dir,
+      "project",
+      "0015",
+      { title: "Backlink 0015", related: ["0001"] },
+      "2026-08-16T11:00:00.000Z",
+    );
+    seedWithRelated(
+      dir,
+      "project",
+      "0014",
+      { title: "Backlink 0014", related: ["0001"] },
+      "2026-08-16T11:00:00.000Z",
+    );
 
     const collected: string[] = [];
     let offset = 0;
@@ -2028,12 +2074,7 @@ describe("shared ops / linksOp", () => {
       if (next === null) break;
       offset = next;
     }
-    expect(collected).toEqual([
-      ...authored,
-      "0020",
-      "0014",
-      "0015",
-    ]);
+    expect(collected).toEqual([...authored, "0020", "0014", "0015"]);
   });
 
   it("caps oversized rows: bounded marker, footer survives, deterministic advance", async () => {

@@ -1354,7 +1354,20 @@ describe("engram extension / /engram links (ENG-45)", () => {
   });
 
   it("accepts every option and paginates with the slash-form footer", async () => {
-    const authored = ["0005", "0002", "0013", "0004", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0003"];
+    const authored = [
+      "0005",
+      "0002",
+      "0013",
+      "0004",
+      "0006",
+      "0007",
+      "0008",
+      "0009",
+      "0010",
+      "0011",
+      "0012",
+      "0003",
+    ];
     seedLink("0001", "Root entry", { related: authored });
     for (const id of authored) seedLink(id, `Peer ${id}`);
 

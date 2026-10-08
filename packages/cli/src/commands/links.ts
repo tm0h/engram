@@ -73,8 +73,7 @@ export const linksCommand = (
     const total = rows.length;
     const start = Math.max(0, offset);
     const pageRows = rows.slice(start, start + limit);
-    const nextOffset =
-      pageRows.length > 0 && start + limit < total ? start + limit : null;
+    const nextOffset = pageRows.length > 0 && start + limit < total ? start + limit : null;
 
     let body = renderLinks(adjacency, { offset: start, total, rows: pageRows });
     const warnings: string[] = [];

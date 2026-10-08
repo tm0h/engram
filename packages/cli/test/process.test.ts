@@ -868,11 +868,12 @@ describe("engram links (process level, ENG-45)", () => {
     over: { related?: string[]; created?: string } = {},
   ): string => {
     const created = over.created ?? "2026-08-16T10:00:00.000Z";
-    const slug = title
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 60) || "engram";
+    const slug =
+      title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 60) || "engram";
     const file = join(proj, ".engram", "engrams", `${id}-${slug}.md`);
     const fm = [
       `id: "${id}"`,
@@ -972,7 +973,20 @@ describe("engram links (process level, ENG-45)", () => {
   it("paginates with the CLI footer and continues at the given offset", () => {
     if (!spawnOk) return;
     const proj = freshProject();
-    const authored = ["0005", "0002", "0013", "0004", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0003"];
+    const authored = [
+      "0005",
+      "0002",
+      "0013",
+      "0004",
+      "0006",
+      "0007",
+      "0008",
+      "0009",
+      "0010",
+      "0011",
+      "0012",
+      "0003",
+    ];
     seedLink(proj, "0001", "Root entry", { related: authored });
     for (const id of authored) seedLink(proj, id, `Peer ${id}`);
 
