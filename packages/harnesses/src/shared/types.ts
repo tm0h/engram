@@ -47,6 +47,16 @@ export interface ShowOptions {
   readonly limit?: number;
 }
 
+/** ENG-45: the link graph around one exact id, in one scope. Exact ids only
+ * (no prefix resolution); a missing or ambiguous target is a successful graph
+ * read, never an error. */
+export interface LinksOptions {
+  readonly id: string;
+  readonly scope?: Scope;
+  readonly offset?: number;
+  readonly limit?: number;
+}
+
 export interface AddOptions {
   readonly title: string;
   readonly body: string;

@@ -17,6 +17,7 @@ import {
   ENGRAM_STATUSES,
   ENGRAM_TYPES,
   SOURCE_TYPES,
+  computeLinkAdjacency,
   detectAuthor,
   effectiveStatus,
   ensureGitignoreLine,
@@ -28,6 +29,7 @@ import {
   projectReadmeContent,
   projectReadmePath,
   removeGitignoreLine,
+  renderLinks,
   resolveSecretPolicy,
   searchEngrams,
   searchReport,
@@ -36,16 +38,19 @@ import {
   type ConfigRepoShape,
   type Engram,
   type EngramPatch,
+  type LinksPage,
+  type LinksRow,
   type Scope,
   type ScanOptions,
 } from "@engram/core";
 import { PERSONAL_ONLY_NOTE, projectUninitialized } from "./degraded.js";
-import { MAX_RESULT_CHARS, capText, pageFooter, paginate, type Page } from "./pagination.js";
+import { MAX_LINKS_LIMIT, MAX_RESULT_CHARS, capText, pageFooter, paginate, type Page } from "./pagination.js";
 import type {
   AddOptions,
   ContextOptions,
   EditOptions,
   InitOptions,
+  LinksOptions,
   OpResult,
   ScopeFilter,
   SearchOptions,
@@ -274,6 +279,17 @@ const applyCap = (text: string): string => {
   const capped = capText(text);
   return capped.truncated ? `${capped.text}\n(result truncated)` : capped.text;
 };
+
+/** ENG-45: trailing marker line added when the body is capped. Part of the
+ * reservation math so body + footer + marker never exceed MAX_RESULT_CHARS. */
+const LINKS_TRUNCATION_MARKER = "(list truncated to fit the size cap)";
+
+/** ENG-44 diagnostics never fail a links read: one bounded summary line after
+ * the adjacency, no per-diagnostic messages, no paths. Counts live in
+ * `details.diagnosticCount` / `details.omittedFiles`. */
+const diagnosticSummary = (count: number): string =>
+  `${count} store diagnostic${count === 1 ? "" : "s"} on sibling files; valid links above. ` +
+  "Run `engram check --scope all` for exact paths.";
 
 /* ------------------------------ ops ------------------------------ */
 
@@ -552,6 +568,105 @@ export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, Engram
          * mirroring the related precedent so no header elision is silent. */
         title: m.title,
         tags: m.tags,
+      });
+    }),
+  );
+
+/** ENG-45: the link graph around one exact id, in one scope. Missing and
+ * ambiguous targets are structured graph states, never errors; exactly one
+ * scan feeds `computeLinkAdjacency`; the flattened outgoing-then-incoming row
+ * stream is paginated with the shared helpers and capped with the footer
+ * reserved so a continuation is never truncated away. */
+export const linksOp = (opts: LinksOptions): Effect.Effect<OpResult, never, EngramStore> =>
+  capture(
+    Effect.gen(function* () {
+      const defaultLimit = opts.limit ?? DEFAULT_SEARCH_LIMIT;
+      const invalid = searchPaginationError(opts.offset ?? 0, defaultLimit);
+      if (invalid) return err(invalid);
+      if (defaultLimit > MAX_LINKS_LIMIT) {
+        return err(`limit must be at most ${MAX_LINKS_LIMIT}`);
+      }
+
+      const store = yield* EngramStore;
+      const root = yield* store.projectRoot();
+      // Explicit project scope outside a project gets the friendly hint (same
+      // contract as showOp); the default never re-targets the other scope.
+      if (opts.scope === "project" && Option.isNone(root)) {
+        return err(projectUninitialized("read"));
+      }
+      const scope: Scope = opts.scope ?? (Option.isSome(root) ? "project" : "personal");
+
+      // R1: exactly one scan per query; the same StoreScan feeds adjacency.
+      const scanned = yield* store.scan(scope);
+      const adjacency = computeLinkAdjacency(scanned, opts.id);
+
+      const rows: LinksRow[] = [
+        ...adjacency.outgoing.map((resolution) => ({
+          direction: "outgoing" as const,
+          resolution,
+        })),
+        ...adjacency.incoming.map((entry) => ({ direction: "incoming" as const, entry })),
+      ];
+      const page = paginate(rows, opts.offset ?? 0, defaultLimit);
+
+      const body = renderLinks(adjacency, {
+        offset: page.offset,
+        total: page.total,
+        rows: page.items,
+      } satisfies LinksPage);
+      const warnings: string[] = [];
+      if (scanned.omittedFiles > 0) warnings.push(incompleteMemoryWarning(scanned.omittedFiles));
+      if (scanned.diagnostics.length > 0) {
+        warnings.push(diagnosticSummary(scanned.diagnostics.length));
+      }
+
+      let footer: string | null = null;
+      if (page.nextOffset !== null && page.items.length > 0) {
+        // The footer names the slash form: this operation has no LLM tool.
+        const parts = [`/engram links ${opts.id}`];
+        if (opts.scope !== undefined) parts.push(`--scope ${opts.scope}`);
+        parts.push(`--offset ${page.nextOffset}`);
+        if (opts.limit !== undefined) parts.push(`--limit ${opts.limit}`);
+        footer = pageFooter({
+          from: page.offset + 1,
+          to: page.offset + page.items.length,
+          total: page.total,
+          nextOffset: page.nextOffset,
+          nextCall: parts.join(" "),
+        });
+      }
+
+      let text: string;
+      let truncated: boolean;
+      if (footer === null) {
+        const capped = capText([body, ...warnings].join("\n\n"));
+        text = capped.truncated ? `${capped.text}\n(result truncated)` : capped.text;
+        truncated = capped.truncated;
+      } else {
+        // Reserve room for footer + marker so the continuation always
+        // survives the hard cap and total length never exceeds it.
+        const capped = capText(
+          [body, ...warnings].join("\n\n"),
+          MAX_RESULT_CHARS - footer.length - LINKS_TRUNCATION_MARKER.length - 2,
+        );
+        text = capped.truncated
+          ? `${capped.text}\n${footer}\n${LINKS_TRUNCATION_MARKER}`
+          : `${[body, ...warnings].join("\n\n")}\n${footer}`;
+        truncated = capped.truncated;
+      }
+
+      return ok(text, {
+        id: opts.id,
+        scope,
+        targetStatus: adjacency.target.status,
+        outgoingTotal: adjacency.outgoing.length,
+        incomingTotal: adjacency.incoming.length,
+        offset: page.offset,
+        limit: page.limit,
+        nextOffset: page.nextOffset,
+        diagnosticCount: scanned.diagnostics.length,
+        omittedFiles: scanned.omittedFiles,
+        truncated,
       });
     }),
   );
