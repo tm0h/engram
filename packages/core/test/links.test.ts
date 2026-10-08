@@ -534,3 +534,32 @@ describe("computeLinkAdjacency (ENG-43)", () => {
     expect(computeLinkAdjacency(damaged, "0002")).toEqual(computeLinkAdjacency(clean, "0002"));
   });
 });
+
+/* ENG-45 R2 (deferred MINOR from 20261002-eng43): a pathological hand-rolled
+ * scan may list the same id as two separate DuplicateIdClaim objects. The
+ * claim map must keep the FIRST claim (the old `find` semantics, and the same
+ * first-wins rule `entryById` uses), not let Map construction keep the last. */
+describe("claimById first-claim guard (ENG-45 R2)", () => {
+  it("keeps the first claim when a scan lists the same duplicate id twice", () => {
+    const first = claim("dup1", ["/store/project/a.md", "/store/project/b.md"]);
+    const second = claim("dup1", ["/store/project/c.md"]);
+    const result = computeLinkAdjacency(scan({ duplicateIds: [first, second] }), "dup1");
+    expect(result.target).toEqual({
+      status: "ambiguous",
+      id: "dup1",
+      claimants: ["/store/project/a.md", "/store/project/b.md"],
+    });
+  });
+
+  it("still resolves a single claim unchanged", () => {
+    const result = computeLinkAdjacency(
+      scan({ duplicateIds: [claim("dup2", ["/store/project/x.md"])] }),
+      "dup2",
+    );
+    expect(result.target).toEqual({
+      status: "ambiguous",
+      id: "dup2",
+      claimants: ["/store/project/x.md"],
+    });
+  });
+});
