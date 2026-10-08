@@ -1,6 +1,16 @@
 import { describe, it, expect } from "vite-plus/test";
-import { summaryLine, renderList, renderFull, renderSearch, renderContext } from "../src/format.js";
+import {
+  summaryLine,
+  renderList,
+  renderFull,
+  renderSearch,
+  renderContext,
+  renderLinks,
+  type LinksPage,
+  type LinksRow,
+} from "../src/format.js";
 import type { Engram } from "../src/domain.js";
+import type { LinkAdjacency, LinkTargetResolution } from "../src/links.js";
 import { searchEngrams } from "../src/search.js";
 
 const mem = (over: Partial<Engram> & { id: string; title: string }): Engram => ({
@@ -160,5 +170,180 @@ describe("renderFull / related (ENG-42)", () => {
       .filter((l) => l.startsWith("  "))
       .map((l) => l.trim());
     expect(blockLines).toEqual(["status: superseded", "related: 0002"]);
+  });
+});
+
+/* ENG-45: the link-graph formatter. Pure plain text (no chalk), driven by a
+ * pre-sliced page of the flattened outgoing-then-incoming row stream. The
+ * formatter never resolves ids and never touches the store. */
+describe("renderLinks (ENG-45)", () => {
+  const res = (r: LinkTargetResolution): LinkTargetResolution => r;
+
+  const foundAdjacency = (over: Partial<LinkAdjacency> = {}): LinkAdjacency => ({
+    target: {
+      status: "found",
+      id: "0012",
+      entry: mem({ id: "0012", title: "Root entry", type: "decision" }),
+    },
+    outgoing: [],
+    incoming: [],
+    ...over,
+  });
+
+  const page = (rows: ReadonlyArray<LinksRow>, offset = 0, total = rows.length): LinksPage => ({
+    offset,
+    total,
+    rows,
+  });
+
+  it("renders a stable target header for a found target", () => {
+    const out = renderLinks(foundAdjacency(), page([]));
+    expect(out.startsWith("Links for 0012 - Root entry (decision)")).toBe(true);
+  });
+
+  it("marks a missing target in the header", () => {
+    const out = renderLinks(
+      foundAdjacency({ target: { status: "missing", id: "9999" } }),
+      page([]),
+    );
+    expect(out).toContain("Links for 9999 - MISSING");
+  });
+
+  it("marks an ambiguous target with bounded claimant context", () => {
+    const out = renderLinks(
+      foundAdjacency({
+        target: {
+          status: "ambiguous",
+          id: "0004",
+          claimants: ["/s/0004-a.md", "/s/0004-b.md", "/s/0004-c.md", "/s/0004-d.md"],
+        },
+      }),
+      page([]),
+    );
+    expect(out).toContain("Links for 0004 - AMBIGUOUS (4 claimants)");
+    expect(out).toContain("/s/0004-a.md");
+    expect(out).toContain("/s/0004-b.md");
+    expect(out).toContain("/s/0004-c.md");
+    expect(out).not.toContain("/s/0004-d.md");
+    expect(out).toContain("+1 more");
+  });
+
+  it("renders (none) for genuinely empty sections", () => {
+    const out = renderLinks(foundAdjacency(), page([]));
+    expect(out).toContain("Outgoing\n  (none)");
+    expect(out).toContain("Incoming\n  (none)");
+  });
+
+  it("keeps authored outgoing order and renders MISSING/AMBIGUOUS markers", () => {
+    const out = renderLinks(
+      foundAdjacency({
+        outgoing: [
+          res({
+            status: "found",
+            id: "0003",
+            entry: mem({ id: "0003", title: "Auth decision", type: "decision", tags: ["auth"] }),
+          }),
+          res({ status: "missing", id: "9999" }),
+          res({
+            status: "ambiguous",
+            id: "0004",
+            claimants: ["/s/0004-a.md", "/s/0004-b.md"],
+          }),
+          res({ status: "found", id: "0002", entry: mem({ id: "0002", title: "Older note" }) }),
+        ],
+      }),
+      page([
+        { direction: "outgoing", resolution: res({ status: "found", id: "0003", entry: mem({ id: "0003", title: "Auth decision", type: "decision", tags: ["auth"] }) }) },
+        { direction: "outgoing", resolution: res({ status: "missing", id: "9999" }) },
+        { direction: "outgoing", resolution: res({ status: "ambiguous", id: "0004", claimants: ["/s/0004-a.md", "/s/0004-b.md"] }) },
+        { direction: "outgoing", resolution: res({ status: "found", id: "0002", entry: mem({ id: "0002", title: "Older note" }) }) },
+      ]),
+    );
+    expect(out.indexOf("0003")).toBeLessThan(out.indexOf("9999"));
+    expect(out.indexOf("9999")).toBeLessThan(out.indexOf("0004"));
+    expect(out.indexOf("0004")).toBeLessThan(out.indexOf("0002"));
+    expect(out).toContain("9999 MISSING");
+    expect(out).toContain("0004 AMBIGUOUS (2 claimants)");
+    expect(out).toContain("/s/0004-a.md");
+    expect(out).toContain("/s/0004-b.md");
+    expect(out).toContain("0003 decision Auth decision #auth");
+    expect(out.indexOf("Outgoing")).toBeGreaterThan(-1);
+  });
+
+  it("renders incoming rows in chronological order with created-then-id tie-break", () => {
+    const earlier = mem({ id: "0007", title: "Early link", created: "2025-08-15T10:00:00.000Z" });
+    const tieB = mem({ id: "0009", title: "Tie B", created: "2025-08-16T10:00:00.000Z" });
+    const tieA = mem({ id: "0008", title: "Tie A", created: "2025-08-16T10:00:00.000Z" });
+    const later = mem({ id: "0006", title: "Late link", created: "2025-08-17T10:00:00.000Z" });
+    const incoming = [earlier, tieB, tieA, later];
+    const out = renderLinks(
+      foundAdjacency({ incoming }),
+      page(incoming.map((entry) => ({ direction: "incoming" as const, entry }))),
+    );
+    expect(out.indexOf("0007")).toBeLessThan(out.indexOf("0009"));
+    expect(out.indexOf("0009")).toBeLessThan(out.indexOf("0008"));
+    expect(out.indexOf("0008")).toBeLessThan(out.indexOf("0006"));
+    expect(out).toContain("(created 2025-08-16)");
+  });
+
+  it("renders only the labels for directions present on the page", () => {
+    const outgoingRow: LinksRow = {
+      direction: "outgoing",
+      resolution: res({ status: "found", id: "0002", entry: mem({ id: "0002", title: "Older" }) }),
+    };
+    const outgoingOnly = renderLinks(foundAdjacency(), page([outgoingRow], 0, 2));
+    expect(outgoingOnly).toContain("Outgoing");
+    expect(outgoingOnly).not.toContain("Incoming");
+
+    const incomingEntry = mem({ id: "0007", title: "Early link" });
+    const incomingOnly = renderLinks(
+      foundAdjacency(),
+      page([{ direction: "incoming", entry: incomingEntry }], 1, 2),
+    );
+    expect(incomingOnly).toContain("Incoming");
+    expect(incomingOnly).not.toContain("Outgoing");
+  });
+
+  it("renders both labels in fixed order on a page spanning the boundary", () => {
+    const outgoingRow: LinksRow = {
+      direction: "outgoing",
+      resolution: res({ status: "found", id: "0002", entry: mem({ id: "0002", title: "Older" }) }),
+    };
+    const incomingRow: LinksRow = {
+      direction: "incoming",
+      entry: mem({ id: "0007", title: "Early link" }),
+    };
+    const out = renderLinks(foundAdjacency(), page([outgoingRow, incomingRow], 0, 2));
+    expect(out.indexOf("Outgoing")).toBeLessThan(out.indexOf("Incoming"));
+    expect(out.indexOf("0002")).toBeLessThan(out.indexOf("0007"));
+  });
+
+  it("renders an explicit offset note when the window is at or past the total", () => {
+    const out = renderLinks(foundAdjacency(), page([], 25, 4));
+    expect(out).toContain("offset 25");
+    expect(out).toContain("4 rows total");
+    expect(out).not.toContain("(none)");
+    expect(out).not.toContain("Outgoing");
+  });
+
+  it("emits plain text without ANSI", () => {
+    const out = renderLinks(
+      foundAdjacency({
+        outgoing: [
+          res({ status: "found", id: "0003", entry: mem({ id: "0003", title: "Auth", type: "decision", tags: ["auth"], pinned: true }) }),
+          res({ status: "missing", id: "9999" }),
+          res({ status: "ambiguous", id: "0004", claimants: ["/s/a.md"] }),
+        ],
+        incoming: [mem({ id: "0007", title: "Early link", type: "fact", tags: ["x"] })],
+      }),
+      page([
+        { direction: "outgoing", resolution: res({ status: "found", id: "0003", entry: mem({ id: "0003", title: "Auth", type: "decision", tags: ["auth"], pinned: true }) }) },
+        { direction: "outgoing", resolution: res({ status: "missing", id: "9999" }) },
+        { direction: "outgoing", resolution: res({ status: "ambiguous", id: "0004", claimants: ["/s/a.md"] }) },
+        { direction: "incoming", entry: mem({ id: "0007", title: "Early link", type: "fact", tags: ["x"] }) },
+      ]),
+    );
+    // eslint-disable-next-line no-control-regex -- intentionally detecting ANSI escapes
+    expect(out).not.toMatch(/\u001b\[/);
   });
 });

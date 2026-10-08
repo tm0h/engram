@@ -4,6 +4,7 @@
  */
 import chalk from "chalk";
 import type { Engram, EngramType } from "./domain.js";
+import type { LinkAdjacency, LinkTargetResolution } from "./links.js";
 import type { SearchResult } from "./search.js";
 import { truncate } from "./util.js";
 
@@ -159,4 +160,101 @@ export function renderContext(engrams: ReadonlyArray<Engram>, opts: ContextOpts)
     blocks.push(`## Other\n${rest.map(summaryLine).join("\n")}`);
   }
   return `${header}\n\n${blocks.join("\n\n")}`;
+}
+
+/* ------------------------- ENG-45: links view ------------------------- */
+
+/** One row of the flattened links stream: every outgoing resolution first,
+ * then every incoming backlink. Serializable plain data so the shared op and
+ * the CLI build the same shape from the same adjacency and pre-slice it with
+ * the same pagination math. */
+export type LinksRow =
+  | { readonly direction: "outgoing"; readonly resolution: LinkTargetResolution }
+  | { readonly direction: "incoming"; readonly entry: Engram };
+
+/** The pre-sliced page handed to renderLinks: the row window plus the numbers
+ * needed to describe an empty window explicitly. The pagination footer is not
+ * part of the formatter. */
+export interface LinksPage {
+  /** 0-based offset of the first row in `rows` within the flattened stream. */
+  readonly offset: number;
+  /** Total rows in the flattened stream (both directions). */
+  readonly total: number;
+  /** The rows on this page, in stream order. */
+  readonly rows: ReadonlyArray<LinksRow>;
+}
+
+/** Bounded claimant context: at most this many paths, then a `+N more` line. */
+const CLAIMANT_PREVIEW = 3;
+
+function claimantLines(claimants: ReadonlyArray<string>, indent: string): string[] {
+  const lines = claimants.slice(0, CLAIMANT_PREVIEW).map((p) => `${indent}${p}`);
+  const rest = claimants.length - Math.min(claimants.length, CLAIMANT_PREVIEW);
+  if (rest > 0) lines.push(`${indent}+${rest} more`);
+  return lines;
+}
+
+/** Plain-text tag suffix. renderLinks never uses chalk (R11): the no-ANSI
+ * contract holds by construction, and character math stays identical for the
+ * op and the CLI regardless of TTY detection. */
+function plainTags(tags: ReadonlyArray<string>): string {
+  return tags.length ? " " + tags.map((t) => `#${t}`).join(" ") : "";
+}
+
+function targetHeader(target: LinkTargetResolution): string {
+  if (target.status === "found") {
+    return `Links for ${target.id} - ${target.entry.title} (${target.entry.type})`;
+  }
+  if (target.status === "missing") return `Links for ${target.id} - MISSING`;
+  return `Links for ${target.id} - AMBIGUOUS (${target.claimants.length} claimants)`;
+}
+
+function rowLines(row: LinksRow): string[] {
+  if (row.direction === "outgoing") {
+    const r = row.resolution;
+    if (r.status === "found") {
+      return [`  ${r.id} ${r.entry.type} ${r.entry.title}${plainTags(r.entry.tags)}`];
+    }
+    if (r.status === "missing") return [`  ${r.id} MISSING`];
+    return [
+      `  ${r.id} AMBIGUOUS (${r.claimants.length} claimants)`,
+      ...claimantLines(r.claimants, "    "),
+    ];
+  }
+  const m = row.entry;
+  return [`  ${m.id} ${m.type} ${m.title}${plainTags(m.tags)} (created ${dateShort(m.created)})`];
+}
+
+/** Render one page of the link graph around one entry (ENG-45). The formatter
+ * resolves nothing and touches no store: it renders the given adjacency
+ * header and the pre-sliced row window, with `Outgoing` and `Incoming`
+ * section labels in fixed order (a label appears only when its direction has
+ * rows on this page). Genuinely empty sections print `(none)`; a window at or
+ * past the total prints an explicit offset note instead. */
+export function renderLinks(adjacency: LinkAdjacency, page: LinksPage): string {
+  const lines: string[] = [targetHeader(adjacency.target)];
+  if (adjacency.target.status === "ambiguous") {
+    lines.push(...claimantLines(adjacency.target.claimants, "    "));
+  }
+  lines.push("");
+
+  if (page.rows.length === 0) {
+    if (page.total > 0) {
+      lines.push(`(offset ${page.offset} past the end - ${page.total} rows total)`);
+    } else {
+      lines.push("Outgoing", "  (none)", "", "Incoming", "  (none)");
+    }
+    return lines.join("\n");
+  }
+
+  let current: LinksRow["direction"] | null = null;
+  for (const row of page.rows) {
+    if (row.direction !== current) {
+      if (current !== null) lines.push("");
+      current = row.direction;
+      lines.push(current === "outgoing" ? "Outgoing" : "Incoming");
+    }
+    lines.push(...rowLines(row));
+  }
+  return lines.join("\n");
 }
