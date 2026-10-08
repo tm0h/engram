@@ -297,6 +297,7 @@ You can edit these by hand (they're just files), but never invent an id:
 | `engram list [options]`                                   | List entries, with scope, type, tag, and lifecycle filters.                                 |
 | `engram search <query> [options]`                         | Run BM25 search with query syntax, JSON output, explanations, and pagination.               |
 | `engram show <id>`                                        | Show one entry by id or unique prefix.                                                      |
+| `engram links <id> [options]`                             | Show the link graph around one entry: outgoing related plus incoming backlinks, exact ids, same scope. |
 | `engram edit <id> [content]`                              | Replace selected fields or edit the entry interactively.                                    |
 | `engram remove <id> [-y]`                                 | Delete an entry.                                                                            |
 | `engram context [options]`                                | Emit an agent-ready digest, optionally with full bodies or a focused query.                 |
@@ -385,6 +386,30 @@ Pi and OpenCode `engram_search` expose the same versioned report as result
 metadata, with `explain: true` enabling contributions. Their text responses
 retain 10-result pagination. CLI errors exit nonzero and keep stdout free of
 partial JSON. Use `--all` to include inactive entries in CLI search.
+
+`add` highlights:
+
+### Link graph
+
+`engram links <id>` prints the link graph around one entry. Outgoing rows
+follow the entry's authored `related` order; incoming rows list backlinks in
+creation order (ties break by id). Ids are exact and same-scope only: a strict
+prefix never resolves, and an id present only in the other scope reads as
+missing rather than falling back.
+
+A missing target carries a literal `MISSING` marker; an id claimed by several
+files carries `AMBIGUOUS` with a bounded claimant list. Both are successful
+reads, never errors. Output is plain text, capped at ~8 kB, and paginated over
+one flattened row stream:
+
+```sh
+engram links 0012                        # default page: 10 rows
+engram links 0012 --scope personal       # read the personal scope explicitly
+engram links 0012 --offset 10 --limit 20 # continue past the first page
+```
+
+The continuation footer names the next call. Related links themselves are
+written with `engram add --related` / `engram edit --related`.
 
 `add` highlights:
 
