@@ -12,6 +12,7 @@ import {
   lifecycleDiagnostics,
   type ScanOptions,
 } from "../src/store.js";
+import { computeLinkAdjacency } from "../src/links.js";
 import { projectConfigPath, projectEngramsDir, globalEngramsDir } from "../src/paths.js";
 import { parseFrontmatter, stringifyFrontmatter } from "../src/frontmatter.js";
 import { slugify } from "../src/util.js";
@@ -4056,6 +4057,84 @@ describe("EngramStore / ENG-42 related", () => {
         "related_invalid:error",
         "schema_version_unsupported:warning",
       ]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+});
+
+describe("EngramStore / ENG-43 link adjacency is read-only", () => {
+  let orig = "";
+  let tmp = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    tmp = mkProject();
+    process.chdir(tmp);
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const dir = (): string => projectEngramsDir(tmp);
+
+  const seedLink = (name: string, id: string, related: string[] | undefined): void => {
+    const fm: Record<string, unknown> = {
+      id,
+      title: `Entry ${id}`,
+      type: "note",
+      tags: ["a"],
+      scope: "project",
+      created: "2025-08-15T10:00:00.000Z",
+      updated: "2025-08-15T10:00:00.000Z",
+    };
+    if (related !== undefined) fm.related = related;
+    fs.writeFileSync(path.join(dir(), name), stringifyFrontmatter("Body\n", fm));
+  };
+
+  const outgoingFoundIds = (a: ReturnType<typeof computeLinkAdjacency>): string[] =>
+    a.outgoing.filter((r) => r.status === "found").map((r) => r.id);
+  const backlinkIds = (a: ReturnType<typeof computeLinkAdjacency>): string[] =>
+    a.incoming.map((m) => m.id);
+
+  it.live("scan plus adjacency leaves a reciprocal A-B store byte-identical", () =>
+    Effect.gen(function* () {
+      seedLink("0001-a-entry.md", "0001", ["0002"]);
+      seedLink("0002-b-entry.md", "0002", ["0001"]);
+      const before = snapshot(dir());
+
+      const store = yield* EngramStore;
+      const scanned = yield* store.scan("project");
+      const adjacency = computeLinkAdjacency(scanned, "0001");
+
+      expect(adjacency.target.status).toBe("found");
+      expect(outgoingFoundIds(adjacency)).toEqual(["0002"]); // outgoing
+      expect(backlinkIds(adjacency)).toEqual(["0002"]); // incoming
+
+      // Reads never write: not one byte changed, and no reciprocal or
+      // derived key was persisted by the scan-plus-adjacency read.
+      expect(snapshot(dir())).toBe(before);
+      expect(before).not.toMatch(/backlinks:|incoming:/);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("scan plus adjacency leaves a one-way A to B store byte-identical", () =>
+    Effect.gen(function* () {
+      seedLink("0001-a-entry.md", "0001", ["0002"]);
+      seedLink("0002-b-entry.md", "0002", undefined);
+      const before = snapshot(dir());
+
+      const store = yield* EngramStore;
+      const scanned = yield* store.scan("project");
+
+      const fromSource = computeLinkAdjacency(scanned, "0001");
+      expect(outgoingFoundIds(fromSource)).toEqual(["0002"]);
+      expect(backlinkIds(fromSource)).toEqual([]);
+
+      const fromTarget = computeLinkAdjacency(scanned, "0002");
+      expect(backlinkIds(fromTarget)).toEqual(["0001"]);
+      expect(fromTarget.outgoing).toEqual([]);
+
+      expect(snapshot(dir())).toBe(before);
+      expect(before).not.toMatch(/backlinks:|incoming:/);
     }).pipe(Effect.provide(StoreLive)),
   );
 });

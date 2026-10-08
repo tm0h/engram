@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { MainLive, projectConfigPath, projectEngramsDir, projectReadmePath } from "@engram/core";
-import { EngramStore, ConfigRepo } from "@engram/core";
+import { EngramStore, ConfigRepo, computeLinkAdjacency, type LinkAdjacency } from "@engram/core";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
 import type { EngramInput } from "@engram/core";
@@ -1582,5 +1582,60 @@ describe("shared ops / showOp header budgets (ENG-77)", () => {
     expect(lineOf(res.text, "author: ")).toBe(`author: ${longAuthor}`);
     expect(lineOf(res.text, "source: ")).toBe(`source: conversation \u00b7 ${longRef}`);
     expect(res.text).not.toContain("\u2026 (+");
+  });
+});
+
+/* ---------------- ENG-43 link adjacency consumer ---------------- */
+
+describe("shared ops / link adjacency consumer (ENG-43)", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject("note");
+    home = mkHome();
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    if (origHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = origHome;
+    }
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("computeLinkAdjacency consumes one scan through @engram/core and returns serializable data", async () => {
+    seed(tmp, "0001", { title: "Adjacency source" });
+    seed(tmp, "0002", { title: "Adjacency target" });
+    const linked = await run(editOp({ id: "0001", related: ["0002"] }));
+    expect(linked.isError).toBe(false);
+
+    // Compile-time assertion: the public core export types the result for
+    // shared-layer consumers without any adapter.
+    const adjacency: LinkAdjacency = await run(
+      Effect.gen(function* () {
+        const store = yield* EngramStore;
+        const scanned = yield* Effect.orDie(store.scan("project"));
+        return computeLinkAdjacency(scanned, "0002");
+      }),
+    );
+
+    // Runtime assertion: the result is plain JSON-serializable data.
+    const roundTripped = JSON.parse(JSON.stringify(adjacency)) as LinkAdjacency;
+    expect(roundTripped).toEqual(adjacency);
+
+    expect(adjacency.target.status).toBe("found");
+    if (adjacency.target.status === "found") {
+      expect(adjacency.target.entry.id).toBe("0002");
+    }
+    expect(adjacency.incoming.map((m) => m.id)).toEqual(["0001"]);
+    expect(adjacency.outgoing).toEqual([]);
   });
 });
