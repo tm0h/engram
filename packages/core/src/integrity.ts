@@ -3,10 +3,11 @@
  * `EngramStore.scan` and the `engram check` command.
  *
  * Codes are a stable API: they stay concise and independent of the rendered
- * `message`/`hint` prose, so later checks (lifecycle schemas, secret
- * scanning) can append findings without changing scan or CLI consumers.
- * Every diagnostic names the exact file; `severity` is `"error"` today and
- * can gain milder levels later without changing the shape.
+ * `message`/`hint` prose, so later checks (lifecycle schemas, link
+ * resolution, secret scanning) can append findings without changing scan or
+ * CLI consumers. Every diagnostic names the exact file; `severity` splits
+ * check-failing errors from advisory warnings, and warnings cover more than
+ * lifecycle conditions (see `related_not_found` / `related_ambiguous`).
  */
 import type { Engram, Scope } from "./domain.js";
 
@@ -57,10 +58,13 @@ export type StoreDiagnosticCode =
   | "supersedes_not_found"
   | "review_due"
   | "expired"
-  /* ENG-42 related advisory condition (packages/core/src/store.ts:
-   * lifecycleDiagnostics). One warning per same-scope missing target;
-   * never omits the source entry and never fails a check on its own. */
+  /* ENG-44 related link advisory conditions (packages/core/src/store.ts:
+   * linkDiagnostics). Cross-file same-scope resolution through the exact-id
+   * claim map: zero claims warn missing, two or more warn ambiguous. One
+   * warning per related value; warnings never omit the source entry and
+   * never fail a check on their own. */
   | "related_not_found"
+  | "related_ambiguous"
   /* config validation (packages/core/src/config.ts) */
   | "config_unreadable"
   | "config_json_invalid"
@@ -73,8 +77,8 @@ export type StoreDiagnosticCode =
 
 /** Diagnostic weight. "error" marks a defect that makes a check fail;
  * "warning" is advisory (ENG-13 lifecycle conditions, ENG-41 unsupported
- * entry schema versions): reported in every output mode, but a warning-only
- * scan still passes. */
+ * entry schema versions, ENG-44 missing or ambiguous relation targets):
+ * reported in every output mode, but a warning-only scan still passes. */
 export type StoreDiagnosticSeverity = "error" | "warning";
 
 /** One defect in one file: `message` states the problem, `hint` the repair. */
