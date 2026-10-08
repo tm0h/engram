@@ -5,6 +5,7 @@
  *   /engram context [scope]
  *   /engram search <query>
  *   /engram show <id>
+ *   /engram links <id> [--scope project|personal] [--offset n] [--limit n]
  *   /engram add <title> -- <body> [--type X] [--scope Y] [--tags a,b] [--pinned]
  *   /engram edit <id> [flags] [-- <body>]
  *   /engram init [tracked|untracked]
@@ -13,7 +14,8 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { EngramType, Scope, SourceType, Status } from "@engram/core";
 import { ENGRAM_STATUSES, ENGRAM_TYPES, SOURCE_TYPES } from "@engram/core";
-import { addOp, contextDigest, editOp, initOp, searchOp, showOp } from "../shared/ops.js";
+import { addOp, contextDigest, editOp, initOp, linksOp, searchOp, showOp } from "../shared/ops.js";
+import { MAX_LINKS_LIMIT } from "../shared/pagination.js";
 import { runOp } from "./run.js";
 
 const HELP = [
@@ -23,6 +25,8 @@ const HELP = [
   "  /engram context [scope]  digest for scope: project | personal | both",
   "  /engram search <query>   keyword search across recorded engrams",
   "  /engram show <id>        read one full entry (unique prefixes work)",
+  "  /engram links <id>       link graph: outgoing related + incoming backlinks (exact id)",
+  "      flags: --scope project|personal   --offset n   --limit n (max " + MAX_LINKS_LIMIT + ")",
   "  /engram add <title> -- <body>   record an entry",
   "      flags: --type decision|fact|preference|note|issue|context",
   "             --scope project|personal   --tags a,b   --pinned",
@@ -344,6 +348,82 @@ function parseEdit(rest: string): ParsedEdit | { ok: false; error: string } {
   return parsed;
 }
 
+/* --------------------------- links parsing --------------------------- */
+
+interface ParsedLinks {
+  id: string;
+  scope?: Scope;
+  offset?: number;
+  limit?: number;
+}
+
+const LINKS_USAGE =
+  "Usage: /engram links <id> [--scope project|personal] [--offset n] [--limit n]";
+
+/** Recognized links flags: a bare one is a missing value, never a literal. */
+const LINKS_FLAGS = new Set(["--scope", "--offset", "--limit"]);
+
+const parseLinksError = (error: string): { ok: false; error: string } => ({ ok: false, error });
+
+const isNonNegativeInteger = (v: string): boolean =>
+ /^\d+$/.test(v) && Number.isSafeInteger(Number(v));
+
+/** Parse `/engram links` arguments: exact id first, then value flags. Rejects
+ * missing ids, unknown flags, repeated value flags, non-integers, negative
+ * offsets, zero or excessive limits, and trailing positional arguments —
+ * all before the operation runs. Exact ids only: graph semantics, no
+ * prefix resolution. */
+function parseLinks(rest: string): ParsedLinks | { ok: false; error: string } {
+  const tokens = tokenizeCommand(rest);
+  if ("error" in tokens) return parseLinksError(tokens.error);
+  if (tokens.length === 0) return parseLinksError(LINKS_USAGE);
+  const head = tokens[0]!;
+  if (head.raw.startsWith("--")) {
+    return parseLinksError(`Missing id. ${LINKS_USAGE}`);
+  }
+
+  const parsed: ParsedLinks = { id: head.value };
+  const seen = new Set<string>();
+  for (let k = 1; k < tokens.length; k += 1) {
+    const t = tokens[k]!;
+    if (!t.raw.startsWith("--")) {
+      return parseLinksError(`Unexpected argument "${t.raw}". ${LINKS_USAGE}`);
+    }
+    if (!LINKS_FLAGS.has(t.raw)) {
+      return parseLinksError(`Unknown flag "${t.raw}". ${LINKS_USAGE}`);
+    }
+    if (seen.has(t.raw)) {
+      return parseLinksError(`Repeated flag ${t.raw}. ${LINKS_USAGE}`);
+    }
+    seen.add(t.raw);
+    const value = tokens[k + 1];
+    if (value === undefined || LINKS_FLAGS.has(value.raw)) {
+      return parseLinksError(`Missing value for ${t.raw}. ${LINKS_USAGE}`);
+    }
+    k += 1;
+    if (t.raw === "--scope") {
+      if (value.value !== "project" && value.value !== "personal") {
+        return parseLinksError(`Invalid --scope "${value.value}". Valid: project | personal`);
+      }
+      parsed.scope = value.value;
+    } else if (t.raw === "--offset") {
+      if (!isNonNegativeInteger(value.value)) {
+        return parseLinksError("offset must be a nonnegative safe integer");
+      }
+      parsed.offset = Number(value.value);
+    } else {
+      if (!isNonNegativeInteger(value.value) || Number(value.value) < 1) {
+        return parseLinksError("limit must be a positive safe integer");
+      }
+      if (Number(value.value) > MAX_LINKS_LIMIT) {
+        return parseLinksError(`limit must be at most ${MAX_LINKS_LIMIT}`);
+      }
+      parsed.limit = Number(value.value);
+    }
+  }
+  return parsed;
+}
+
 async function dispatch(
   args: string,
   ctx: ExtensionCommandContext,
@@ -391,6 +471,21 @@ async function dispatch(
       return;
     }
     const r = await runOp(showOp({ id: remainder }));
+    notify(r.text, r.isError ? "error" : "info");
+    return;
+  }
+
+  if (sub === "links") {
+    if (!remainder) {
+      notify(LINKS_USAGE, "error");
+      return;
+    }
+    const parsed = parseLinks(remainder);
+    if ("error" in parsed) {
+      notify(parsed.error, "error");
+      return;
+    }
+    const r = await runOp(linksOp(parsed));
     notify(r.text, r.isError ? "error" : "info");
     return;
   }
@@ -444,7 +539,8 @@ export interface RegisterCommandOptions {
 
 export function registerEngramCommand(pi: ExtensionAPI, opts: RegisterCommandOptions = {}): void {
   pi.registerCommand("engram", {
-    description: "engram memory: context | search | show | add | edit | init | help",
+    description:
+      "engram memory: context | search | show | links | add | edit | init | help",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       await dispatch(args, ctx, opts.onWriteSuccess);
     },
