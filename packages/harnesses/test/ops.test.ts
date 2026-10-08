@@ -2095,4 +2095,19 @@ describe("shared ops / linksOp", () => {
     expect(page2.details).toMatchObject({ truncated: false, nextOffset: null });
     expect(page2.text).toContain("0003 note Small peer");
   });
+
+  it("keeps the no-footer truncated page within the hard cap (F1)", async () => {
+    const dir = projectEngramsDir(tmp);
+    seedWithRelated(dir, "project", "0001", { related: ["0002", "0003"] });
+    seedWithRelated(dir, "project", "0002", { title: "x".repeat(10_000) });
+    seedWithRelated(dir, "project", "0003", { title: "Small peer" });
+
+    // Default limit 10 over 2 rows: one page, no continuation footer.
+    const res = await run(linksOp({ id: "0001", scope: "project" }));
+    expect(res.isError).toBe(false);
+    expect(res.details).toMatchObject({ nextOffset: null, truncated: true });
+    expect(res.text.length).toBeLessThanOrEqual(8192);
+    expect(res.text).toContain("(result truncated)");
+    expect(res.text).not.toContain("call /engram links");
+  });
 });

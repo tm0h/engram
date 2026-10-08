@@ -291,6 +291,10 @@ const applyCap = (text: string): string => {
  * reservation math so body + footer + marker never exceed MAX_RESULT_CHARS. */
 const LINKS_TRUNCATION_MARKER = "(list truncated to fit the size cap)";
 
+/** ENG-45 (F1): marker for the capped no-footer branch, reserved the same way
+ * the footer branch reserves the footer. */
+const LINKS_RESULT_MARKER = "(result truncated)";
+
 /** ENG-44 diagnostics never fail a links read: one bounded summary line after
  * the adjacency, no per-diagnostic messages, no paths. Counts live in
  * `details.diagnosticCount` / `details.omittedFiles`. */
@@ -646,8 +650,13 @@ export const linksOp = (opts: LinksOptions): Effect.Effect<OpResult, never, Engr
       let text: string;
       let truncated: boolean;
       if (footer === null) {
-        const capped = capText([body, ...warnings].join("\n\n"));
-        text = capped.truncated ? `${capped.text}\n(result truncated)` : capped.text;
+        // F1: reserve the marker line so a capped result is exactly at or
+        // below the cap: (MAX - marker - 1) + 1 + marker = MAX.
+        const capped = capText(
+          [body, ...warnings].join("\n\n"),
+          MAX_RESULT_CHARS - LINKS_RESULT_MARKER.length - 1,
+        );
+        text = capped.truncated ? `${capped.text}\n${LINKS_RESULT_MARKER}` : capped.text;
         truncated = capped.truncated;
       } else {
         // Reserve room for footer + marker so the continuation always

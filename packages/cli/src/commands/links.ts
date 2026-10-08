@@ -10,6 +10,7 @@ import { Effect } from "effect";
 import {
   EngramStore,
   computeLinkAdjacency,
+  incompleteMemoryWarning,
   isValidScopeArg,
   renderLinks,
   resolveScope,
@@ -27,6 +28,10 @@ const DEFAULT_SEARCH_LIMIT = 10;
 export const MAX_LINKS_LIMIT = 100;
 
 const LINKS_TRUNCATION_MARKER = "(list truncated to fit the size cap)";
+
+/** F1: marker for the capped no-footer branch, reserved the same way the
+ * footer branch reserves the footer (keep in sync with linksOp's marker). */
+const RESULT_MARKER = "(result truncated)";
 
 export const linksCommand = (
   id: string,
@@ -78,11 +83,7 @@ export const linksCommand = (
     let body = renderLinks(adjacency, { offset: start, total, rows: pageRows });
     const warnings: string[] = [];
     if (scanned.omittedFiles > 0) {
-      warnings.push(
-        `WARNING: Engram memory is incomplete. Skipped ${scanned.omittedFiles} unreadable or invalid ${
-          scanned.omittedFiles === 1 ? "file" : "files"
-        }. Run \`engram check --scope all\` for exact paths and repair guidance.`,
-      );
+      warnings.push(incompleteMemoryWarning(scanned.omittedFiles));
     }
     if (scanned.diagnostics.length > 0) {
       const n = scanned.diagnostics.length;
@@ -107,10 +108,10 @@ export const linksCommand = (
     let text: string;
     if (footer === null) {
       const joined = [body, ...warnings].join("\n\n");
-      text =
-        joined.length > MAX_RESULT_CHARS
-          ? `${joined.slice(0, MAX_RESULT_CHARS)}\n(result truncated)`
-          : joined;
+      // F1: reserve the marker line so a capped result is exactly at or
+      // below the cap: (MAX - marker - 1) + 1 + marker = MAX.
+      const max = MAX_RESULT_CHARS - RESULT_MARKER.length - 1;
+      text = joined.length > max ? `${joined.slice(0, max)}\n${RESULT_MARKER}` : joined;
     } else {
       const joined = [body, ...warnings].join("\n\n");
       const max = MAX_RESULT_CHARS - footer.length - LINKS_TRUNCATION_MARKER.length - 2;

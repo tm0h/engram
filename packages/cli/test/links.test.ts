@@ -266,6 +266,19 @@ describe("engram links command", () => {
     expect(output()).not.toContain("call engram links");
   });
 
+  it("keeps the no-footer truncated output within the hard cap (F1)", async () => {
+    seedEntry("0001", "Root entry", { related: ["0002", "0003"] });
+    seedEntry("0002", "x".repeat(10_000));
+    seedEntry("0003", "Small peer");
+
+    // Default limit 10 over 2 rows: one page, no continuation footer.
+    await run(linksCommand("0001", { scope: "project" }));
+    const out = output();
+    expect(out.length).toBeLessThanOrEqual(8192);
+    expect(out).toContain("(result truncated)");
+    expect(out).not.toContain("call engram links");
+  });
+
   it("never writes: files stay byte-identical across reads", async () => {
     seedEntry("0001", "Root entry", { related: ["0002"] });
     seedEntry("0002", "Peer 0002");
