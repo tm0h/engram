@@ -243,14 +243,16 @@ const validateCandidate = (
  * the entry, the check time, and the same-scope id set. "At or before the
  * check time" counts as due/expired (equality included). Warnings never
  * omit the entry. The live scan passes `Date.now()`; tests pass a fixed
- * `nowMs` for deterministic boundaries. */
+ * `nowMs` for deterministic boundaries. Relation targets are resolved
+ * separately by `linkDiagnostics` (ENG-44), never here. */
 export const lifecycleDiagnostics = (
   m: Engram,
   context: {
     readonly scope: Scope;
     readonly file: string;
     readonly nowMs: number;
-    /** every id claimable in this scan's scope (partial ids included) */
+    /** every id claimable in this scan's scope (partial ids included);
+     * derived from the scan's claim index, never rebuilt from candidates */
     readonly knownIds: ReadonlySet<string>;
   },
 ): ReadonlyArray<StoreDiagnostic> => {
@@ -263,25 +265,6 @@ export const lifecycleDiagnostics = (
       message: `supersedes "${m.supersedes}" does not match any entry in the ${context.scope} store`,
       hint: 'Check the id, add the older entry it replaces, or remove "supersedes" if the predecessor no longer applies.',
     });
-  }
-  /* ENG-42: one advisory warning per related id absent from this scan's
-   * same-scope claimed-id set (partial ids included, so a target claimed by
-   * an otherwise-invalid file still counts as present). The other scope is
-   * never consulted: a wrong-scope link must warn, not vanish. Forward
-   * references and post-deletion dangles are expected; warnings never omit
-   * the entry. Surviving lists cannot contain duplicates (hard validation),
-   * so one pass emits at most one warning per id, in list order. */
-  if (m.related !== undefined) {
-    for (const relatedId of m.related) {
-      if (!context.knownIds.has(relatedId)) {
-        out.push({
-          ...base,
-          code: "related_not_found",
-          message: `related "${relatedId}" does not match any entry in the ${context.scope} store`,
-          hint: 'Check the id, add the missing entry, or edit "related" to remove it. Missing targets are advisory: the entry still reads and checks stay green.',
-        });
-      }
-    }
   }
   const reviewMs = m.reviewAfter === undefined ? undefined : parseTimestamp(m.reviewAfter);
   if (reviewMs !== undefined && reviewMs <= context.nowMs) {
@@ -300,6 +283,51 @@ export const lifecycleDiagnostics = (
       message: `"expires" (${m.expires}) has passed`,
       hint: "Confirm the entry still applies, then update it, remove the timestamp, or delete the entry.",
     });
+  }
+  return out;
+};
+
+/** ENG-44 cross-file relation diagnostics for one valid entry, resolved
+ * through the exact-id claim map built from every non-empty partial id in
+ * the current scan (valid or not: an otherwise-invalid claimant still
+ * counts). Same scope only, because the map is per-scan: a wrong-scope link
+ * warns instead of resolving. Resolution is exact: a strict prefix of a
+ * claimed id, in either direction, finds nothing. Zero claims emit
+ * `related_not_found`; two or more emit `related_ambiguous`, never silently
+ * resolving to one claimant. Surviving lists cannot contain duplicates (hard
+ * validation), so one pass emits at most one warning per related value, in
+ * authored list order. Warnings never omit the entry and never fail a check
+ * on their own. */
+export const linkDiagnostics = (
+  m: Engram,
+  context: {
+    readonly scope: Scope;
+    readonly file: string;
+    /** exact id -> claiming files, from the scan's single claim index */
+    readonly claims: ReadonlyMap<string, ReadonlyArray<string>>;
+  },
+): ReadonlyArray<StoreDiagnostic> => {
+  if (m.related === undefined) return [];
+  const out: Array<StoreDiagnostic> = [];
+  const base = { severity: "warning" as const, scope: context.scope, file: context.file };
+  for (const relatedId of m.related) {
+    const claimants = context.claims.get(relatedId);
+    if (claimants === undefined) {
+      out.push({
+        ...base,
+        code: "related_not_found",
+        message: `related "${relatedId}" does not match any entry in the ${context.scope} store`,
+        hint: 'Check the id, add the missing entry, or edit "related" to remove it. Missing targets are advisory: the entry still reads and checks stay green.',
+      });
+    } else if (claimants.length >= 2) {
+      const sorted = [...claimants].sort();
+      out.push({
+        ...base,
+        code: "related_ambiguous",
+        message: `related "${relatedId}" is claimed by ${sorted.length} entries: ${sorted.join(", ")}`,
+        hint: 'Run `engram dedupe` to renumber the extra claimants, or edit "related" to the id you mean. This warning is advisory: the entry still reads, but the claimants\' duplicate ids make checks fail.',
+      });
+    }
   }
   return out;
 };
@@ -512,7 +540,10 @@ const makeEngramStoreLive = (
 
           // Cross-file uniqueness, over partial ids so entries with another
           // defect still participate in duplicate detection. Claims are kept
-          // as structured data (StoreScan.duplicateIds), not just prose.
+          // as structured data (StoreScan.duplicateIds), not just prose. This
+          // map is the scan's single exact-id claim index: duplicate
+          // detection, lifecycle presence, and ENG-44 link resolution all
+          // read from it.
           const byId = new Map<string, ReadonlyArray<string>>();
           for (const c of candidates) {
             if (c.id === undefined || c.id === "") continue;
@@ -537,12 +568,11 @@ const makeEngramStoreLive = (
           }
 
           // ENG-13 advisory lifecycle diagnostics for valid entries. The
-          // claimant set uses partial ids so an otherwise-invalid claimant
-          // still counts as present (mirroring duplicate detection).
+          // claimant set is derived from the single claim index above (R2),
+          // never rebuilt from candidates, so presence semantics agree with
+          // duplicate detection and link resolution.
           const nowMs = Date.now();
-          const knownIds = new Set(
-            candidates.flatMap((c) => (c.id !== undefined && c.id !== "" ? [c.id] : [])),
-          );
+          const knownIds = new Set(byId.keys());
           const lifecycle: Array<StoreDiagnostic> = [];
           for (const c of candidates) {
             if (c.engram === undefined) continue;
@@ -551,14 +581,26 @@ const makeEngramStoreLive = (
             );
           }
 
+          // ENG-44 cross-file link diagnostics for valid entries, resolved
+          // through the same claim index. Warnings only: they never omit the
+          // source entry and never change omittedFiles.
+          const links: Array<StoreDiagnostic> = [];
+          for (const c of candidates) {
+            if (c.engram === undefined) continue;
+            links.push(...linkDiagnostics(c.engram, { scope, file: c.file, claims: byId }));
+          }
+
           return {
             scope,
             directory: dir,
             filesChecked: files.length,
             entries: candidates.flatMap((c) => (c.engram ? [c.engram] : [])).sort(chronological),
-            diagnostics: [...candidates.flatMap((c) => c.diagnostics), ...cross, ...lifecycle].sort(
-              compareDiagnostics,
-            ),
+            diagnostics: [
+              ...candidates.flatMap((c) => c.diagnostics),
+              ...cross,
+              ...lifecycle,
+              ...links,
+            ].sort(compareDiagnostics),
             duplicateIds,
             omittedFiles: candidates.filter((c) => c.engram === undefined).length,
           } satisfies StoreScan;

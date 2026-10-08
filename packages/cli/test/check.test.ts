@@ -982,3 +982,134 @@ describe("engram check / entry schemaVersion (ENG-41)", () => {
     expect(info.message).toContain("1 problem found");
   });
 });
+
+describe("engram check / link warnings (ENG-44)", () => {
+  let origCwd = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  let outLines: string[] = [];
+  let spies: Array<ReturnType<typeof vi.spyOn>> = [];
+
+  beforeEach(() => {
+    origCwd = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = mkHome();
+    process.chdir(tmp);
+    process.env.HOME = home;
+    outLines = [];
+    spies = [
+      vi.spyOn(console, "log").mockImplementation(((...args: unknown[]) => {
+        outLines.push(args.map(String).join(" "));
+        return undefined;
+      }) as typeof console.log),
+      vi.spyOn(console, "error").mockImplementation((() => undefined) as typeof console.error),
+    ];
+  });
+  afterEach(() => {
+    for (const s of spies) s.mockRestore();
+    process.chdir(origCwd);
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const output = (): string => outLines.join("\n");
+
+  const run = async (
+    eff: Effect.Effect<unknown, unknown, EngramStore | ConfigRepo | FileSystem>,
+  ): Promise<void> => {
+    await Effect.runPromise(Effect.provide(eff as never, MainLive));
+  };
+
+  const runFail = async (
+    eff: Effect.Effect<unknown, unknown, EngramStore | ConfigRepo | FileSystem>,
+  ): Promise<FailInfo> =>
+    (await Effect.runPromise(
+      Effect.provide(Effect.flip(eff) as never, MainLive),
+    )) as unknown as FailInfo;
+
+  it("a missing target renders as a warning and the check stays ok", async () => {
+    seedConsistent(tmp, "0001", "Linked", { related: ["0099"] });
+    await run(checkCommand({}));
+    const o = output();
+    expect(o).toContain("warning [related_not_found]");
+    expect(o).toContain('"0099"');
+    expect(o).not.toContain("error [");
+    expect(o).toContain("1 warning");
+  });
+
+  /* A related_ambiguous warning always coexists with the claimants'
+   * pre-existing duplicate_id errors (two files claiming one id), so the
+   * check fails on those errors alone. These tests pin that the ambiguity
+   * warning renders as a warning and never adds to the failure count. */
+  it("an ambiguous target renders as a warning while duplicate-id errors fail the check", async () => {
+    seedConsistent(tmp, "0002", "Copy a");
+    seedConsistent(tmp, "0002", "Copy b");
+    seedConsistent(tmp, "0001", "Linked", { related: ["0002"] });
+    const info = await runFail(checkCommand({}));
+    expect(info._tag).toBe("IntegrityCheckFailedError");
+    const o = output();
+    expect(o).toContain("warning [related_ambiguous]");
+    expect(o).toContain('"0002"');
+    expect(o.match(/error \[duplicate_id\]/g)).toHaveLength(2);
+    // the failure summary counts errors only, not the ambiguity warning
+    expect(info.message).toContain("2 problems found");
+  });
+
+  it("--json keeps ok true for a missing-target-only store", async () => {
+    seedConsistent(tmp, "0001", "Linked", { related: ["0099"] });
+    await run(checkCommand({ json: true }));
+    const doc = JSON.parse(output()) as {
+      ok: boolean;
+      diagnostics: Array<{ code: string; severity: string; message: string; hint: string }>;
+    };
+    expect(doc.ok).toBe(true);
+    expect(doc.diagnostics).toHaveLength(1);
+    expect(doc.diagnostics[0]).toMatchObject({ code: "related_not_found", severity: "warning" });
+    expect(doc.diagnostics[0].message.length).toBeGreaterThan(0);
+    expect(doc.diagnostics[0].hint.length).toBeGreaterThan(0);
+  });
+
+  it("--json returns the complete ambiguity diagnostic with sorted claimant paths", async () => {
+    seedConsistent(tmp, "0002", "Copy a");
+    seedConsistent(tmp, "0002", "Copy b");
+    seedConsistent(tmp, "0001", "Linked", { related: ["0002"] });
+    await runFail(checkCommand({ json: true }));
+    const doc = JSON.parse(output()) as {
+      ok: boolean;
+      diagnostics: Array<{ code: string; severity: string; message: string; file: string }>;
+    };
+    const ambiguous = doc.diagnostics.find((d) => d.code === "related_ambiguous");
+    expect(ambiguous).toBeDefined();
+    expect(ambiguous?.severity).toBe("warning");
+    expect(ambiguous?.message).toContain('"0002"');
+    const aAt = ambiguous?.message.indexOf("0002-copy-a.md") ?? -1;
+    const bAt = ambiguous?.message.indexOf("0002-copy-b.md") ?? -1;
+    expect(aAt).toBeGreaterThan(-1);
+    expect(bAt).toBeGreaterThan(aAt);
+    // ok is false only because of the claimants' duplicate_id errors
+    expect(doc.ok).toBe(false);
+    expect(
+      doc.diagnostics.filter((d) => d.severity === "error").every((d) => d.code === "duplicate_id"),
+    ).toBe(true);
+  });
+
+  it("a mixed link-warning and error scan fails only because of the errors", async () => {
+    seedConsistent(tmp, "0001", "Linked", { related: ["0002", "0099"] });
+    seedConsistent(tmp, "0002", "Copy a");
+    seedConsistent(tmp, "0002", "Copy b");
+    seed(tmp, "0003-broken.md", fm({ id: "0003", title: "Broken", type: "blogpost" }));
+    const info = await runFail(checkCommand({}));
+    expect(info._tag).toBe("IntegrityCheckFailedError");
+    const o = output();
+    expect(o).toContain("warning [related_not_found]");
+    expect(o).toContain("warning [related_ambiguous]");
+    expect(o).toContain("error [type_invalid]");
+    expect(o).toContain("error [duplicate_id]");
+    // 3 errors counted (2 duplicate ids + 1 type), warnings excluded
+    expect(info.message).toContain("3 problems found");
+  });
+});

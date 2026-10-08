@@ -12,6 +12,7 @@ import {
   lifecycleDiagnostics,
   type ScanOptions,
 } from "../src/store.js";
+import { linkDiagnostics } from "../src/store.js";
 import { computeLinkAdjacency } from "../src/links.js";
 import { projectConfigPath, projectEngramsDir, globalEngramsDir } from "../src/paths.js";
 import { parseFrontmatter, stringifyFrontmatter } from "../src/frontmatter.js";
@@ -3839,37 +3840,10 @@ describe("EngramStore / ENG-42 related", () => {
     }).pipe(Effect.provide(StoreLive)),
   );
 
-  it("lifecycleDiagnostics emits related warnings in related order, after supersedes", () => {
-    const entry: Engram = {
-      id: "0001",
-      title: "Linked",
-      type: "note",
-      tags: [],
-      scope: "project",
-      created: "2025-08-15T10:00:00.000Z",
-      updated: "2025-08-15T11:00:00.000Z",
-      author: undefined,
-      pinned: false,
-      schemaVersion: 1,
-      body: "",
-      path: "/store/0001-linked.md",
-      supersedes: "0098",
-      related: ["0009", "0008"],
-    };
-    const out = lifecycleDiagnostics(entry, {
-      scope: "project",
-      file: entry.path,
-      nowMs: Date.parse("2026-01-01T00:00:00.000Z"),
-      knownIds: new Set(),
-    });
-    expect(out.map((d) => [d.code, d.severity])).toEqual([
-      ["supersedes_not_found", "warning"],
-      ["related_not_found", "warning"],
-      ["related_not_found", "warning"],
-    ]);
-    expect(out[1].message).toContain('"0009"');
-    expect(out[2].message).toContain('"0008"');
-  });
+  /* ENG-44 R9/R10: the former pure test pinning related_not_found inside
+   * lifecycleDiagnostics was deleted; its list-order coverage moved into the
+   * pure linkDiagnostics tests at the end of this file, where the emission
+   * block now lives. */
 
   it.live("warnings order deterministically across files by path, then id", () =>
     Effect.gen(function* () {
@@ -4135,6 +4109,514 @@ describe("EngramStore / ENG-43 link adjacency is read-only", () => {
 
       expect(snapshot(dir())).toBe(before);
       expect(before).not.toMatch(/backlinks:|incoming:/);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+});
+
+describe("EngramStore / ENG-44 relation errors at the scan boundary", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "amem-eng44-errors-"));
+    process.chdir(tmp);
+    process.env.HOME = home;
+    fs.mkdirSync(globalEngramsDir(), { recursive: true });
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const dir = (): string => projectEngramsDir(tmp);
+
+  const BASE = {
+    id: "0001",
+    title: "Linked note",
+    type: "note",
+    tags: ["a"],
+    scope: "project",
+    created: "2025-08-15T10:00:00.000Z",
+    updated: "2025-08-15T11:00:00.000Z",
+  };
+
+  const seed = (name: string, fm: Record<string, unknown>, body = "Body\n"): string => {
+    const file = path.join(dir(), name);
+    fs.writeFileSync(file, stringifyFrontmatter(body, fm));
+    return file;
+  };
+
+  /* ENG-44 step 2. Verification-only (R14): ENG-42 already wired the three
+   * per-file error classes through scan's candidate mapping; these fixtures
+   * pin that boundary against future rewrites. */
+
+  it.live("each malformed-source class is an error that omits the entry", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0002-target-entry.md", { ...BASE, id: "0002", title: "Target entry" });
+      const source = seed("0001-linked-note.md", { ...BASE });
+
+      const cases: ReadonlyArray<[unknown, string]> = [
+        ["nope", "related_invalid"], // scalar instead of a list
+        [["0001"], "self_relation"],
+        [["0002", "0002"], "duplicate_relation"],
+      ];
+      for (const [related, code] of cases) {
+        fs.writeFileSync(source, stringifyFrontmatter("Body\n", { ...BASE, related }));
+        const scanned = yield* store.scan("project");
+        expect(
+          scanned.diagnostics.map((d) => [d.code, d.severity]),
+          JSON.stringify(related),
+        ).toEqual([[code, "error"]]);
+        expect(scanned.diagnostics[0].file).toBe(source);
+        expect(scanned.entries.map((m) => m.id)).toEqual(["0002"]); // only the target survives
+        expect(scanned.omittedFiles).toBe(1);
+      }
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("several related defects in one file order deterministically", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0001-linked-note.md", { ...BASE, related: [7, "0001", "0001"] });
+      const scanned = yield* store.scan("project");
+      // compareDiagnostics tiebreaks same-file findings by code
+      expect(scanned.diagnostics.map((d) => d.code)).toEqual([
+        "duplicate_relation",
+        "related_invalid",
+        "self_relation",
+      ]);
+      expect(scanned.diagnostics.every((d) => d.severity === "error")).toBe(true);
+      expect(scanned.omittedFiles).toBe(1);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("invalid sources emit zero cross-file relation warnings even when targets exist", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0002-target-entry.md", { ...BASE, id: "0002", title: "Target entry" });
+      // the list itself is fine and names a present target, but the entry is
+      // invalid elsewhere: no link analysis runs for it
+      seed("0001-linked-note.md", { ...BASE, type: "blogpost", related: ["0002"] });
+      // a scalar that happens to name a present target is a bad shape, and
+      // must not resolve to a missing-target warning either
+      seed("0003-also-broken.md", {
+        ...BASE,
+        id: "0003",
+        title: "Also broken",
+        related: "0002",
+      });
+      const scanned = yield* store.scan("project");
+      expect(scanned.diagnostics.map((d) => d.code)).toEqual(["type_invalid", "related_invalid"]);
+      expect(
+        scanned.diagnostics.some(
+          (d) => d.code === "related_not_found" || d.code === "related_ambiguous",
+        ),
+      ).toBe(false);
+      expect(scanned.entries.map((m) => m.id)).toEqual(["0002"]);
+      expect(scanned.omittedFiles).toBe(2);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+});
+
+describe("EngramStore / ENG-44 link diagnostics", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "amem-eng44-links-"));
+    process.chdir(tmp);
+    process.env.HOME = home;
+    fs.mkdirSync(globalEngramsDir(), { recursive: true });
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const dir = (): string => projectEngramsDir(tmp);
+
+  const BASE = {
+    id: "0001",
+    title: "Linked note",
+    type: "note",
+    tags: ["a"],
+    scope: "project",
+    created: "2025-08-15T10:00:00.000Z",
+    updated: "2025-08-15T11:00:00.000Z",
+  };
+
+  const seed = (name: string, fm: Record<string, unknown>, body = "Body\n"): string => {
+    const file = path.join(dir(), name);
+    fs.writeFileSync(file, stringifyFrontmatter(body, fm));
+    return file;
+  };
+
+  /* ----------------------- pure linkDiagnostics ----------------------- */
+
+  const linked = (related: ReadonlyArray<string> | undefined): Engram => ({
+    id: "0001",
+    title: "Linked",
+    type: "note",
+    tags: [],
+    scope: "project",
+    created: "2025-08-15T10:00:00.000Z",
+    updated: "2025-08-15T11:00:00.000Z",
+    author: undefined,
+    pinned: false,
+    schemaVersion: 1,
+    body: "",
+    path: "/store/0001-linked.md",
+    related,
+  });
+
+  it("no related and an empty list produce no diagnostics", () => {
+    const context = { scope: "project" as const, file: "/s", claims: new Map() };
+    expect(linkDiagnostics(linked(undefined), context)).toEqual([]);
+    expect(linkDiagnostics(linked([]), context)).toEqual([]);
+  });
+
+  it("a uniquely claimed target is present: no warning", () => {
+    const claims = new Map([["0002", ["/store/0002-target.md"] as ReadonlyArray<string>]]);
+    expect(linkDiagnostics(linked(["0002"]), { scope: "project", file: "/s", claims })).toEqual([]);
+  });
+
+  it("zero claims warn missing, one warning per value in authored list order", () => {
+    const out = linkDiagnostics(linked(["0009", "0008"]), {
+      scope: "project",
+      file: "/store/0001-linked.md",
+      claims: new Map(),
+    });
+    expect(out.map((d) => [d.code, d.severity, d.scope, d.file])).toEqual([
+      ["related_not_found", "warning", "project", "/store/0001-linked.md"],
+      ["related_not_found", "warning", "project", "/store/0001-linked.md"],
+    ]);
+    expect(out[0].message).toContain('"0009"');
+    expect(out[1].message).toContain('"0008"');
+    for (const d of out) expect(d.hint.length).toBeGreaterThan(0);
+  });
+
+  it("legacy and 26-character target ids both resolve exactly", () => {
+    const ulid = "01arz3ndektsv4rrffq69g5fb5";
+    const claims = new Map<string, ReadonlyArray<string>>([
+      ["0002", ["/store/0002-legacy.md"]],
+      [ulid, ["/store/ulid-target.md"]],
+    ]);
+    const out = linkDiagnostics(linked(["0002", ulid, "0099"]), {
+      scope: "project",
+      file: "/s",
+      claims,
+    });
+    expect(out.map((d) => d.code)).toEqual(["related_not_found"]);
+    expect(out[0].message).toContain('"0099"');
+  });
+
+  it("two or more claims warn ambiguous with sorted claimant paths in the message", () => {
+    const out = linkDiagnostics(linked(["0002"]), {
+      scope: "project",
+      file: "/store/0001-linked.md",
+      claims: new Map([["0002", ["/b-second.md", "/a-first.md"] as ReadonlyArray<string>]]),
+    });
+    expect(out.map((d) => [d.code, d.severity])).toEqual([["related_ambiguous", "warning"]]);
+    expect(out[0].message).toContain('"0002"');
+    const aAt = out[0].message.indexOf("/a-first.md");
+    const bAt = out[0].message.indexOf("/b-second.md");
+    expect(aAt).toBeGreaterThan(-1);
+    expect(bAt).toBeGreaterThan(aAt);
+    expect(out[0].hint.length).toBeGreaterThan(0);
+  });
+
+  it("ambiguity starts at two claimants: one claim is present, two are ambiguous", () => {
+    const claims = (n: number): Map<string, ReadonlyArray<string>> =>
+      new Map([
+        ["0002", Array.from({ length: n }, (_, i) => "/store/claimant-" + String(i) + ".md")],
+      ]);
+    expect(
+      linkDiagnostics(linked(["0002"]), { scope: "project", file: "/s", claims: claims(1) }),
+    ).toEqual([]);
+    expect(
+      linkDiagnostics(linked(["0002"]), {
+        scope: "project",
+        file: "/s",
+        claims: claims(2),
+      }).map((d) => d.code),
+    ).toEqual(["related_ambiguous"]);
+  });
+
+  it("prefix traps both directions: resolution is exact, never prefix", () => {
+    const long = "0002arz3ndektsv4rrffq69g5f";
+    // related id strictly shorter than the claimed id
+    const short = linkDiagnostics(linked(["0002"]), {
+      scope: "project",
+      file: "/s",
+      claims: new Map([[long, ["/store/long.md"] as ReadonlyArray<string>]]),
+    });
+    expect(short.map((d) => d.code)).toEqual(["related_not_found"]);
+    // related id strictly longer than the claimed id
+    const longRelated = linkDiagnostics(linked([long]), {
+      scope: "project",
+      file: "/s",
+      claims: new Map([["0002", ["/store/short.md"] as ReadonlyArray<string>]]),
+    });
+    expect(longRelated.map((d) => d.code)).toEqual(["related_not_found"]);
+  });
+
+  it("is deterministic: identical inputs give identical diagnostics", () => {
+    const context = {
+      scope: "project" as const,
+      file: "/store/0001-linked.md",
+      claims: new Map([["0002", ["/b.md", "/a.md"] as ReadonlyArray<string>]]),
+    };
+    expect(linkDiagnostics(linked(["0002", "0009"]), context)).toEqual(
+      linkDiagnostics(linked(["0002", "0009"]), context),
+    );
+  });
+
+  /* --------------------- scan-level cross-file pass --------------------- */
+
+  it.live("a duplicate-claimed target warns ambiguous, never present, never one claimant", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0002-first-copy.md", { ...BASE, id: "0002", title: "First copy" });
+      seed("0002-second-copy.md", { ...BASE, id: "0002", title: "Second copy" });
+      seed("0001-linked-note.md", { ...BASE, related: ["0002"] });
+
+      const scanned = yield* store.scan("project");
+      expect(scanned.entries.map((m) => m.id)).toEqual(["0001", "0002", "0002"]);
+      expect(scanned.omittedFiles).toBe(0);
+      expect(scanned.diagnostics.map((d) => [d.file.split("/").pop(), d.code, d.severity])).toEqual(
+        [
+          ["0001-linked-note.md", "related_ambiguous", "warning"],
+          ["0002-first-copy.md", "duplicate_id", "error"],
+          ["0002-second-copy.md", "duplicate_id", "error"],
+        ],
+      );
+      const ambiguous = scanned.diagnostics[0];
+      expect(ambiguous.message).toContain('"0002"');
+      // sorted claimant paths live in the message (R11), like duplicate_id
+      expect(ambiguous.message).toContain("0002-first-copy.md");
+      expect(ambiguous.message).toContain("0002-second-copy.md");
+      expect(ambiguous.message.indexOf("0002-first-copy.md")).toBeLessThan(
+        ambiguous.message.indexOf("0002-second-copy.md"),
+      );
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("one valid plus one otherwise-invalid claimant is still ambiguous", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0002-first-copy.md", { ...BASE, id: "0002", title: "First copy" });
+      seed("0002-second-copy.md", { ...BASE, id: "0002", title: " " }); // title_invalid
+      seed("0001-linked-note.md", { ...BASE, related: ["0002"] });
+
+      const scanned = yield* store.scan("project");
+      expect(scanned.diagnostics.map((d) => d.code).sort()).toEqual([
+        "duplicate_id",
+        "duplicate_id",
+        "related_ambiguous",
+        "title_invalid",
+      ]);
+      expect(scanned.omittedFiles).toBe(1);
+      expect(scanned.entries.map((m) => m.id)).toEqual(["0001", "0002"]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("two otherwise-invalid claimants are still ambiguous", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0002-first-copy.md", { ...BASE, id: "0002", title: " " });
+      seed("0002-second-copy.md", { ...BASE, id: "0002", title: " " });
+      seed("0001-linked-note.md", { ...BASE, related: ["0002"] });
+
+      const scanned = yield* store.scan("project");
+      expect(scanned.diagnostics.filter((d) => d.code === "related_ambiguous")).toHaveLength(1);
+      expect(scanned.omittedFiles).toBe(2);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("prefix traps both directions at scan level", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const long = "0002arz3ndektsv4rrffq69g5f";
+      // the related id is strictly shorter than the only claimed id
+      seed(long + "-long-target.md", { ...BASE, id: long, title: "Long target" });
+      seed("0001-short-link.md", { ...BASE, title: "Short link", related: ["0002"] });
+      const first = yield* store.scan("project");
+      expect(first.diagnostics.map((d) => [d.code, d.severity])).toEqual([
+        ["related_not_found", "warning"],
+      ]);
+      expect(first.diagnostics[0].message).toContain('"0002"');
+
+      // the related id is strictly longer than the only claimed id
+      fs.rmSync(path.join(dir(), "0001-short-link.md"));
+      fs.rmSync(path.join(dir(), long + "-long-target.md"));
+      seed("0002-short-target.md", { ...BASE, id: "0002", title: "Short target" });
+      seed("0003-long-link.md", {
+        ...BASE,
+        id: "0003",
+        title: "Long link",
+        related: [long],
+      });
+      const second = yield* store.scan("project");
+      expect(second.diagnostics.map((d) => [d.code, d.severity])).toEqual([
+        ["related_not_found", "warning"],
+      ]);
+      expect(second.diagnostics[0].message).toContain('"' + long + '"');
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("claims in the other scope never resolve and never turn ambiguous here", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0001-linked-note.md", { ...BASE, related: ["0002"] });
+      const personalTargets: ReadonlyArray<[string, string]> = [
+        ["0002-personal-a.md", "Personal a"],
+        ["0002-personal-b.md", "Personal b"],
+      ];
+      for (const [name, title] of personalTargets) {
+        fs.writeFileSync(
+          path.join(globalEngramsDir(), name),
+          stringifyFrontmatter("Body\n", {
+            ...BASE,
+            id: "0002",
+            title,
+            scope: "personal",
+          }),
+        );
+      }
+      const scanned = yield* store.scan("project");
+      expect(scanned.diagnostics.map((d) => [d.code, d.severity])).toEqual([
+        ["related_not_found", "warning"],
+      ]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  /* ------------------- integration ordering (step 5) ------------------- */
+
+  const seedMixedStore = (): void => {
+    seed("0001-source.md", {
+      ...BASE,
+      title: "Source",
+      related: ["0005", "0009"],
+      reviewAfter: "2020-01-01T00:00:00.000Z",
+    });
+    // invalid entry naming a present target: no cross-file warnings from it
+    seed("0004-invalid.md", {
+      ...BASE,
+      id: "0004",
+      title: "Invalid",
+      type: "blogpost",
+      related: ["0001"],
+    });
+    seed("0005-claimant-a.md", { ...BASE, id: "0005", title: "Claimant a" });
+    seed("0005-claimant-b.md", { ...BASE, id: "0005", title: "Claimant b" });
+  };
+
+  it.live("mixed errors and warnings merge once into compareDiagnostics order", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seedMixedStore();
+      const scanned = yield* store.scan("project");
+      expect(scanned.diagnostics.map((d) => [d.file.split("/").pop(), d.code, d.severity])).toEqual(
+        [
+          ["0001-source.md", "related_ambiguous", "warning"],
+          ["0001-source.md", "related_not_found", "warning"],
+          ["0001-source.md", "review_due", "warning"],
+          ["0004-invalid.md", "type_invalid", "error"],
+          ["0005-claimant-a.md", "duplicate_id", "error"],
+          ["0005-claimant-b.md", "duplicate_id", "error"],
+        ],
+      );
+      expect(scanned.entries.map((m) => m.id)).toEqual(["0001", "0005", "0005"]);
+      expect(scanned.omittedFiles).toBe(1);
+      // warning sources stay listed with their related lists intact
+      expect(scanned.entries.find((m) => m.id === "0001")?.related).toEqual(["0005", "0009"]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("repeated scans produce identical diagnostics (R13b)", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seedMixedStore();
+      const first = yield* store.scan("project");
+      const second = yield* store.scan("project");
+      expect(first.diagnostics).toEqual(second.diagnostics);
+      expect(first.duplicateIds).toEqual(second.duplicateIds);
+      expect(first.entries).toEqual(second.entries);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  /* ------------------ dedupe regressions (step 8) ------------------ */
+
+  it.live("relation warnings never block duplicate-id repair and never rewrite related", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const keepA = seed("0002-keep-a.md", { ...BASE, id: "0002", title: "Keep a" });
+      seed("0002-keep-b.md", { ...BASE, id: "0002", title: "Keep b" });
+      const source = seed("0001-linked-note.md", {
+        ...BASE,
+        related: ["0002", "0003"], // ambiguous target + missing target
+      });
+      const sourceBefore = fs.readFileSync(source, "utf8");
+      const keepABefore = fs.readFileSync(keepA, "utf8");
+
+      const pre = yield* store.scan("project");
+      expect(pre.diagnostics.some((d) => d.code === "related_ambiguous")).toBe(true);
+      expect(pre.diagnostics.some((d) => d.code === "related_not_found")).toBe(true);
+
+      const { renumbered } = yield* store.dedupe("project");
+      expect(renumbered).toHaveLength(1);
+      // warnings were advisory: the source and the winning claimant are
+      // byte-identical, and no related list was rewritten anywhere
+      expect(fs.readFileSync(source, "utf8")).toBe(sourceBefore);
+      expect(fs.readFileSync(keepA, "utf8")).toBe(keepABefore);
+      const moved = renumbered[0];
+      const movedFile =
+        moved === undefined
+          ? undefined
+          : path.join(dir(), moved.to + "-" + slugify(moved.title) + ".md");
+      expect(movedFile).toBeDefined();
+      expect(fs.readFileSync(movedFile ?? source, "utf8")).not.toMatch(/^related:/m);
+      expect(fs.readFileSync(source, "utf8")).toMatch(/^related:\n  - "0002"\n  - "0003"$/m);
+
+      // the post-repair scan deterministically recomputes the new state:
+      // 0002 has a single claim again, 0003 is still missing
+      const post = yield* store.scan("project");
+      expect(post.diagnostics.map((d) => [d.code, d.severity])).toEqual([
+        ["related_not_found", "warning"],
+      ]);
+      const again = yield* store.scan("project");
+      expect(post.diagnostics).toEqual(again.diagnostics);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("relation errors still block dedupe with byte-identical contents", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0001-linked-note.md", { ...BASE, related: ["0001"] }); // self_relation error
+      seed("0002-keep-a.md", { ...BASE, id: "0002", title: "Keep a" });
+      seed("0002-keep-b.md", { ...BASE, id: "0002", title: "Keep b" });
+      const before = snapshot(dir());
+
+      const blocked = yield* Effect.flip(store.dedupe("project"));
+      expect((blocked as { _tag: string })._tag).toBe("IntegrityCheckFailedError");
+      expect(snapshot(dir())).toBe(before);
     }).pipe(Effect.provide(StoreLive)),
   );
 });

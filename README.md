@@ -249,8 +249,9 @@ preserved.
 - `related`: an optional ordered list of exact entry ids in the same scope.
   Links are directional one-way metadata: engram never writes a reciprocal
   key to the target, target existence is advisory (a missing id is only a
-  `related_not_found` warning, so forward references are fine), and prefixes
-  are rejected as ids. `engram add --related 0002,0003` sets it,
+  `related_not_found` warning, and an id claimed by two same-scope files is
+  a `related_ambiguous` warning, so forward references are fine), and
+  prefixes are rejected as ids. `engram add --related 0002,0003` sets it,
   `engram edit --related` replaces the whole list, and
   `engram edit --clear-related` removes it.
 
@@ -264,11 +265,17 @@ over recorded memory.
 `engram check` reports advisory lifecycle conditions as warnings:
 `supersedes_not_found` (a `supersedes` id with no claimant in the same scope),
 `related_not_found` (a `related` id with no claimant in the same scope),
-`review_due`, and `expired` (the timestamp is at or before the check time).
-Warnings print as `warning [code]` and never make `check` fail; errors and
-unchecked scopes still exit nonzero. `check --json` may therefore return
-`ok: true` with `diagnostics[].severity: "warning"`; JSON consumers must accept
-that value space.
+`related_ambiguous` (a `related` id claimed by two or more same-scope files;
+the warning names the sorted claimant paths), `review_due`, and `expired` (the
+timestamp is at or before the check time). Relation targets resolve by exact
+id within the checked scope only, and a target claimed by an otherwise
+invalid file still counts. Malformed relation metadata on a single file stays
+an error that omits the entry: `related_invalid` (bad shape or id),
+`self_relation`, and `duplicate_relation`. Warnings print as `warning [code]`
+and never make `check` fail; errors and unchecked scopes still exit nonzero.
+`check --json` may therefore return `ok: true` with
+`diagnostics[].severity: "warning"`; JSON consumers must accept that value
+space.
 
 Hand-edited files are validated on read: malformed entries never disappear
 silently. `engram list` stays fail-open but prints one bounded warning to

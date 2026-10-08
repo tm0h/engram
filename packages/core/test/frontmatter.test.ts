@@ -731,3 +731,21 @@ describe("validateEntry / related metadata (ENG-42)", () => {
     expect(v.frontmatter?.related).toEqual(["0002"]);
   });
 });
+
+describe("validateEntry / related partial retention (ENG-44 R4)", () => {
+  /* ENG-44 step 1, R4: the one per-class read case ENG-42 does not already
+   * cover. Verification-only (R14): the behavior exists, so this arrives
+   * green and pins it against future validator rewrites. */
+  it("retains safe partial id data when the related list is defective", () => {
+    const v = validateEntry(raw({ related: ["0002", "0002", 7, VALID_ID] }));
+    expect(v.issues.map((i) => i.code).sort()).toEqual([
+      "duplicate_relation",
+      "related_invalid",
+      "self_relation",
+    ]);
+    expect(v.frontmatter).toBeUndefined();
+    expect(v.partial.id).toBe(VALID_ID);
+    expect(v.partial.title).toBe("Valid title");
+    expect(v.partial.scope).toBe("project");
+  });
+});
