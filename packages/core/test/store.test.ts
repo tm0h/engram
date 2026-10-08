@@ -4138,3 +4138,117 @@ describe("EngramStore / ENG-43 link adjacency is read-only", () => {
     }).pipe(Effect.provide(StoreLive)),
   );
 });
+
+describe("EngramStore / ENG-44 relation errors at the scan boundary", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "amem-eng44-errors-"));
+    process.chdir(tmp);
+    process.env.HOME = home;
+    fs.mkdirSync(globalEngramsDir(), { recursive: true });
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const dir = (): string => projectEngramsDir(tmp);
+
+  const BASE = {
+    id: "0001",
+    title: "Linked note",
+    type: "note",
+    tags: ["a"],
+    scope: "project",
+    created: "2025-08-15T10:00:00.000Z",
+    updated: "2025-08-15T11:00:00.000Z",
+  };
+
+  const seed = (name: string, fm: Record<string, unknown>, body = "Body\n"): string => {
+    const file = path.join(dir(), name);
+    fs.writeFileSync(file, stringifyFrontmatter(body, fm));
+    return file;
+  };
+
+  /* ENG-44 step 2. Verification-only (R14): ENG-42 already wired the three
+   * per-file error classes through scan's candidate mapping; these fixtures
+   * pin that boundary against future rewrites. */
+
+  it.live("each malformed-source class is an error that omits the entry", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0002-target-entry.md", { ...BASE, id: "0002", title: "Target entry" });
+      const source = seed("0001-linked-note.md", { ...BASE });
+
+      const cases: ReadonlyArray<[unknown, string]> = [
+        ["nope", "related_invalid"], // scalar instead of a list
+        [["0001"], "self_relation"],
+        [["0002", "0002"], "duplicate_relation"],
+      ];
+      for (const [related, code] of cases) {
+        fs.writeFileSync(source, stringifyFrontmatter("Body\n", { ...BASE, related }));
+        const scanned = yield* store.scan("project");
+        expect(
+          scanned.diagnostics.map((d) => [d.code, d.severity]),
+          JSON.stringify(related),
+        ).toEqual([[code, "error"]]);
+        expect(scanned.diagnostics[0].file).toBe(source);
+        expect(scanned.entries.map((m) => m.id)).toEqual(["0002"]); // only the target survives
+        expect(scanned.omittedFiles).toBe(1);
+      }
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("several related defects in one file order deterministically", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0001-linked-note.md", { ...BASE, related: [7, "0001", "0001"] });
+      const scanned = yield* store.scan("project");
+      // compareDiagnostics tiebreaks same-file findings by code
+      expect(scanned.diagnostics.map((d) => d.code)).toEqual([
+        "duplicate_relation",
+        "related_invalid",
+        "self_relation",
+      ]);
+      expect(scanned.diagnostics.every((d) => d.severity === "error")).toBe(true);
+      expect(scanned.omittedFiles).toBe(1);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("invalid sources emit zero cross-file relation warnings even when targets exist", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0002-target-entry.md", { ...BASE, id: "0002", title: "Target entry" });
+      // the list itself is fine and names a present target, but the entry is
+      // invalid elsewhere: no link analysis runs for it
+      seed("0001-linked-note.md", { ...BASE, type: "blogpost", related: ["0002"] });
+      // a scalar that happens to name a present target is a bad shape, and
+      // must not resolve to a missing-target warning either
+      seed("0003-also-broken.md", {
+        ...BASE,
+        id: "0003",
+        title: "Also broken",
+        related: "0002",
+      });
+      const scanned = yield* store.scan("project");
+      expect(scanned.diagnostics.map((d) => d.code)).toEqual(["type_invalid", "related_invalid"]);
+      expect(
+        scanned.diagnostics.some(
+          (d) => d.code === "related_not_found" || d.code === "related_ambiguous",
+        ),
+      ).toBe(false);
+      expect(scanned.entries.map((m) => m.id)).toEqual(["0002"]);
+      expect(scanned.omittedFiles).toBe(2);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+});
