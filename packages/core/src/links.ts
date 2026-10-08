@@ -23,7 +23,7 @@
  * one row per source entry.
  */
 import type { Engram } from "./domain.js";
-import type { StoreScan } from "./integrity.js";
+import type { DuplicateIdClaim, StoreScan } from "./integrity.js";
 
 /** Resolution of one exact id against one scan's entries and duplicate
  * claims. `duplicateIds` is consulted before `entries`, so a duplicate
@@ -64,17 +64,6 @@ export interface LinkAdjacency {
 const chronological = (a: Engram, b: Engram): number =>
   a.created.localeCompare(b.created) || a.id.localeCompare(b.id);
 
-/** Exact-id resolution only: duplicate claims win over valid entries, and
- * no prefix of any id ever resolves. */
-const resolveExact = (scan: StoreScan, id: string): LinkTargetResolution => {
-  const claimed = scan.duplicateIds.find((c) => c.id === id);
-  if (claimed !== undefined) {
-    return { status: "ambiguous", id, claimants: claimed.files };
-  }
-  const entry = scan.entries.find((m) => m.id === id);
-  return entry === undefined ? { status: "missing", id } : { status: "found", id, entry };
-};
-
 /** Compute the same-scope link adjacency for one exact target id from one
  * completed {@link StoreScan}.
  *
@@ -87,17 +76,41 @@ const resolveExact = (scan: StoreScan, id: string): LinkTargetResolution => {
  *   scan (e.g. the other scope) are invisible.
  * - Total: missing and ambiguous targets are structured results, never
  *   thrown; all result collections are always present.
- * - Linear in entries plus duplicate claims; the exact-id views are built
- *   once per call, and incoming matching is a single pass over entries.
+ * - One linear pass to build exact-id maps up front: duplicate-claim ids
+ *   and entry ids are each indexed once per call, so the requested target
+ *   and every outgoing id resolve in constant time and incoming matching
+ *   stays a single pass over entries. Total cost is linear in entries plus
+ *   duplicate claims, independent of out-degree.
  *
  * Callers own scan acquisition (ENG-45's `linksOp` should pass one scan
  * per query so target and adjacency share one coherent snapshot). */
 export const computeLinkAdjacency = (scan: StoreScan, targetId: string): LinkAdjacency => {
-  const target = resolveExact(scan, targetId);
+  /* Exact-id views, built once per call and shared by target and outgoing
+   * resolution. Duplicate claims take precedence over entries; an unclaimed
+   * id resolves to its first entry in scan order (the previous `find`
+   * behavior, kept for synthetic scans with unclaimed duplicate ids). */
+  const claimById = new Map<string, DuplicateIdClaim>(
+    scan.duplicateIds.map((c) => [c.id, c] as const),
+  );
+  const entryById = new Map<string, Engram>();
+  for (const m of scan.entries) {
+    if (!entryById.has(m.id)) entryById.set(m.id, m);
+  }
+
+  /* Exact-id resolution only: duplicate claims win over valid entries, and
+   * no prefix of any id ever resolves. */
+  const resolveExact = (id: string): LinkTargetResolution => {
+    const claimed = claimById.get(id);
+    if (claimed !== undefined) {
+      return { status: "ambiguous", id, claimants: claimed.files };
+    }
+    const entry = entryById.get(id);
+    return entry === undefined ? { status: "missing", id } : { status: "found", id, entry };
+  };
+
+  const target = resolveExact(targetId);
   const outgoing =
-    target.status === "found"
-      ? (target.entry.related ?? []).map((id) => resolveExact(scan, id))
-      : [];
+    target.status === "found" ? (target.entry.related ?? []).map((id) => resolveExact(id)) : [];
   const incoming = scan.entries
     .filter((m) => m.related?.includes(targetId) === true)
     .sort(chronological);
