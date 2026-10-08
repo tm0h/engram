@@ -325,7 +325,7 @@ export const linkDiagnostics = (
         ...base,
         code: "related_ambiguous",
         message: `related "${relatedId}" is claimed by ${sorted.length} entries: ${sorted.join(", ")}`,
-        hint: 'Run `engram dedupe` to renumber the extra claimants, or edit "related" to the id you mean. Ambiguous targets are advisory: the entry still reads and checks stay green.',
+        hint: 'Run `engram dedupe` to renumber the extra claimants, or edit "related" to the id you mean. This warning is advisory: the entry still reads, but the claimants\' duplicate ids make checks fail.',
       });
     }
   }
