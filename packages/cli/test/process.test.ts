@@ -664,3 +664,170 @@ describe("engram add/edit related flags (process level, ENG-42)", () => {
     expect(related?.severity).toBe("warning");
   });
 });
+
+describe("engram check relation exit codes (process level, ENG-44)", () => {
+  let tmp = "";
+  let home = "";
+
+  beforeAll(() => {
+    if (!spawnOk) return;
+    tmp = mkdtempSync(join(tmpdir(), "engram-proc-eng44-"));
+    home = mkdtempSync(join(tmpdir(), "engram-proc-eng44-home-"));
+  });
+  afterAll(() => {
+    if (tmp) rmSync(tmp, { recursive: true, force: true });
+    if (home) rmSync(home, { recursive: true, force: true });
+  });
+
+  let projSeq = 0;
+  const freshProject = (): string => {
+    projSeq += 1;
+    const proj = join(tmp, "proj-" + String(projSeq));
+    mkdirSync(join(proj, ".engram", "engrams"), { recursive: true });
+    writeFileSync(
+      join(proj, ".engram", "config.json"),
+      JSON.stringify({ version: 1, tracked: true, defaultType: "note" }),
+    );
+    return proj;
+  };
+  /* Hand-edited raw frontmatter: ENG-42 rejects invalid relation writes at
+   * the boundary, so these files are seeded directly (appendix step 7). */
+  const seedRaw = (proj: string, name: string, lines: ReadonlyArray<string>): string => {
+    const file = join(proj, ".engram", "engrams", name);
+    writeFileSync(file, lines.join("\n"));
+    return file;
+  };
+  const header = (id: string, title: string): ReadonlyArray<string> => [
+    "---",
+    'id: "' + id + '"',
+    "title: " + JSON.stringify(title),
+    "type: note",
+    "tags: []",
+    "scope: project",
+    "created: 2025-08-15T10:00:00.000Z",
+    "updated: 2025-08-15T11:00:00.000Z",
+  ];
+
+  it("a malformed related list fails check with exit 1 in human and JSON modes", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    seedRaw(proj, "0001-linked.md", [
+      ...header("0001", "Linked"),
+      'related: "nope"',
+      "---",
+      "Body",
+      "",
+    ]);
+    expect(runCli(["check"], proj, home).status).toBe(1);
+    const json = runCli(["check", "--json"], proj, home);
+    expect(json.status).toBe(1);
+    const doc = JSON.parse(json.stdout) as {
+      ok: boolean;
+      diagnostics: Array<{ code: string; severity: string }>;
+    };
+    expect(doc.ok).toBe(false);
+    expect(
+      doc.diagnostics.some((d) => d.code === "related_invalid" && d.severity === "error"),
+    ).toBe(true);
+  });
+
+  it("a self relation fails check with exit 1 in human and JSON modes", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    seedRaw(proj, "0001-linked.md", [
+      ...header("0001", "Linked"),
+      "related:",
+      '  - "0001"',
+      "---",
+      "Body",
+      "",
+    ]);
+    expect(runCli(["check"], proj, home).status).toBe(1);
+    const json = runCli(["check", "--json"], proj, home);
+    expect(json.status).toBe(1);
+    const doc = JSON.parse(json.stdout) as { diagnostics: Array<{ code: string }> };
+    expect(doc.diagnostics.some((d) => d.code === "self_relation")).toBe(true);
+  });
+
+  it("a duplicate related list fails check with exit 1 in human and JSON modes", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    seedRaw(proj, "0001-linked.md", [
+      ...header("0001", "Linked"),
+      "related:",
+      '  - "0002"',
+      '  - "0002"',
+      "---",
+      "Body",
+      "",
+    ]);
+    seedRaw(proj, "0002-target.md", [...header("0002", "Target"), "---", "Body", ""]);
+    expect(runCli(["check"], proj, home).status).toBe(1);
+    const json = runCli(["check", "--json"], proj, home);
+    expect(json.status).toBe(1);
+    const doc = JSON.parse(json.stdout) as { diagnostics: Array<{ code: string }> };
+    expect(doc.diagnostics.some((d) => d.code === "duplicate_relation")).toBe(true);
+  });
+
+  it("a missing-only relation store passes: exit 0 in human and JSON modes", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    seedRaw(proj, "0001-linked.md", [
+      ...header("0001", "Linked"),
+      "related:",
+      '  - "0099"',
+      "---",
+      "Body",
+      "",
+    ]);
+    expect(runCli(["check"], proj, home).status).toBe(0);
+    const json = runCli(["check", "--json"], proj, home);
+    expect(json.status).toBe(0);
+    const doc = JSON.parse(json.stdout) as {
+      ok: boolean;
+      diagnostics: Array<{ code: string; severity: string }>;
+    };
+    expect(doc.ok).toBe(true);
+    expect(
+      doc.diagnostics.some((d) => d.code === "related_not_found" && d.severity === "warning"),
+    ).toBe(true);
+  });
+
+  /* A related_ambiguous warning requires two claimant files for one id, and
+   * those claimants always carry pre-existing duplicate_id errors, so the
+   * store cannot exit 0. This pins the real behavior: exit 1 on the claimant
+   * errors, ambiguity warning present as a warning, stdout one parseable
+   * JSON document. Flagged to the leader: AC8's "ambiguous-only exit 0" is
+   * infeasible as literally written. */
+  it("an ambiguous relation store exits 1 on the claimants' duplicate ids, warning present in JSON", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    seedRaw(proj, "0002-copy-a.md", [...header("0002", "Copy a"), "---", "Body", ""]);
+    seedRaw(proj, "0002-copy-b.md", [...header("0002", "Copy b"), "---", "Body", ""]);
+    seedRaw(proj, "0001-linked.md", [
+      ...header("0001", "Linked"),
+      "related:",
+      '  - "0002"',
+      "---",
+      "Body",
+      "",
+    ]);
+    expect(runCli(["check"], proj, home).status).toBe(1);
+    const json = runCli(["check", "--json"], proj, home);
+    expect(json.status).toBe(1);
+    // stdout stays exactly one parseable JSON document
+    const doc = JSON.parse(json.stdout) as {
+      ok: boolean;
+      diagnostics: Array<{ code: string; severity: string; message: string }>;
+    };
+    expect(doc.ok).toBe(false);
+    const ambiguous = doc.diagnostics.find((d) => d.code === "related_ambiguous");
+    expect(ambiguous).toBeDefined();
+    expect(ambiguous?.severity).toBe("warning");
+    expect(ambiguous?.message).toContain('"0002"');
+    expect(doc.diagnostics.filter((d) => d.severity === "error").map((d) => d.code)).toEqual([
+      "duplicate_id",
+      "duplicate_id",
+    ]);
+  });
+});
