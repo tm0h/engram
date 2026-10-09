@@ -74,6 +74,7 @@ const input = (over: Partial<EngramInput> = {}): EngramInput => ({
   body: "libfoo had an engram leak under load",
   pinned: false,
   author: undefined,
+  aliases: [],
   ...over,
 });
 
@@ -1431,6 +1432,7 @@ describe("lifecycleDiagnostics", () => {
     type: "note",
     tags: [],
     scope: "project",
+    aliases: [],
     created: "2025-08-15T10:00:00.000Z",
     updated: "2025-08-15T11:00:00.000Z",
     author: undefined,
@@ -4276,6 +4278,7 @@ describe("EngramStore / ENG-44 link diagnostics", () => {
     type: "note",
     tags: [],
     scope: "project",
+    aliases: [],
     created: "2025-08-15T10:00:00.000Z",
     updated: "2025-08-15T11:00:00.000Z",
     author: undefined,
@@ -4617,6 +4620,248 @@ describe("EngramStore / ENG-44 link diagnostics", () => {
       const blocked = yield* Effect.flip(store.dedupe("project"));
       expect((blocked as { _tag: string })._tag).toBe("IntegrityCheckFailedError");
       expect(snapshot(dir())).toBe(before);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+});
+
+/* ------------------------------------------------------------------ */
+/* ENG-46 search aliases                                               */
+/* ------------------------------------------------------------------ */
+
+describe("EngramStore / ENG-46 aliases", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "amem-aliases-home-"));
+    process.chdir(tmp);
+    process.env.HOME = home;
+    fs.mkdirSync(globalEngramsDir(), { recursive: true });
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const dir = (): string => projectEngramsDir(tmp);
+
+  const BASE = {
+    id: "0001",
+    title: "Aliased note",
+    type: "note",
+    tags: ["a"],
+    scope: "project",
+    created: "2025-08-15T10:00:00.000Z",
+    updated: "2025-08-15T11:00:00.000Z",
+  };
+
+  const seed = (name: string, fm: Record<string, unknown>, body = "Body\n"): string => {
+    const file = path.join(dir(), name);
+    fs.writeFileSync(file, stringifyFrontmatter(body, fm));
+    return file;
+  };
+
+  const readData = (file: string): Record<string, unknown> =>
+    (Option.getOrUndefined(Result.getSuccess(parseFrontmatter(fs.readFileSync(file, "utf8"))))
+      ?.data ?? {}) as Record<string, unknown>;
+
+  const bytes = (file: string): string => fs.readFileSync(file, "utf8");
+
+  /* ------------------------ model + write boundary ------------------------ */
+
+  it.live("add normalizes aliases at the write boundary", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const m = yield* store.add(
+        "project",
+        input({ title: "Aliased", aliases: ["  Postgres ", "PG", "pg"] }),
+        NOSCAN,
+      );
+      expect(m.aliases).toEqual(["postgres", "pg"]);
+      expect((yield* store.get("project", m.id)).aliases).toEqual(["postgres", "pg"]);
+      expect(readData(m.path).aliases).toEqual(["postgres", "pg"]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("add serializes aliases only when non-empty (S1)", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const empty = yield* store.add(
+        "project",
+        input({ title: "No aliases", aliases: [] }),
+        NOSCAN,
+      );
+      expect(readData(empty.path)).not.toHaveProperty("aliases");
+      expect(bytes(empty.path)).not.toMatch(/^aliases:/m);
+      // the default (no aliases supplied) keeps the exact same shape
+      const plain = yield* store.add("project", input({ title: "Plain" }), NOSCAN);
+      expect(readData(plain.path)).not.toHaveProperty("aliases");
+      expect(bytes(plain.path)).not.toMatch(/^aliases:/m);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("absent aliases decode as [] on read", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0001-aliased-note.md", { ...BASE });
+      const m = yield* store.get("project", "0001");
+      expect(m.aliases).toEqual([]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("noncanonical aliases read raw and canonicalize on the next mediated write", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0001-aliased-note.md", { ...BASE, aliases: ["Postgres", "PG"] });
+      const read = yield* store.get("project", "0001");
+      expect(read.aliases).toEqual(["Postgres", "PG"]);
+      const rewritten = yield* store.update("project", "0001", { body: "New body\n" }, NOSCAN);
+      expect(readData(rewritten.path).aliases).toEqual(["postgres", "pg"]);
+      expect((yield* store.get("project", "0001")).aliases).toEqual(["postgres", "pg"]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("update is three-state: omission preserves, array replaces, null clears", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0001-aliased-note.md", { ...BASE, aliases: ["postgres", "pg"] });
+
+      // undefined preserves
+      const kept = yield* store.update("project", "0001", { body: "Kept\n" }, NOSCAN);
+      expect(readData(kept.path).aliases).toEqual(["postgres", "pg"]);
+
+      // an array replaces the whole set, normalized
+      const replaced = yield* store.update(
+        "project",
+        "0001",
+        { aliases: [" PG ", "New One"] },
+        NOSCAN,
+      );
+      expect(readData(replaced.path).aliases).toEqual(["pg", "new one"]);
+      expect((yield* store.get("project", "0001")).aliases).toEqual(["pg", "new one"]);
+
+      // null clears: the key disappears from the YAML, the model reads []
+      const cleared = yield* store.update("project", "0001", { aliases: null }, NOSCAN);
+      expect(readData(cleared.path)).not.toHaveProperty("aliases");
+      expect(bytes(cleared.path)).not.toMatch(/^aliases:/m);
+      expect((yield* store.get("project", "0001")).aliases).toEqual([]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("an empty-array replacement stores like a clear (S1)", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0001-aliased-note.md", { ...BASE, aliases: ["postgres"] });
+      const emptied = yield* store.update("project", "0001", { aliases: [] }, NOSCAN);
+      expect(readData(emptied.path)).not.toHaveProperty("aliases");
+      expect((yield* store.get("project", "0001")).aliases).toEqual([]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("every rule violation is rejected at the write boundary without mutation", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0001-aliased-note.md", { ...BASE, aliases: ["postgres"] });
+      const twentyOne = Array.from({ length: 21 }, (_, i) => `a${i}`);
+      const bads: ReadonlyArray<unknown> = [
+        [""], // empty alias
+        ["", "pg"], // empty member preserved by the flag split
+        ["   "], // whitespace-only
+        ["p".repeat(81)], // overlength
+        twentyOne, // over cap
+        [7], // non-string member
+      ];
+      const before = snapshot(dir());
+      for (const aliases of bads) {
+        const addError = yield* Effect.flip(
+          store.add(
+            "project",
+            { ...input({ title: "Bad add" }), aliases } as unknown as EngramInput,
+            NOSCAN,
+          ),
+        );
+        expect((addError as { _tag: string })._tag).toBe("FrontmatterParseError");
+        expect((addError as { message: string }).message).toContain("aliases");
+        const updateError = yield* Effect.flip(
+          store.update("project", "0001", { aliases } as unknown as EngramPatch, NOSCAN),
+        );
+        expect((updateError as { _tag: string })._tag).toBe("FrontmatterParseError");
+        expect((updateError as { message: string }).message).toContain("aliases");
+      }
+      expect(snapshot(dir())).toBe(before);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("a YAML null aliases value is a present bad shape that omits the entry", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0001-aliased-note.md", { ...BASE, aliases: null });
+      const scanned = yield* store.scan("project");
+      expect(scanned.entries).toEqual([]);
+      expect(scanned.diagnostics.map((d) => d.code)).toEqual(["aliases_invalid"]);
+      expect(scanned.diagnostics[0]!.severity).toBe("error");
+      const getError = yield* Effect.flip(store.get("project", "0001"));
+      expect((getError as { _tag: string })._tag).toBe("FrontmatterParseError");
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("aliases compose with ENG-40 unknown fields and ENG-41 schemaVersion", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0001-aliased-note.md", {
+        ...BASE,
+        aliases: ["Postgres"],
+        schemaVersion: 2,
+        custom_field: "keep me",
+      });
+      const rewritten = yield* store.update("project", "0001", { body: "Composed\n" }, NOSCAN);
+      const data = readData(rewritten.path);
+      expect(data.aliases).toEqual(["postgres"]);
+      expect(data.schemaVersion).toBe(2);
+      expect(data.custom_field).toBe("keep me");
+      expect(rewritten.schemaVersion).toBe(2);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("supersedes marking rewrites preserve aliases", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0001-old-note.md", { ...BASE, title: "Old note", aliases: ["legacy alias"] });
+      const added = yield* store.add(
+        "project",
+        input({ title: "New note", supersedes: "0001" }),
+        NOSCAN,
+      );
+      // the predecessor is marked superseded; its aliases survive the rewrite
+      const marked = readData(`${dir()}/0001-old-note.md`);
+      expect(marked.status).toBe("superseded");
+      expect(marked.aliases).toEqual(["legacy alias"]);
+      expect(added.aliases).toEqual([]);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
+  it.live("dedupe renumbering preserves and canonicalizes aliases", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      seed("0001-keep-a.md", { ...BASE, title: "Keep a", aliases: ["keep alias"] });
+      seed("0001-keep-b.md", { ...BASE, id: "0001", title: "Keep b", aliases: ["Keep Alias"] });
+      const deduped = yield* store.dedupe("project");
+      expect(deduped.renumbered).toHaveLength(1);
+      // the alphabetically-first claimant keeps the id; the displaced record
+      // carries its alias set (canonicalized by the rewrite) to the new file
+      expect(readData(`${dir()}/0001-keep-a.md`).aliases).toEqual(["keep alias"]);
+      const { to } = deduped.renumbered[0]!;
+      const successor = fs.readdirSync(dir()).find((f) => f.startsWith(`${to}-`));
+      expect(successor).toBeDefined();
+      expect(readData(path.join(dir(), successor!)).aliases).toEqual(["keep alias"]);
     }).pipe(Effect.provide(StoreLive)),
   );
 });

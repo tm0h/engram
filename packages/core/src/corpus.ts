@@ -485,6 +485,7 @@ export const loadCorpus = (corpusDir: string): LoadedCorpus => {
       expires: fm.expires,
       sourceType: fm.sourceType,
       sourceRef: fm.sourceRef,
+      aliases: [],
       // validateEntry's success literal always carries the effective
       // integer (1 when the fixture has no schemaVersion key); the fallback
       // only satisfies the optional Frontmatter field type.

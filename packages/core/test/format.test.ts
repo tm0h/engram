@@ -22,6 +22,7 @@ const mem = (over: Partial<Engram> & { id: string; title: string }): Engram => (
   author: undefined,
   pinned: false,
   schemaVersion: 1,
+  aliases: [],
   body: "",
   path: "",
   ...over,
@@ -426,5 +427,30 @@ describe("renderLinks (ENG-45)", () => {
     );
     // eslint-disable-next-line no-control-regex -- intentionally detecting ANSI escapes
     expect(out).not.toMatch(/\u001b\[/);
+  });
+});
+
+/* ENG-46: the aliases line in renderFull */
+
+describe("renderFull / aliases (ENG-46)", () => {
+  it("prints one ordered aliases line for a populated list", () => {
+    const out = renderFull(mem({ id: "0001", title: "T", aliases: ["postgres", "pg"] }));
+    expect(out).toContain("aliases: postgres, pg");
+    expect(out.match(/aliases:/g)).toHaveLength(1);
+  });
+
+  it("prints no aliases line when the list is empty", () => {
+    expect(renderFull(mem({ id: "0001", title: "T", aliases: [] }))).not.toContain("aliases:");
+  });
+
+  it("sits right after the related line in the gray metadata block", () => {
+    const out = renderFull(
+      mem({ id: "0001", title: "T", status: "superseded", related: ["0002"], aliases: ["pg"] }),
+    );
+    const blockLines = out
+      .split("\n")
+      .filter((line) => line.startsWith("  ") && line.trim().length > 0)
+      .map((line) => line.trim());
+    expect(blockLines).toEqual(["status: superseded", "related: 0002", "aliases: pg"]);
   });
 });

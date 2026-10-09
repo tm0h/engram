@@ -40,6 +40,10 @@ export type StoreDiagnosticCode =
   | "related_invalid"
   | "self_relation"
   | "duplicate_relation"
+  /* ENG-46 alias entry validation (packages/core/src/frontmatter.ts):
+   * shape, empty, overlength, and over-cap values are entry-preventing
+   * errors. Noncanonical-but-valid values are not defects. */
+  | "aliases_invalid"
   /* ENG-41 entry format version (packages/core/src/frontmatter.ts). Only
    * schema_version_unsupported is a warning: a future-format entry still
    * reads; an invalid shape is entry-preventing. */

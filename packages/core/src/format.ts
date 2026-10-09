@@ -70,6 +70,11 @@ export function renderFull(m: Engram): string {
   if (m.related !== undefined && m.related.length > 0) {
     lifecycle.push(`related: ${m.related.join(", ")}`);
   }
+  /* ENG-46: one ordered aliases line when non-empty; absent and empty lists
+   * print nothing. Sits right after the related line (R14-d). */
+  if (m.aliases.length > 0) {
+    lifecycle.push(`aliases: ${m.aliases.join(", ")}`);
+  }
   if (m.reviewAfter !== undefined) lifecycle.push(`review-after: ${m.reviewAfter}`);
   if (m.expires !== undefined) lifecycle.push(`expires: ${m.expires}`);
   const source = [m.sourceType, m.sourceRef].filter((p) => p !== undefined).join(" · ");

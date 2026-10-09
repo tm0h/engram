@@ -42,7 +42,15 @@ import { globalEngramsDir, projectEngramsDir } from "./paths.js";
 import { findProjectRoot } from "./location.js";
 import { evaluateScan, scanContent } from "./secrets.js";
 import type { ScanEvaluation, SecretFinding, SecretPolicy } from "./secrets.js";
-import { nowISO, slugify, newId, parseEntryFilename, parseTimestamp } from "./util.js";
+import {
+  nowISO,
+  slugify,
+  newId,
+  parseEntryFilename,
+  parseTimestamp,
+  normalizeAliases,
+  validateAliases,
+} from "./util.js";
 import { validateEntry, stringifyFrontmatter, mergeUnknownFields } from "./frontmatter.js";
 import type { PartialFrontmatter } from "./frontmatter.js";
 
@@ -148,6 +156,9 @@ const toEngram = (
   supersedes: fm.supersedes,
   // copy at the model boundary: the Engram never shares the parsed YAML array
   related: fm.related === undefined ? undefined : [...fm.related],
+  // ENG-46: read default []; the parsed YAML array is copied at the model
+  // boundary like related, and valid noncanonical values stay as authored.
+  aliases: fm.aliases === undefined ? [] : [...fm.aliases],
   reviewAfter: fm.reviewAfter,
   expires: fm.expires,
   sourceType: fm.sourceType,
@@ -187,6 +198,11 @@ function serialize(m: Engram): string {
    * an absent value both produce no key. An explicitly empty array is a
    * concrete value and serializes as `related: []`. */
   if (m.related !== undefined) data.related = [...m.related];
+  /* ENG-46: emit aliases only when NON-EMPTY (R14/S1). Unlike related, an
+   * explicitly empty list and a cleared list both serialize as no key, so
+   * alias-free files keep their exact current shape. Canonical key position:
+   * right after related, before reviewAfter. */
+  if (m.aliases.length > 0) data.aliases = [...m.aliases];
   if (m.reviewAfter !== undefined) data.reviewAfter = m.reviewAfter;
   if (m.expires !== undefined) data.expires = m.expires;
   if (m.sourceType !== undefined) data.sourceType = m.sourceType;
@@ -210,6 +226,14 @@ const applyOptionalPatch = <T>(
   if (instruction === undefined) return current;
   if (instruction === null) return undefined;
   return instruction;
+};
+
+/** ENG-46: joined alias-rule failures for store-boundary rejection. The
+ * message vehicle is `FrontmatterParseError`, the same error every other
+ * candidate defect uses (S4). */
+const aliasFailure = (values: ReadonlyArray<unknown>): string | undefined => {
+  const issues = validateAliases(values);
+  return issues.length === 0 ? undefined : issues.map((i) => i.message).join("; ");
 };
 
 /** ENG-13 write boundary: the complete candidate is validated with the same
@@ -704,6 +728,17 @@ const makeEngramStoreLive = (
           const slug = slugify(title);
           const probeId = newId();
           const probeFile = path.join(dir, `${probeId}-${slug}.md`);
+
+          /* ENG-46: aliases normalize and validate BEFORE any filesystem side
+           * effect (including creating the store directory), so a rejected
+           * add leaves the store byte-identical. */
+          const aliasError = aliasFailure(input.aliases ?? []);
+          if (aliasError !== undefined) {
+            return yield* Effect.fail(
+              new FrontmatterParseError({ file: probeFile, message: aliasError }),
+            );
+          }
+
           const buildCandidate = (id: string, file: string): Engram => ({
             id,
             title,
@@ -717,6 +752,7 @@ const makeEngramStoreLive = (
             status: input.status,
             supersedes: input.supersedes,
             related: input.related === undefined ? undefined : [...input.related],
+            aliases: normalizeAliases(input.aliases ?? []),
             reviewAfter: input.reviewAfter,
             expires: input.expires,
             sourceType: input.sourceType,
@@ -936,6 +972,24 @@ const makeEngramStoreLive = (
            *                       re-pointing) */
           const dir = yield* dirForScope(scope);
           const currentFile = path.join(dir, `${mem.id}-${slugify(mem.title)}.md`);
+
+          /* ENG-46: a concrete alias patch validates BEFORE any write,
+           * including a supersedes marking write (undefined preserves and
+           * null clears without validation). The current list canonicalizes
+           * on every rewrite: the next mediated write canonicalizes (R4). */
+          if (patch.aliases !== undefined && patch.aliases !== null) {
+            const aliasError = aliasFailure(patch.aliases);
+            if (aliasError !== undefined) {
+              return yield* Effect.fail(
+                new FrontmatterParseError({ file: currentFile, message: aliasError }),
+              );
+            }
+          }
+          const aliasInstruction =
+            patch.aliases === undefined || patch.aliases === null
+              ? patch.aliases
+              : normalizeAliases(patch.aliases);
+
           if (
             typeof instruction === "string" &&
             mem.supersedes !== undefined &&
@@ -975,6 +1029,10 @@ const makeEngramStoreLive = (
                 ? patch.related
                 : [...patch.related],
             ),
+            /* ENG-46: three-state alias merge through the shared helper (R2).
+             * The preserved branch canonicalizes the current values; null
+             * clears to the model default [] (the key then never serializes). */
+            aliases: applyOptionalPatch(normalizeAliases(mem.aliases), aliasInstruction) ?? [],
             reviewAfter: applyOptionalPatch(mem.reviewAfter, patch.reviewAfter),
             expires: applyOptionalPatch(mem.expires, patch.expires),
             sourceType: applyOptionalPatch(mem.sourceType, patch.sourceType),
@@ -1168,9 +1226,11 @@ const makeEngramStoreLive = (
               // Write-then-remove order is load-bearing: removing the source
               // first would turn a failed successor write into data loss.
               const written = yield* Effect.result(
-                fs.writeFileString(file, serialize({ ...m, id, updated: nowISO() }), {
-                  flag: "wx",
-                }),
+                fs.writeFileString(
+                  file,
+                  serialize({ ...m, id, updated: nowISO(), aliases: normalizeAliases(m.aliases) }),
+                  { flag: "wx" },
+                ),
               );
               if (Result.isFailure(written)) {
                 const step = yield* rollbackStep(

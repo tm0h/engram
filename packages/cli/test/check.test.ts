@@ -247,6 +247,7 @@ describe("engram check", () => {
               body: "b",
               pinned: false,
               author: undefined,
+              aliases: [],
             },
             NOSCAN,
           );
@@ -269,6 +270,7 @@ describe("engram check", () => {
               body: "b",
               pinned: false,
               author: undefined,
+              aliases: [],
             },
             NOSCAN,
           );

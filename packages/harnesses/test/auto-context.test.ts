@@ -23,6 +23,7 @@ const input = (over: Partial<EngramInput> = {}): EngramInput => ({
   body: "Some body",
   pinned: false,
   author: "Tester",
+  aliases: [],
   ...over,
 });
 
