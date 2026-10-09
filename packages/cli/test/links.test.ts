@@ -267,16 +267,48 @@ describe("engram links command", () => {
   });
 
   it("keeps the no-footer truncated output within the hard cap (F1)", async () => {
-    seedEntry("0001", "Root entry", { related: ["0002", "0003"] });
-    seedEntry("0002", "x".repeat(10_000));
+    seedEntry("0001", "Root entry", { related: ["0003", "0002"] });
     seedEntry("0003", "Small peer");
+    seedEntry("0002", "x".repeat(10_000));
 
-    // Default limit 10 over 2 rows: one page, no continuation footer.
+    // Page 1: the small leading row fits; the oversized row is deferred.
     await run(linksCommand("0001", { scope: "project" }));
+    expect(output()).toContain("0003 note Small peer");
+    expect(output()).toContain("--offset 1 for more");
+
+    // Page 2 holds the single oversized last row: no continuation exists, so
+    // the no-footer truncated branch bounds it at the cap with the marker.
+    outLines = [];
+    await run(linksCommand("0001", { scope: "project", offset: 1 }));
     const out = output();
     expect(out.length).toBeLessThanOrEqual(8192);
     expect(out).toContain("(result truncated)");
     expect(out).not.toContain("call engram links");
+  });
+
+  it("continues at the first hidden row when the cap cuts the page (P1a)", async () => {
+    seedEntry("0001", "Root entry", { related: ["0002", "0003", "0004"] });
+    seedEntry("0002", "x".repeat(10_000));
+    seedEntry("0003", "Peer 0003");
+    seedEntry("0004", "Peer 0004");
+
+    // Greptile's scenario: limit 2 over three links, first peer pathological.
+    // The cap cuts the second row, so the continuation must point at the
+    // first hidden row (1), never past it (2).
+    await run(linksCommand("0001", { scope: "project", limit: 2 }));
+    const page1 = output();
+    expect(page1.length).toBeLessThanOrEqual(8192);
+    expect(page1).toContain("(list truncated to fit the size cap)");
+    expect(page1).toContain(
+      "(showing 1-1 of 3 - call engram links 0001 --scope project --offset 1 --limit 2 for more)",
+    );
+
+    // Full reconstruction covers every row: page 2 starts at the hidden row.
+    outLines = [];
+    await run(linksCommand("0001", { scope: "project", offset: 1, limit: 2 }));
+    expect(output()).toContain("0003 note Peer 0003");
+    expect(output()).toContain("0004 note Peer 0004");
+    expect(output()).not.toContain("call engram links");
   });
 
   it("never writes: files stay byte-identical across reads", async () => {

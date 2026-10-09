@@ -33,6 +33,11 @@ const LINKS_TRUNCATION_MARKER = "(list truncated to fit the size cap)";
  * footer branch reserves the footer (keep in sync with linksOp's marker). */
 const RESULT_MARKER = "(result truncated)";
 
+/** Same contract as the shared capText: pass text through at or below `max`,
+ * slice and flag when it overflows. */
+const capTo = (text: string, max: number): { text: string; truncated: boolean } =>
+  text.length <= max ? { text, truncated: false } : { text: text.slice(0, max), truncated: true };
+
 export const linksCommand = (
   id: string,
   opts: { scope?: string; offset?: number; limit?: number } = {},
@@ -78,9 +83,7 @@ export const linksCommand = (
     const total = rows.length;
     const start = Math.max(0, offset);
     const pageRows = rows.slice(start, start + limit);
-    const nextOffset = pageRows.length > 0 && start + limit < total ? start + limit : null;
 
-    let body = renderLinks(adjacency, { offset: start, total, rows: pageRows });
     const warnings: string[] = [];
     if (scanned.omittedFiles > 0) {
       warnings.push(incompleteMemoryWarning(scanned.omittedFiles));
@@ -93,33 +96,57 @@ export const linksCommand = (
       );
     }
 
-    let footer: string | null = null;
-    if (nextOffset !== null && pageRows.length > 0) {
+    // P1a: the continuation points at the first row NOT fully emitted. The
+    // footer and offset derive from `emitted`, not from the requested window.
+    const footerFor = (emitted: number): string | null => {
+      const next = start + emitted;
+      if (emitted === 0 || next >= total) return null;
       // CLI form in the continuation (R9): this command has no LLM tool.
       const parts = [`engram links ${id}`];
       if (opts.scope !== undefined) parts.push(`--scope ${opts.scope}`);
-      parts.push(`--offset ${nextOffset}`);
+      parts.push(`--offset ${next}`);
       if (opts.limit !== undefined) parts.push(`--limit ${opts.limit}`);
-      footer =
-        `(showing ${start + 1}-${start + pageRows.length} of ${total} - ` +
-        `call ${parts.join(" ")} for more)`;
+      return `(showing ${start + 1}-${next} of ${total} - call ${parts.join(" ")} for more)`;
+    };
+    const joinedFor = (emitted: number): string => {
+      const body = renderLinks(adjacency, {
+        offset: start,
+        total,
+        rows: pageRows.slice(0, emitted),
+      });
+      return warnings.length > 0 ? [body, ...warnings].join("\n\n") : body;
+    };
+    const assemble = (emitted: number): { text: string; truncated: boolean } => {
+      const footer = footerFor(emitted);
+      const joined = joinedFor(emitted);
+      if (footer === null) {
+        const capped = capTo(joined, MAX_RESULT_CHARS - RESULT_MARKER.length - 1);
+        return {
+          text: capped.truncated ? `${capped.text}\n${RESULT_MARKER}` : capped.text,
+          truncated: capped.truncated,
+        };
+      }
+      const capped = capTo(
+        joined,
+        MAX_RESULT_CHARS - footer.length - LINKS_TRUNCATION_MARKER.length - 2,
+      );
+      return {
+        text: capped.truncated
+          ? `${capped.text}\n${footer}\n${LINKS_TRUNCATION_MARKER}`
+          : `${joined}\n${footer}`,
+        truncated: capped.truncated,
+      };
+    };
+
+    // Trim while the cap cuts content so cut rows are never skipped; if even
+    // one row overflows the page alone, assemble(1) is already bounded and
+    // the advance is exactly one row - deterministic, never zero.
+    let emitted = pageRows.length;
+    let assembled = assemble(emitted);
+    while (assembled.truncated && emitted > 1) {
+      emitted -= 1;
+      assembled = assemble(emitted);
     }
 
-    let text: string;
-    if (footer === null) {
-      const joined = [body, ...warnings].join("\n\n");
-      // F1: reserve the marker line so a capped result is exactly at or
-      // below the cap: (MAX - marker - 1) + 1 + marker = MAX.
-      const max = MAX_RESULT_CHARS - RESULT_MARKER.length - 1;
-      text = joined.length > max ? `${joined.slice(0, max)}\n${RESULT_MARKER}` : joined;
-    } else {
-      const joined = [body, ...warnings].join("\n\n");
-      const max = MAX_RESULT_CHARS - footer.length - LINKS_TRUNCATION_MARKER.length - 2;
-      text =
-        joined.length > max
-          ? `${joined.slice(0, max)}\n${footer}\n${LINKS_TRUNCATION_MARKER}`
-          : `${joined}\n${footer}`;
-    }
-
-    yield* out(text);
+    yield* out(assembled.text);
   });

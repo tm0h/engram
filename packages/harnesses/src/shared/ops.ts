@@ -620,58 +620,78 @@ export const linksOp = (opts: LinksOptions): Effect.Effect<OpResult, never, Engr
       ];
       const page = paginate(rows, opts.offset ?? 0, defaultLimit);
 
-      const body = renderLinks(adjacency, {
-        offset: page.offset,
-        total: page.total,
-        rows: page.items,
-      } satisfies LinksPage);
       const warnings: string[] = [];
       if (scanned.omittedFiles > 0) warnings.push(incompleteMemoryWarning(scanned.omittedFiles));
       if (scanned.diagnostics.length > 0) {
         warnings.push(diagnosticSummary(scanned.diagnostics.length));
       }
 
-      let footer: string | null = null;
-      if (page.nextOffset !== null && page.items.length > 0) {
+      // P1a: the continuation points at the first row NOT fully emitted. The
+      // footer and offset are derived from `emitted`, not from the requested
+      // window, so a page the cap cut short never skips its hidden rows.
+      const footerFor = (emitted: number): string | null => {
+        const next = page.offset + emitted;
+        if (emitted === 0 || next >= page.total) return null;
         // The footer names the slash form: this operation has no LLM tool.
         const parts = [`/engram links ${opts.id}`];
         if (opts.scope !== undefined) parts.push(`--scope ${opts.scope}`);
-        parts.push(`--offset ${page.nextOffset}`);
+        parts.push(`--offset ${next}`);
         if (opts.limit !== undefined) parts.push(`--limit ${opts.limit}`);
-        footer = pageFooter({
+        return pageFooter({
           from: page.offset + 1,
-          to: page.offset + page.items.length,
+          to: next,
           total: page.total,
-          nextOffset: page.nextOffset,
+          nextOffset: next,
           nextCall: parts.join(" "),
         });
-      }
-
-      let text: string;
-      let truncated: boolean;
-      if (footer === null) {
-        // F1: reserve the marker line so a capped result is exactly at or
-        // below the cap: (MAX - marker - 1) + 1 + marker = MAX.
-        const capped = capText(
-          [body, ...warnings].join("\n\n"),
-          MAX_RESULT_CHARS - LINKS_RESULT_MARKER.length - 1,
-        );
-        text = capped.truncated ? `${capped.text}\n${LINKS_RESULT_MARKER}` : capped.text;
-        truncated = capped.truncated;
-      } else {
+      };
+      const joinedFor = (emitted: number): string => {
+        const body = renderLinks(adjacency, {
+          offset: page.offset,
+          total: page.total,
+          rows: page.items.slice(0, emitted),
+        } satisfies LinksPage);
+        return warnings.length > 0 ? [body, ...warnings].join("\n\n") : body;
+      };
+      const assemble = (emitted: number): { text: string; truncated: boolean } => {
+        const footer = footerFor(emitted);
+        const joined = joinedFor(emitted);
+        if (footer === null) {
+          const capped = capText(joined, MAX_RESULT_CHARS - LINKS_RESULT_MARKER.length - 1);
+          return {
+            text: capped.truncated ? `${capped.text}\n${LINKS_RESULT_MARKER}` : capped.text,
+            truncated: capped.truncated,
+          };
+        }
         // Reserve room for footer + marker so the continuation always
         // survives the hard cap and total length never exceeds it.
         const capped = capText(
-          [body, ...warnings].join("\n\n"),
+          joined,
           MAX_RESULT_CHARS - footer.length - LINKS_TRUNCATION_MARKER.length - 2,
         );
-        text = capped.truncated
-          ? `${capped.text}\n${footer}\n${LINKS_TRUNCATION_MARKER}`
-          : `${[body, ...warnings].join("\n\n")}\n${footer}`;
-        truncated = capped.truncated;
-      }
+        return {
+          text: capped.truncated
+            ? `${capped.text}\n${footer}\n${LINKS_TRUNCATION_MARKER}`
+            : `${joined}\n${footer}`,
+          truncated: capped.truncated,
+        };
+      };
 
-      return ok(text, {
+      // Start with the full requested window (identical to the previous
+      // behavior whenever it fits) and trim while the cap cuts content. The
+      // loop keeps the largest fully-emitted prefix; if even one row overflows
+      // the page alone, assemble(1) is already bounded (<= MAX, marker kept)
+      // and the advance is exactly one row - deterministic, never zero.
+      let emitted = page.items.length;
+      let assembled = assemble(emitted);
+      while (assembled.truncated && emitted > 1) {
+        emitted -= 1;
+        assembled = assemble(emitted);
+      }
+      const nextOffset =
+        page.items.length > 0 && page.offset + emitted < page.total ? page.offset + emitted : null;
+
+      return ok(assembled.text, {
         id: opts.id,
         scope,
         targetStatus: adjacency.target.status,
@@ -679,10 +699,10 @@ export const linksOp = (opts: LinksOptions): Effect.Effect<OpResult, never, Engr
         incomingTotal: adjacency.incoming.length,
         offset: page.offset,
         limit: page.limit,
-        nextOffset: page.nextOffset,
+        nextOffset,
         diagnosticCount: scanned.diagnostics.length,
         omittedFiles: scanned.omittedFiles,
-        truncated,
+        truncated: assembled.truncated,
       });
     }),
   );

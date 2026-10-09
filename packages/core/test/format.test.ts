@@ -339,6 +339,23 @@ describe("renderLinks (ENG-45)", () => {
     expect(out.indexOf("0002")).toBeLessThan(out.indexOf("0007"));
   });
 
+  it("bounds the repeated target header title (P1b)", () => {
+    const longTitle = "T".repeat(3000);
+    const out = renderLinks(
+      foundAdjacency({
+        target: {
+          status: "found",
+          id: "0012",
+          entry: mem({ id: "0012", title: longTitle, type: "note" }),
+        },
+      }),
+      page([]),
+    );
+    expect(out).toContain(longTitle.slice(0, 1024));
+    expect(out).toContain("… (+1976 chars)");
+    expect(out).not.toContain(longTitle);
+  });
+
   it("renders an explicit offset note when the window is at or past the total", () => {
     const out = renderLinks(foundAdjacency(), page([], 25, 4));
     expect(out).toContain("offset 25");

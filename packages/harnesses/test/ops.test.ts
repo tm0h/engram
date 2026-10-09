@@ -2098,16 +2098,50 @@ describe("shared ops / linksOp", () => {
 
   it("keeps the no-footer truncated page within the hard cap (F1)", async () => {
     const dir = projectEngramsDir(tmp);
-    seedWithRelated(dir, "project", "0001", { related: ["0002", "0003"] });
-    seedWithRelated(dir, "project", "0002", { title: "x".repeat(10_000) });
+    seedWithRelated(dir, "project", "0001", { related: ["0003", "0002"] });
     seedWithRelated(dir, "project", "0003", { title: "Small peer" });
+    seedWithRelated(dir, "project", "0002", { title: "x".repeat(10_000) });
 
-    // Default limit 10 over 2 rows: one page, no continuation footer.
-    const res = await run(linksOp({ id: "0001", scope: "project" }));
-    expect(res.isError).toBe(false);
-    expect(res.details).toMatchObject({ nextOffset: null, truncated: true });
-    expect(res.text.length).toBeLessThanOrEqual(8192);
-    expect(res.text).toContain("(result truncated)");
-    expect(res.text).not.toContain("call /engram links");
+    // Page 1: the small leading row fits; the oversized row is deferred.
+    const page1 = await run(linksOp({ id: "0001", scope: "project" }));
+    expect(page1.isError).toBe(false);
+    expect(page1.details).toMatchObject({ nextOffset: 1, truncated: false });
+    expect(page1.text).toContain("0003 note Small peer");
+
+    // Page 2 holds the single oversized last row: no continuation exists, so
+    // the no-footer truncated branch bounds it at the cap with the marker.
+    const page2 = await run(linksOp({ id: "0001", scope: "project", offset: 1 }));
+    expect(page2.isError).toBe(false);
+    expect(page2.details).toMatchObject({ nextOffset: null, truncated: true });
+    expect(page2.text.length).toBeLessThanOrEqual(8192);
+    expect(page2.text).toContain("(result truncated)");
+    expect(page2.text).not.toContain("call /engram links");
+  });
+
+  it("continues at the first hidden row when the cap cuts the page (P1a)", async () => {
+    const dir = projectEngramsDir(tmp);
+    seedWithRelated(dir, "project", "0001", { related: ["0002", "0003", "0004"] });
+    seedWithRelated(dir, "project", "0002", { title: "x".repeat(10_000) });
+    seedWithRelated(dir, "project", "0003", { title: "Peer 0003" });
+    seedWithRelated(dir, "project", "0004", { title: "Peer 0004" });
+
+    // Greptile's scenario: limit 2 over three links, first peer pathological.
+    // The cap cuts the second row, so the continuation must point at the
+    // first hidden row (1), never past it (2).
+    const page1 = await run(linksOp({ id: "0001", scope: "project", limit: 2 }));
+    expect(page1.isError).toBe(false);
+    expect(page1.text.length).toBeLessThanOrEqual(8192);
+    expect(page1.text).toContain("(list truncated to fit the size cap)");
+    expect(page1.text).toContain("(showing 1-1 of 3");
+    expect(page1.text).toContain(
+      "/engram links 0001 --scope project --offset 1 --limit 2 for more",
+    );
+    expect(page1.details).toMatchObject({ nextOffset: 1 });
+
+    // Full reconstruction covers every row: page 2 starts at the hidden row.
+    const page2 = await run(linksOp({ id: "0001", scope: "project", offset: 1, limit: 2 }));
+    expect(page2.isError).toBe(false);
+    expect(rowIds(page2.text)).toEqual(["0003", "0004"]);
+    expect(page2.details).toMatchObject({ nextOffset: null });
   });
 });

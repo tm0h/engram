@@ -203,10 +203,25 @@ function plainTags(tags: ReadonlyArray<string>): string {
 
 function targetHeader(target: LinkTargetResolution): string {
   if (target.status === "found") {
-    return `Links for ${target.id} - ${target.entry.title} (${target.entry.type})`;
+    return `Links for ${target.id} - ${linksTitle(target.entry.title)} (${target.entry.type})`;
   }
   if (target.status === "missing") return `Links for ${target.id} - MISSING`;
   return `Links for ${target.id} - AMBIGUOUS (${target.claimants.length} claimants)`;
+}
+
+/** P1b: the target header repeats on every page, so its title is bounded with
+ * ENG-77's convention: at most this many characters, cut at the first
+ * newline, with an explicit `… (+N chars)` marker naming the elision. Row
+ * titles stay verbatim: a pathological row costs exactly one page and
+ * advances deterministically; it can never loop or hide other rows. */
+const LINKS_TITLE_BUDGET = 1024;
+
+function linksTitle(title: string): string {
+  if (title.length <= LINKS_TITLE_BUDGET) return title;
+  const newlineIndex = title.indexOf("\n");
+  const keep =
+    newlineIndex === -1 ? LINKS_TITLE_BUDGET : Math.min(LINKS_TITLE_BUDGET, newlineIndex);
+  return `${title.slice(0, keep)} … (+${title.length - keep} chars)`;
 }
 
 function rowLines(row: LinksRow): string[] {
