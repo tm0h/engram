@@ -38,6 +38,7 @@ const seed = (root: string, id: string, over: Partial<EngramInput>): void => {
     body: `body ${id}`,
     pinned: false,
     author: "Tester",
+    aliases: [],
     ...over,
   };
   const fm = [
@@ -433,5 +434,102 @@ describe("PR1 acceptance / related link flow (ENG-42)", () => {
       { sessionID: "rel", directory: tmp },
     );
     expect(ocShown2.output).not.toMatch(/^related:/m);
+  });
+});
+
+describe("PR acceptance / aliases flow (ENG-46)", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "engram-accept-alias-home-"));
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    if (origHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = origHome;
+    }
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("both adapters drive an add-show-edit-clear aliases flow", async () => {
+    // Pi: add with aliases, show the header, replace, clear, show again
+    const { pi, tools } = fakePi();
+    engramExtension(pi);
+    const added = (await tools.get("engram_add").execute("a1", {
+      title: "Alias flow pi",
+      body: "b",
+      aliases: [" Postgres ", "PG"],
+    })) as {
+      isError: boolean;
+      details: Record<string, unknown>;
+      content: Array<{ text: string }>;
+    };
+    expect(added.isError).toBe(false);
+    const addedId = added.details.id as string;
+
+    const shown = (await tools.get("engram_show").execute("a2", { id: addedId })) as {
+      isError: boolean;
+      content: Array<{ text: string }>;
+    };
+    expect(shown.isError).toBe(false);
+    expect(shown.content[0].text).toContain("aliases: postgres, pg");
+
+    const replaced = (await tools.get("engram_edit").execute("a3", {
+      id: addedId,
+      aliases: ["fresh one"],
+    })) as { isError: boolean };
+    expect(replaced.isError).toBe(false);
+    const shown2 = (await tools.get("engram_show").execute("a4", { id: addedId })) as {
+      content: Array<{ text: string }>;
+    };
+    expect(shown2.content[0].text).toContain("aliases: fresh one");
+
+    const cleared = (await tools.get("engram_edit").execute("a5", {
+      id: addedId,
+      aliases: null,
+    })) as { isError: boolean };
+    expect(cleared.isError).toBe(false);
+    const shown3 = (await tools.get("engram_show").execute("a6", { id: addedId })) as {
+      content: Array<{ text: string }>;
+    };
+    expect(shown3.content[0].text).not.toMatch(/^aliases:/m);
+
+    // OpenCode: the same contract through the plugin tool map
+    const hooks = (await engramPlugin({
+      directory: tmp,
+      worktree: tmp,
+    } as never)) as Record<string, any>;
+    const ocAdded = await hooks.tool.engram_add.execute(
+      { title: "Alias flow oc", body: "b", aliases: ["pg"] },
+      { sessionID: "alias", directory: tmp },
+    );
+    expect(ocAdded.metadata.isError).toBe(false);
+    const ocId = ocAdded.metadata.id as string;
+
+    const ocShown = await hooks.tool.engram_show.execute(
+      { id: ocId },
+      { sessionID: "alias", directory: tmp },
+    );
+    expect(ocShown.output).toContain("aliases: pg");
+
+    await hooks.tool.engram_edit.execute(
+      { id: ocId, aliases: null },
+      { sessionID: "alias", directory: tmp },
+    );
+    const ocShown2 = await hooks.tool.engram_show.execute(
+      { id: ocId },
+      { sessionID: "alias", directory: tmp },
+    );
+    expect(ocShown2.output).not.toMatch(/^aliases:/m);
   });
 });

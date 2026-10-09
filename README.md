@@ -217,6 +217,7 @@ status: superseded
 supersedes: "0001"
 related:
   - "0002"
+aliases: [postgres, "pg row level security"]
 reviewAfter: 2026-01-01T00:00:00.000Z
 expires: 2026-06-01T00:00:00.000Z
 sourceType: conversation
@@ -228,10 +229,10 @@ moment.js is frozen/in-maintenance and ships a large bundle…
 
 The frontmatter fields `id`, `title`, `type`, `tags`, `scope`, `created`, and
 `updated` are required; `author`, `pinned`, the six lifecycle fields shown
-above, and `related` are optional. Entries without lifecycle fields need no
-migration. Unknown fields with other names are tolerated on read but still
-dropped on edit, while the six modeled lifecycle fields and `related` are
-preserved.
+above, `related`, and `aliases` are optional. Entries without lifecycle fields
+need no migration. Unknown fields with other names are tolerated on read but
+still dropped on edit, while the six modeled lifecycle fields, `related`, and
+`aliases` are preserved.
 
 ### Lifecycle fields
 
@@ -255,6 +256,23 @@ preserved.
   `engram edit --related` replaces the whole list, and
   `engram edit --clear-related` removes it.
 
+### Aliases
+
+- `aliases`: an optional list of alternate names a searcher might use, e.g.
+  `aliases: [postgres, "pg row level security"]`. Values may be multiword
+  phrases and are distinct from `tags` (compact categorical labels). The
+  store normalizes them: surrounding whitespace is trimmed, values are
+  lowercased, and duplicates collapse to the first occurrence, preserving
+  order; internal whitespace is kept and values are never split on spaces.
+  Each alias is at most 80 Unicode code points long after trimming, and one
+  entry holds at most 20 unique aliases. `engram add --aliases` and
+  `engram edit --aliases` split on commas only, so a comma cannot be part of
+  an alias through a flag (the structured Pi and OpenCode tools take arrays
+  and can). `engram edit --clear-aliases` removes the list. A valid but
+  noncanonical hand-written value still reads and is canonicalized on the
+  next mediated write. Empty, overlength, over-cap, or wrongly shaped values
+  are `aliases_invalid` errors that omit the entry until repaired by hand.
+
 **Authority warning.** Lifecycle and provenance fields are notes anyone (and
 any agent) can write. Engram does not authenticate them, does not resolve or
 verify the referenced source, and does not establish that a memory is true,
@@ -271,7 +289,9 @@ timestamp is at or before the check time). Relation targets resolve by exact
 id within the checked scope only, and a target claimed by an otherwise
 invalid file still counts. Malformed relation metadata on a single file stays
 an error that omits the entry: `related_invalid` (bad shape or id),
-`self_relation`, and `duplicate_relation`. Warnings print as `warning [code]`
+`self_relation`, `duplicate_relation`, and `aliases_invalid` (bad shape, an
+empty alias, an alias over 80 code points, or more than 20 unique aliases).
+Warnings print as `warning [code]`
 and never make `check` fail; errors and unchecked scopes still exit nonzero.
 `check --json` may therefore return `ok: true` with
 `diagnostics[].severity: "warning"`; JSON consumers must accept that value
