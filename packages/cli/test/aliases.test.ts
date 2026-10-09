@@ -288,4 +288,25 @@ describe("engram add/edit aliases flags", () => {
     const call = openEditorMock.mock.calls[0]?.[0];
     expect(call?.aliases).toEqual(["pg"]);
   });
+
+  it("a comma-containing stored alias survives a body-only editor save (P1-1, R15)", async () => {
+    seed("0001", "Aliased note", "aliased-note", ["foo, bar"]);
+    // the mock returns what the real openEditor produces after the R15 fix:
+    // an unchanged line ("foo, bar") preserves the stored array verbatim,
+    // while the body changes.
+    openEditorMock.mockImplementationOnce(() =>
+      Effect.succeed(
+        edited({
+          title: "Aliased note",
+          body: "New body",
+          aliases: ["foo, bar"],
+          aliasesRaw: "foo, bar",
+        }),
+      ),
+    );
+    await run(editCommand("0001", {}));
+    const entry = readEntry("0001");
+    expect(entry.data.aliases).toEqual(["foo, bar"]);
+    expect(entry.raw).toContain("New body");
+  });
 });

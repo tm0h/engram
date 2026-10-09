@@ -57,12 +57,23 @@ export interface EditedEngram {
    * line may carry empty comma members: they are preserved for the core
    * boundary to reject with the same wording as the flags. */
   readonly aliases?: ReadonlyArray<string> | undefined;
+  /* ENG-46 (P1-1/R15): the exact trimmed text of the saved aliases line,
+   * undefined when the line is missing. Re-parsing is lossy for stored
+   * aliases that contain commas, so the unchanged-line check compares this
+   * text against the prefill rendering instead of the split. */
+  readonly aliasesRaw?: string | undefined;
   /* ENG-42 (turn 3): true only when the document had frontmatter but the
    * related line itself is missing. The renderer always writes the line, so
    * a missing line is an explicit user deletion, while a blank line is what
    * an unchanged save of a stored empty list looks like. */
   readonly relatedDeleted?: boolean | undefined;
 }
+
+/** The exact value text the renderer writes for an aliases list (everything
+ * after the "aliases:" key). Shared by the renderer and the unchanged-line
+ * check (R15), so the two can never drift. */
+export const aliasesEditorValue = (aliases: ReadonlyArray<string> | undefined): string =>
+  aliases !== undefined && aliases.length > 0 ? " " + aliases.join(", ") : "";
 
 /** Canonical camelCase lifecycle keys, matching the serialized file format
  * and the flag names' option properties. */
@@ -97,7 +108,7 @@ export const renderEditorDocument = (initial: Partial<EditedEngram> = {}): strin
     `tags: ${(initial.tags ?? []).join(", ")}`,
     ...lifecycle,
     `related:${related !== undefined && related.length > 0 ? " " + related.join(", ") : ""}`,
-    `aliases:${aliases !== undefined && aliases.length > 0 ? " " + aliases.join(", ") : ""}`,
+    `aliases:${aliasesEditorValue(aliases)}`,
     "---",
     "",
     initial.body ?? BODY_PLACEHOLDER,
@@ -149,9 +160,25 @@ export const parseEditorDocument = (raw: string): EditedEngram => {
     related: related.kind === "ids" ? related.ids : undefined,
     relatedDeleted: !("related" in data) || undefined,
     aliases,
+    aliasesRaw: rawAliases,
     body: m[2].trim(),
   };
 };
+
+/** ENG-46 (P1-1/R15): an UNCHANGED aliases line preserves the prefilled
+ * array exactly. Re-parsing the line is lossy when a stored alias contains a
+ * comma (legal through structured tool arrays): the split would silently
+ * replace one alias with two on an unrelated edit. The saved line text is
+ * therefore compared against the prefill rendering; a genuinely changed line
+ * still splits on commas (the documented comma-format limitation), and a
+ * blanked or removed line still clears. Pure. */
+export const preserveUnchangedAliases = (
+  parsed: EditedEngram,
+  prefill: ReadonlyArray<string> | undefined,
+): EditedEngram =>
+  parsed.aliasesRaw === aliasesEditorValue(prefill).trim()
+    ? { ...parsed, aliases: prefill }
+    : parsed;
 
 /** Open $EDITOR on a temp file pre-filled with frontmatter; parse on save. */
 export const openEditor = (
@@ -168,5 +195,5 @@ export const openEditor = (
     }
     const raw = fs.readFileSync(file, "utf8");
     fs.unlinkSync(file);
-    return parseEditorDocument(raw);
+    return preserveUnchangedAliases(parseEditorDocument(raw), initial.aliases);
   });

@@ -4,7 +4,11 @@
  * here without spawning a real editor.
  */
 import { describe, it, expect } from "vite-plus/test";
-import { renderEditorDocument, parseEditorDocument } from "../src/interactive.js";
+import {
+  renderEditorDocument,
+  parseEditorDocument,
+  preserveUnchangedAliases,
+} from "../src/interactive.js";
 
 const FULL = {
   title: "Replaced guidance",
@@ -51,7 +55,8 @@ describe("renderEditorDocument", () => {
 
 describe("parseEditorDocument", () => {
   it("round-trips a full document unchanged", () => {
-    expect(parseEditorDocument(renderEditorDocument(FULL))).toEqual(FULL);
+    // aliasesRaw carries the exact saved aliases-line text (P1-1/R15)
+    expect(parseEditorDocument(renderEditorDocument(FULL))).toEqual({ ...FULL, aliasesRaw: "" });
   });
 
   it("preserves colons in lifecycle values (offsets, URLs, paths)", () => {
@@ -235,5 +240,56 @@ describe("parseEditorDocument / aliases (ENG-46)", () => {
       "---\ntitle: T\ntype: note\ntags: \nstatus: \nsupersedes: \nreviewAfter: \nexpires: \nsourceType: \nsourceRef: \nrelated: \naliases: ok,,fine\n---\n\nBody\n",
     );
     expect(doc.aliases).toEqual(["ok", "", "fine"]);
+  });
+});
+
+describe("preserveUnchangedAliases / unchanged-line rule (P1-1, R15)", () => {
+  const docWith = (aliases: string | undefined, body = "old"): string =>
+    renderEditorDocument({
+      title: "T",
+      type: "note",
+      tags: [],
+      body,
+      ...(aliases === undefined ? {} : { aliases: [aliases] }),
+    });
+
+  it("an unchanged line preserves the stored array exactly (comma-containing alias)", () => {
+    // a stored alias containing a comma (legal via structured arrays)
+    const saved = parseEditorDocument(docWith("foo, bar"));
+    // re-parsing the unchanged line is lossy
+    expect(saved.aliases).toEqual(["foo", "bar"]);
+    const preserved = preserveUnchangedAliases(saved, ["foo, bar"]);
+    expect(preserved.aliases).toEqual(["foo, bar"]);
+  });
+
+  it("a body-only edit keeps the stored aliases byte-identical (R15)", () => {
+    const saved = parseEditorDocument(docWith("foo, bar", "new body"));
+    const next = preserveUnchangedAliases(saved, ["foo, bar"]);
+    expect(next.aliases).toEqual(["foo, bar"]);
+  });
+
+  it("a genuinely changed line still splits on commas (documented limitation)", () => {
+    const saved = parseEditorDocument(docWith("foo, bar").replace("foo, bar", "keep, these"));
+    const next = preserveUnchangedAliases(saved, ["foo, bar"]);
+    expect(next.aliases).toEqual(["keep", "these"]);
+  });
+
+  it("a blanked or removed line still clears (AC7)", () => {
+    const blanked = parseEditorDocument(
+      docWith("foo, bar").replace("aliases: foo, bar", "aliases:"),
+    );
+    expect(blanked.aliasesRaw).toBe("");
+    expect(preserveUnchangedAliases(blanked, ["foo, bar"]).aliases).toBeUndefined();
+
+    const removed = parseEditorDocument(docWith("foo, bar").replace("aliases: foo, bar\n", ""));
+    expect(removed.aliasesRaw).toBeUndefined();
+    expect(preserveUnchangedAliases(removed, ["foo, bar"]).aliases).toBeUndefined();
+  });
+
+  it("a blank line with an empty prefill preserves the empty set", () => {
+    const saved = parseEditorDocument(docWith(undefined));
+    expect(saved.aliasesRaw).toBe("");
+    const next = preserveUnchangedAliases(saved, []);
+    expect(next.aliases).toEqual([]);
   });
 });
