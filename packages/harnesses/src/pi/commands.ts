@@ -13,7 +13,7 @@
  */
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { EngramType, Scope, SourceType, Status } from "@engram/core";
-import { ENGRAM_STATUSES, ENGRAM_TYPES, SOURCE_TYPES } from "@engram/core";
+import { ENGRAM_STATUSES, ENGRAM_TYPES, SOURCE_TYPES, splitAliasList } from "@engram/core";
 import { addOp, contextDigest, editOp, initOp, linksOp, searchOp, showOp } from "../shared/ops.js";
 import { MAX_LINKS_LIMIT } from "../shared/pagination.js";
 import { runOp } from "./run.js";
@@ -29,14 +29,14 @@ const HELP = [
   "      flags: --scope project|personal   --offset n   --limit n (max " + MAX_LINKS_LIMIT + ")",
   "  /engram add <title> -- <body>   record an entry",
   "      flags: --type decision|fact|preference|note|issue|context",
-  "             --scope project|personal   --tags a,b   --pinned",
+  "             --scope project|personal   --tags a,b   --aliases a,b   --pinned",
   "             --status active|superseded|archived   --supersedes <id>",
   "             --review-after <ts>   --expires <ts>",
   "             --source-type conversation|file|url|command|other",
   "             --source-ref <ref>   quote it if it contains spaces",
   "  /engram edit <id> [flags] [-- <body>]   edit an entry (unique prefixes work)",
   "      flags: --title <title>   --type decision|fact|preference|note|issue|context",
-  "             --tags a,b   --scope project|personal   --pinned | --no-pinned",
+  "             --tags a,b   --aliases a,b   --scope project|personal   --pinned | --no-pinned",
   "             --author <name>",
   "             --status active|superseded|archived   --supersedes <id>",
   "             --review-after <ts>   --expires <ts>",
@@ -44,7 +44,7 @@ const HELP = [
   '             --source-ref <ref>   quote multiword values: --title "Two words"',
   "             clear a field: --clear-status   --clear-supersedes",
   "             --clear-review-after   --clear-expires   --clear-source-type",
-  "             --clear-source-ref",
+  "             --clear-source-ref   --clear-aliases",
   "  /engram init [tracked|untracked]  initialize .engram/ here",
   "",
   "Agents: prefer the engram_context / engram_search / engram_show / engram_add / engram_edit tools.",
@@ -56,6 +56,7 @@ interface ParsedAdd {
   type?: EngramType;
   scope?: Scope;
   tags?: string[];
+  aliases?: ReadonlyArray<string>;
   pinned?: boolean;
   status?: Status;
   supersedes?: string;
@@ -125,6 +126,10 @@ function parseAdd(rest: string): ParsedAdd | { ok: false; error: string } {
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
+  // ENG-46: commas-only split with empty members preserved, so the core
+  // boundary rejects them with the same wording as the CLI flags (R6/R14a).
+  const aliases = flag("--aliases");
+  if (aliases !== null) parsed.aliases = splitAliasList(aliases);
   if (/\s--pinned\b/.test(work)) {
     parsed.pinned = true;
     work = work.replace(/\s--pinned\b/, " ");
@@ -143,6 +148,7 @@ interface ParsedEdit {
   title?: string;
   type?: EngramType;
   tags?: string[];
+  aliases?: ReadonlyArray<string> | null;
   body?: string;
   pinned?: boolean;
   author?: string;
@@ -222,6 +228,8 @@ const FLAG_SPELLINGS = new Set([
   "--title",
   "--type",
   "--tags",
+  "--aliases",
+  "--clear-aliases",
   "--scope",
   "--pinned",
   "--no-pinned",
@@ -251,6 +259,7 @@ function parseEdit(rest: string): ParsedEdit | { ok: false; error: string } {
 
   const setFlags = new Set<string>();
   const clearFlags = new Set<string>();
+  let aliasesFlag: "set" | "clear" | undefined;
   let fieldCount = 0;
   const nextValue = (): string | null => {
     const t = flagTokens[k + 1];
@@ -305,6 +314,26 @@ function parseEdit(rest: string): ParsedEdit | { ok: false; error: string } {
           .split(",")
           .map((tag) => tag.trim())
           .filter(Boolean);
+        break;
+      }
+      case "--aliases": {
+        if (aliasesFlag === "clear") {
+          return parseEditError("Use either --aliases or --clear-aliases, not both.");
+        }
+        aliasesFlag = "set";
+        const v = nextValue();
+        if (v === null) return parseEditError("Missing value for --aliases.");
+        // ENG-46: commas-only split with empty members preserved, so the
+        // core boundary rejects them with the CLI flag wording (R6/R14a).
+        parsed.aliases = splitAliasList(v);
+        break;
+      }
+      case "--clear-aliases": {
+        if (aliasesFlag === "set") {
+          return parseEditError("Use either --aliases or --clear-aliases, not both.");
+        }
+        aliasesFlag = "clear";
+        parsed.aliases = null;
         break;
       }
       case "--scope": {

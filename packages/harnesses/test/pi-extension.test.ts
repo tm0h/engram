@@ -140,6 +140,7 @@ describe("engram extension / registration", () => {
       "sourceType",
       "sourceRef",
       "related",
+      "aliases",
       "allowSecrets",
     ]);
     expect(Object.keys(byName.get("engram_edit")!.parameters.properties!)).toEqual([
@@ -158,6 +159,7 @@ describe("engram extension / registration", () => {
       "sourceType",
       "sourceRef",
       "related",
+      "aliases",
       "allowSecrets",
     ]);
     // ENG-15: allowSecrets validates as a strict boolean
@@ -1437,5 +1439,227 @@ describe("engram extension / /engram links (ENG-45)", () => {
     expect(note.level).toBe("info");
     expect(note.text).toContain("Links for 9999 - MISSING");
     expect(note.text).toContain("0002 note Referrer");
+  });
+});
+
+describe("engram extension / aliases (ENG-46)", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "engram-pialiases-"));
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const piAddTool = () => {
+    const { pi, tools } = fakePi();
+    engramExtension(pi);
+    return tools.find((t) => t.name === "engram_add")!;
+  };
+
+  const piEditTool = () => {
+    const { pi, tools } = fakePi();
+    engramExtension(pi);
+    return tools.find((t) => t.name === "engram_edit")!;
+  };
+
+  const baseParams = { title: "T", body: "b" };
+
+  it("engram_add schema caps the array at 20 items of at most 80 characters", () => {
+    const parameters = piAddTool().parameters;
+    expect(Value.Check(parameters, { ...baseParams, aliases: ["pg"] })).toBe(true);
+    expect(Value.Check(parameters, { ...baseParams, aliases: [] })).toBe(true);
+    expect(Value.Check(parameters, { ...baseParams, aliases: ["x".repeat(80)] })).toBe(true);
+    expect(Value.Check(parameters, { ...baseParams, aliases: ["x".repeat(81)] })).toBe(false);
+    expect(
+      Value.Check(parameters, {
+        ...baseParams,
+        aliases: Array.from({ length: 21 }, (_, i) => `a${i}`),
+      }),
+    ).toBe(false);
+    expect(Value.Check(parameters, { ...baseParams, aliases: "pg" })).toBe(false);
+    expect(Value.Check(parameters, { ...baseParams, aliases: [7] })).toBe(false);
+    expect(Value.Check(parameters, { ...baseParams, aliases: null })).toBe(false);
+  });
+
+  it("engram_edit schema accepts array, null, or omission with the same caps", () => {
+    const parameters = piEditTool().parameters;
+    const base = { id: "0001" };
+    expect(Value.Check(parameters, base)).toBe(true);
+    expect(Value.Check(parameters, { ...base, aliases: ["pg"] })).toBe(true);
+    expect(Value.Check(parameters, { ...base, aliases: null })).toBe(true);
+    expect(Value.Check(parameters, { ...base, aliases: "pg" })).toBe(false);
+    expect(Value.Check(parameters, { ...base, aliases: [7] })).toBe(false);
+    expect(Value.Check(parameters, { ...base, aliases: ["x".repeat(81)] })).toBe(false);
+  });
+
+  it("aliases descriptions state normalization, replacement, clear, and omission", () => {
+    const addProps = piAddTool().parameters.properties as Record<
+      string,
+      { description?: string } | undefined
+    >;
+    expect(addProps.aliases?.description).toMatch(/alternate names/i);
+    expect(addProps.aliases?.description).toMatch(/trim|lowercas/i);
+    expect(addProps.aliases?.description).toMatch(/deduplicat/i);
+    expect(addProps.aliases?.description).toMatch(/replac/i);
+
+    const editProps = piEditTool().parameters.properties as Record<
+      string,
+      { description?: string } | undefined
+    >;
+    expect(editProps.aliases?.description).toMatch(/replac/i);
+    expect(editProps.aliases?.description).toMatch(/null clears/i);
+    expect(editProps.aliases?.description).toMatch(/omit/i);
+    expect(editProps.aliases?.description).toMatch(/trim|lowercas|deduplicat/i);
+  });
+
+  it("execution normalizes through the store and maps the three edit states", async () => {
+    seedEntry(tmp, "0001", "Alias edit target");
+    const { pi, tools } = fakePi();
+    engramExtension(pi);
+    const add = tools.find((t) => t.name === "engram_add")!;
+    const edit = tools.find((t) => t.name === "engram_edit")!;
+
+    const added = (await add.execute("c1", {
+      title: "Aliased add",
+      body: "b",
+      aliases: [" Postgres ", "PG"],
+    })) as { isError: boolean; details: Record<string, unknown> };
+    expect(added.isError).toBe(false);
+    expect(fs.readFileSync(added.details.path as string, "utf8")).toMatch(
+      /^aliases:\n  - postgres\n  - pg$/m,
+    );
+
+    const replaced = (await edit.execute("c2", {
+      id: added.details.id,
+      aliases: ["fresh"],
+    })) as { isError: boolean; details: Record<string, unknown> };
+    expect(replaced.isError).toBe(false);
+    expect(fs.readFileSync(replaced.details.path as string, "utf8")).toMatch(
+      /^aliases:\n  - fresh$/m,
+    );
+
+    const cleared = (await edit.execute("c3", {
+      id: added.details.id,
+      aliases: null,
+    })) as { isError: boolean; details: Record<string, unknown> };
+    expect(cleared.isError).toBe(false);
+    expect(fs.readFileSync(cleared.details.path as string, "utf8")).not.toMatch(/^aliases:/m);
+  });
+
+  it("execution surfaces rule violations as errors without writing", async () => {
+    const { pi, tools } = fakePi();
+    engramExtension(pi);
+    const add = tools.find((t) => t.name === "engram_add")!;
+    const res = (await add.execute("c1", {
+      title: "Bad aliases",
+      body: "b",
+      aliases: ["ok", ""],
+    })) as { isError: boolean; content: Array<{ type: string; text: string }> };
+    expect(res.isError).toBe(true);
+    expect(res.content[0]!.text).toContain("aliases (position 2) is empty after trimming");
+  });
+
+  it("slash add carries --aliases; empty members surface the core wording", async () => {
+    seedEntry(tmp, "0001", "Slash alias target");
+    const { pi, commands } = fakePi();
+    registerEngramCommand(pi);
+    const handler = commands.get("engram")!.handler;
+
+    const okCtx = fakeCtx();
+    await handler("add Slash aliased --aliases PG,fresh -- body", okCtx);
+    const okNote = notified(okCtx)[0]!;
+    expect(okNote.level).toBe("info");
+    const dir = projectEngramsDir(tmp);
+    const written = fs.readdirSync(dir).map((f) => fs.readFileSync(path.join(dir, f), "utf8"));
+    expect(written.join("\n")).toMatch(/^aliases:\n  - pg\n  - fresh$/m);
+  });
+
+  it("slash edit replaces, clears, conflicts, and reports missing values", async () => {
+    seedEntry(tmp, "0001", "Slash edit target");
+    const { pi, commands } = fakePi();
+    registerEngramCommand(pi);
+    const handler = commands.get("engram")!.handler;
+    const entryFile = (): string =>
+      path.join(
+        projectEngramsDir(tmp),
+        fs.readdirSync(projectEngramsDir(tmp)).find((f) => f.startsWith("0001"))!,
+      );
+
+    // replace
+    const replaceCtx = fakeCtx();
+    await handler('edit 0001 --aliases "first,second"', replaceCtx);
+    expect(notified(replaceCtx)[0]!.level).toBe("info");
+    expect(fs.readFileSync(entryFile(), "utf8")).toMatch(/^aliases:\n  - first\n  - second$/m);
+
+    // preserve on omission
+    await handler("edit 0001 --title Renamed", fakeCtx());
+    expect(fs.readFileSync(entryFile(), "utf8")).toMatch(/^aliases:\n  - first\n  - second$/m);
+
+    // clear
+    const clearCtx = fakeCtx();
+    await handler("edit 0001 --clear-aliases", clearCtx);
+    expect(notified(clearCtx)[0]!.level).toBe("info");
+    expect(fs.readFileSync(entryFile(), "utf8")).not.toMatch(/^aliases:/m);
+
+    // value + clear conflict, before any read or write
+    const before = fs.readFileSync(entryFile(), "utf8");
+    const conflictCtx = fakeCtx();
+    await handler("edit 0001 --aliases pg --clear-aliases", conflictCtx);
+    expect(notified(conflictCtx)).toHaveLength(1);
+    expect(notified(conflictCtx)[0]!.level).toBe("error");
+    expect(notified(conflictCtx)[0]!.text).toContain("not both");
+    expect(fs.readFileSync(entryFile(), "utf8")).toBe(before);
+
+    // missing value: a bare flag never becomes the value
+    const missingCtx = fakeCtx();
+    await handler("edit 0001 --aliases --clear-status", missingCtx);
+    expect(notified(missingCtx)).toHaveLength(1);
+    expect(notified(missingCtx)[0]!.level).toBe("error");
+    expect(notified(missingCtx)[0]!.text).toContain("Missing value for --aliases");
+    expect(fs.readFileSync(entryFile(), "utf8")).toBe(before);
+  });
+
+  it("slash edit surfaces core rule violations with byte identity and no refresh", async () => {
+    seedEntry(tmp, "0001", "Slash guard");
+    let refreshes = 0;
+    const fake = fakePi();
+    registerEngramCommand(fake.pi, { onWriteSuccess: () => (refreshes += 1) });
+    const handler = fake.commands.get("engram")!.handler;
+    const entryFile = path.join(
+      projectEngramsDir(tmp),
+      fs.readdirSync(projectEngramsDir(tmp)).find((f) => f.startsWith("0001"))!,
+    );
+    const before = fs.readFileSync(entryFile, "utf8");
+
+    const ctx = fakeCtx();
+    await handler("edit 0001 --aliases ok,", ctx);
+    expect(notified(ctx)).toHaveLength(1);
+    expect(notified(ctx)[0]!.level).toBe("error");
+    expect(notified(ctx)[0]!.text).toContain("aliases (position 2) is empty after trimming");
+    expect(fs.readFileSync(entryFile, "utf8")).toBe(before);
+    expect(refreshes).toBe(0);
+  });
+
+  it("HELP documents the aliases flags", async () => {
+    const { pi, commands } = fakePi();
+    registerEngramCommand(pi);
+    const ctx = fakeCtx();
+    await commands.get("engram")!.handler("help", ctx);
+    const help = notified(ctx)[0]!.text;
+    expect(help).toContain("--aliases");
+    expect(help).toContain("--clear-aliases");
   });
 });
