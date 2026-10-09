@@ -645,53 +645,113 @@ export const linksOp = (opts: LinksOptions): Effect.Effect<OpResult, never, Engr
           nextCall: parts.join(" "),
         });
       };
-      const joinedFor = (emitted: number): string => {
-        const body = renderLinks(adjacency, {
+      // P2 efficiency: render each row of the window exactly once. A
+      // single-row page is headerBlock + "\n\n" + section + "\n" + rowLines,
+      // so each row's own rendering is recoverable exactly, and any page
+      // prefix composes from those chunks byte-identically (the join structure
+      // is the formatter's: header block, blank line, 8-char section label,
+      // rows joined by newlines, blank line + label at a direction switch).
+      const emptyPage = renderLinks(adjacency, {
+        offset: page.offset,
+        total: page.total,
+        rows: [],
+      } satisfies LinksPage);
+      const headerBlock = emptyPage.slice(0, emptyPage.indexOf("\n\n"));
+      const rendered = page.items.map((row) => {
+        const single = renderLinks(adjacency, {
           offset: page.offset,
           total: page.total,
-          rows: page.items.slice(0, emitted),
+          rows: [row],
         } satisfies LinksPage);
+        const section = row.direction === "outgoing" ? "Outgoing" : "Incoming";
+        return {
+          direction: row.direction,
+          text: single.slice(headerBlock.length + 2 + section.length + 1),
+        };
+      });
+      const compose = (emitted: number): string => {
+        const parts: string[] = [headerBlock];
+        let prev: LinksRow["direction"] | null = null;
+        for (const row of rendered.slice(0, emitted)) {
+          if (row.direction !== prev) {
+            parts.push("", row.direction === "outgoing" ? "Outgoing" : "Incoming");
+            prev = row.direction;
+          }
+          parts.push(row.text);
+        }
+        return parts.join("\n");
+      };
+      // cum[k] = length of compose(k); exact join arithmetic, computed once.
+      const cum: number[] = [headerBlock.length];
+      {
+        let acc = headerBlock.length;
+        let prev: LinksRow["direction"] | null = null;
+        for (const row of rendered) {
+          acc += row.direction === prev ? 1 + row.text.length : 11 + row.text.length;
+          prev = row.direction;
+          cum.push(acc);
+        }
+      }
+      const budgetFor = (emitted: number): number => {
+        const footer = footerFor(emitted);
+        return footer === null
+          ? MAX_RESULT_CHARS - LINKS_RESULT_MARKER.length - 1
+          : MAX_RESULT_CHARS - footer.length - LINKS_TRUNCATION_MARKER.length - 2;
+      };
+      const joinedFor = (emitted: number): string => {
+        const body = emitted === 0 ? emptyPage : compose(emitted);
         return warnings.length > 0 ? [body, ...warnings].join("\n\n") : body;
       };
-      const assemble = (emitted: number): { text: string; truncated: boolean } => {
-        const footer = footerFor(emitted);
+
+      // Empty window: no rows, no trim, no footer (R13 offset note).
+      if (page.items.length === 0) {
+        const capped = capText(joinedFor(0), MAX_RESULT_CHARS - LINKS_RESULT_MARKER.length - 1);
+        return ok(capped.truncated ? `${capped.text}\n${LINKS_RESULT_MARKER}` : capped.text, {
+          id: opts.id,
+          scope,
+          targetStatus: adjacency.target.status,
+          outgoingTotal: adjacency.outgoing.length,
+          incomingTotal: adjacency.incoming.length,
+          offset: page.offset,
+          limit: page.limit,
+          nextOffset: null,
+          diagnosticCount: scanned.diagnostics.length,
+          omittedFiles: scanned.omittedFiles,
+          truncated: capped.truncated,
+        });
+      }
+
+      // Largest fully-emitted prefix: scan down from the full window while the
+      // composed page overflows its budget. If even one row overflows the page
+      // alone, the forced branch caps compose(1) with the bounded marker and
+      // advances exactly one row - deterministic, never zero.
+      let emitted = page.items.length;
+      while (emitted > 1 && cum[emitted]! > budgetFor(emitted)) emitted -= 1;
+      const footer = footerFor(emitted);
+      let text: string;
+      let truncated: boolean;
+      if (cum[emitted]! <= budgetFor(emitted)) {
         const joined = joinedFor(emitted);
+        text = footer === null ? joined : `${joined}\n${footer}`;
+        truncated = false;
+      } else {
+        // emitted === 1 and it alone overflows the page.
+        const joined = joinedFor(1);
+        truncated = true;
         if (footer === null) {
           const capped = capText(joined, MAX_RESULT_CHARS - LINKS_RESULT_MARKER.length - 1);
-          return {
-            text: capped.truncated ? `${capped.text}\n${LINKS_RESULT_MARKER}` : capped.text,
-            truncated: capped.truncated,
-          };
+          text = `${capped.text}\n${LINKS_RESULT_MARKER}`;
+        } else {
+          const capped = capText(
+            joined,
+            MAX_RESULT_CHARS - footer.length - LINKS_TRUNCATION_MARKER.length - 2,
+          );
+          text = `${capped.text}\n${footer}\n${LINKS_TRUNCATION_MARKER}`;
         }
-        // Reserve room for footer + marker so the continuation always
-        // survives the hard cap and total length never exceeds it.
-        const capped = capText(
-          joined,
-          MAX_RESULT_CHARS - footer.length - LINKS_TRUNCATION_MARKER.length - 2,
-        );
-        return {
-          text: capped.truncated
-            ? `${capped.text}\n${footer}\n${LINKS_TRUNCATION_MARKER}`
-            : `${joined}\n${footer}`,
-          truncated: capped.truncated,
-        };
-      };
-
-      // Start with the full requested window (identical to the previous
-      // behavior whenever it fits) and trim while the cap cuts content. The
-      // loop keeps the largest fully-emitted prefix; if even one row overflows
-      // the page alone, assemble(1) is already bounded (<= MAX, marker kept)
-      // and the advance is exactly one row - deterministic, never zero.
-      let emitted = page.items.length;
-      let assembled = assemble(emitted);
-      while (assembled.truncated && emitted > 1) {
-        emitted -= 1;
-        assembled = assemble(emitted);
       }
-      const nextOffset =
-        page.items.length > 0 && page.offset + emitted < page.total ? page.offset + emitted : null;
+      const nextOffset = page.offset + emitted < page.total ? page.offset + emitted : null;
 
-      return ok(assembled.text, {
+      return ok(text, {
         id: opts.id,
         scope,
         targetStatus: adjacency.target.status,
@@ -702,7 +762,7 @@ export const linksOp = (opts: LinksOptions): Effect.Effect<OpResult, never, Engr
         nextOffset,
         diagnosticCount: scanned.diagnostics.length,
         omittedFiles: scanned.omittedFiles,
-        truncated: assembled.truncated,
+        truncated,
       });
     }),
   );

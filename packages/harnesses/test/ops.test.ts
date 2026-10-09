@@ -1931,6 +1931,49 @@ describe("shared ops / linksOp", () => {
     expect(res.text).not.toContain("broken.md");
   });
 
+  it("trims an incoming-only page without losing rows or the section label", async () => {
+    const dir = projectEngramsDir(tmp);
+    seedWithRelated(dir, "project", "0001", { related: ["0009"] });
+    seedWithRelated(dir, "project", "0009", { title: "Only outgoing peer" });
+    seedWithRelated(
+      dir,
+      "project",
+      "0010",
+      {
+        title: "x".repeat(10_000),
+        related: ["0001"],
+      },
+      "2026-08-17T10:00:00.000Z",
+    );
+    seedWithRelated(
+      dir,
+      "project",
+      "0011",
+      { title: "Backlink 0011", related: ["0001"] },
+      "2026-08-18T10:00:00.000Z",
+    );
+    seedWithRelated(
+      dir,
+      "project",
+      "0012",
+      { title: "Backlink 0012", related: ["0001"] },
+      "2026-08-19T10:00:00.000Z",
+    );
+
+    // Offset 1 skips the single outgoing row: the whole window is incoming.
+    const page1 = await run(linksOp({ id: "0001", scope: "project", offset: 1, limit: 3 }));
+    expect(page1.isError).toBe(false);
+    expect(page1.text).toContain("Incoming");
+    expect(page1.text).not.toContain("Outgoing");
+    expect(page1.text).toContain("(list truncated to fit the size cap)");
+    expect(page1.details).toMatchObject({ nextOffset: 2 });
+
+    const page2 = await run(linksOp({ id: "0001", scope: "project", offset: 2, limit: 3 }));
+    expect(rowIds(page2.text)).toEqual(["0011", "0012"]);
+    expect(page2.text).not.toContain("Outgoing");
+    expect(page2.details).toMatchObject({ nextOffset: null });
+  });
+
   it("defaults to the shared search limit of 10 and footers the slash continuation", async () => {
     seedWithRelated(projectEngramsDir(tmp), "project", "0001", {
       related: [

@@ -108,45 +108,86 @@ export const linksCommand = (
       if (opts.limit !== undefined) parts.push(`--limit ${opts.limit}`);
       return `(showing ${start + 1}-${next} of ${total} - call ${parts.join(" ")} for more)`;
     };
+    // P2 efficiency: render each row of the window exactly once (see the
+    // linksOp comment in packages/harnesses/src/shared/ops.ts for the join
+    // structure the composer mirrors). The empty-window path (offset past
+    // total, R13 note) still renders through renderLinks directly.
+    const emptyPage = renderLinks(adjacency, { offset: start, total, rows: [] });
+    const headerBlock = emptyPage.slice(0, emptyPage.indexOf("\n\n"));
+    const rendered = pageRows.map((row) => {
+      const single = renderLinks(adjacency, { offset: start, total, rows: [row] });
+      const section = row.direction === "outgoing" ? "Outgoing" : "Incoming";
+      return {
+        direction: row.direction,
+        text: single.slice(headerBlock.length + 2 + section.length + 1),
+      };
+    });
+    const compose = (emitted: number): string => {
+      const parts: string[] = [headerBlock];
+      let prev: LinksRow["direction"] | null = null;
+      for (const row of rendered.slice(0, emitted)) {
+        if (row.direction !== prev) {
+          parts.push("", row.direction === "outgoing" ? "Outgoing" : "Incoming");
+          prev = row.direction;
+        }
+        parts.push(row.text);
+      }
+      return parts.join("\n");
+    };
+    // cum[k] = length of compose(k); exact join arithmetic, computed once.
+    const cum: number[] = [headerBlock.length];
+    {
+      let acc = headerBlock.length;
+      let prev: LinksRow["direction"] | null = null;
+      for (const row of rendered) {
+        acc += row.direction === prev ? 1 + row.text.length : 11 + row.text.length;
+        prev = row.direction;
+        cum.push(acc);
+      }
+    }
+    const budgetFor = (emitted: number): number => {
+      const footer = footerFor(emitted);
+      return footer === null
+        ? MAX_RESULT_CHARS - RESULT_MARKER.length - 1
+        : MAX_RESULT_CHARS - footer.length - LINKS_TRUNCATION_MARKER.length - 2;
+    };
     const joinedFor = (emitted: number): string => {
-      const body = renderLinks(adjacency, {
-        offset: start,
-        total,
-        rows: pageRows.slice(0, emitted),
-      });
+      const body = emitted === 0 ? emptyPage : compose(emitted);
       return warnings.length > 0 ? [body, ...warnings].join("\n\n") : body;
     };
-    const assemble = (emitted: number): { text: string; truncated: boolean } => {
-      const footer = footerFor(emitted);
-      const joined = joinedFor(emitted);
-      if (footer === null) {
-        const capped = capTo(joined, MAX_RESULT_CHARS - RESULT_MARKER.length - 1);
-        return {
-          text: capped.truncated ? `${capped.text}\n${RESULT_MARKER}` : capped.text,
-          truncated: capped.truncated,
-        };
-      }
-      const capped = capTo(
-        joined,
-        MAX_RESULT_CHARS - footer.length - LINKS_TRUNCATION_MARKER.length - 2,
-      );
-      return {
-        text: capped.truncated
-          ? `${capped.text}\n${footer}\n${LINKS_TRUNCATION_MARKER}`
-          : `${joined}\n${footer}`,
-        truncated: capped.truncated,
-      };
-    };
 
-    // Trim while the cap cuts content so cut rows are never skipped; if even
-    // one row overflows the page alone, assemble(1) is already bounded and
-    // the advance is exactly one row - deterministic, never zero.
-    let emitted = pageRows.length;
-    let assembled = assemble(emitted);
-    while (assembled.truncated && emitted > 1) {
-      emitted -= 1;
-      assembled = assemble(emitted);
+    // Empty window: no rows, no trim, no footer (R13 offset note).
+    if (pageRows.length === 0) {
+      const capped = capTo(joinedFor(0), MAX_RESULT_CHARS - RESULT_MARKER.length - 1);
+      yield* out(capped.truncated ? `${capped.text}\n${RESULT_MARKER}` : capped.text);
+      return;
     }
 
-    yield* out(assembled.text);
+    // Largest fully-emitted prefix: scan down from the full window while the
+    // composed page overflows its budget. If even one row overflows the page
+    // alone, the forced branch caps compose(1) with the bounded marker and
+    // advances exactly one row - deterministic, never zero.
+    let emitted = pageRows.length;
+    while (emitted > 1 && cum[emitted]! > budgetFor(emitted)) emitted -= 1;
+    const footer = footerFor(emitted);
+    let text: string;
+    if (cum[emitted]! <= budgetFor(emitted)) {
+      const joined = joinedFor(emitted);
+      text = footer === null ? joined : `${joined}\n${footer}`;
+    } else {
+      // emitted === 1 and it alone overflows the page.
+      const joined = joinedFor(1);
+      if (footer === null) {
+        const capped = capTo(joined, MAX_RESULT_CHARS - RESULT_MARKER.length - 1);
+        text = `${capped.text}\n${RESULT_MARKER}`;
+      } else {
+        const capped = capTo(
+          joined,
+          MAX_RESULT_CHARS - footer.length - LINKS_TRUNCATION_MARKER.length - 2,
+        );
+        text = `${capped.text}\n${footer}\n${LINKS_TRUNCATION_MARKER}`;
+      }
+    }
+
+    yield* out(text);
   });

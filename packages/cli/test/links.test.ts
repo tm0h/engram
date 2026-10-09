@@ -201,6 +201,33 @@ describe("engram links command", () => {
     expect(combined).toEqual(authored);
   });
 
+  it("trims an incoming-only page without losing rows or the section label", async () => {
+    seedEntry("0001", "Root entry", { related: ["0009"] });
+    seedEntry("0009", "Only outgoing peer");
+    seedEntry("0010", "x".repeat(10_000), {
+      related: ["0001"],
+      created: "2026-08-17T10:00:00.000Z",
+    });
+    seedEntry("0011", "Backlink 0011", { related: ["0001"], created: "2026-08-18T10:00:00.000Z" });
+    seedEntry("0012", "Backlink 0012", { related: ["0001"], created: "2026-08-19T10:00:00.000Z" });
+
+    await run(linksCommand("0001", { scope: "project", offset: 1, limit: 3 }));
+    const page1 = output();
+    expect(page1).toContain("Incoming");
+    expect(page1).not.toContain("Outgoing");
+    expect(page1).toContain("(list truncated to fit the size cap)");
+    expect(page1).toContain(
+      "(showing 2-2 of 4 - call engram links 0001 --scope project --offset 2 --limit 3 for more)",
+    );
+
+    outLines = [];
+    await run(linksCommand("0001", { scope: "project", offset: 2, limit: 3 }));
+    expect(output()).toContain("0011 note Backlink 0011");
+    expect(output()).toContain("0012 note Backlink 0012");
+    expect(output()).not.toContain("Outgoing");
+    expect(output()).not.toContain("call engram links");
+  });
+
   it("rejects invalid numeric options before scanning", async () => {
     seedEntry("0001", "Root");
     await expect(
