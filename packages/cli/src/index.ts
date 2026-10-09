@@ -14,12 +14,13 @@ import { Effect, Exit, Cause } from "effect";
 import chalk from "chalk";
 import process from "node:process";
 import { MainLive } from "@engram/core";
-import { formatDomainError, type DomainError } from "@engram/core";
+import { formatDomainError, isValidScopeArg, type DomainError } from "@engram/core";
 import * as Init from "./commands/init.js";
 import * as Add from "./commands/add.js";
 import * as List from "./commands/list.js";
 import * as Search from "./commands/search.js";
 import * as Show from "./commands/show.js";
+import * as Links from "./commands/links.js";
 import * as Edit from "./commands/edit.js";
 import * as Remove from "./commands/remove.js";
 import * as Context from "./commands/context.js";
@@ -207,6 +208,50 @@ program
   .option("-s, --scope <scope>", "personal | project")
   .action((id: string, opts: Record<string, string | undefined>) =>
     run(Show.showCommand(id, { scope: opts.scope })),
+  );
+
+program
+  .command("links <id>")
+  .description(
+    "Show the link graph around one entry: outgoing related plus incoming backlinks (exact id, same scope).",
+  )
+  .option(
+    "-s, --scope <scope>",
+    "personal | project (default: project if initialized)",
+    (v: string) => {
+      if (!isValidScopeArg(v)) {
+        throw new InvalidArgumentError('scope must be "project" or "personal"');
+      }
+      return v;
+    },
+  )
+  .option("--offset <n>", "0-based row offset into the flattened links stream.", (v: string) => {
+    if (!/^\d+$/.test(v) || !Number.isSafeInteger(Number(v))) {
+      throw new InvalidArgumentError("offset must be a nonnegative safe integer");
+    }
+    return Number(v);
+  })
+  .option(
+    "-n, --limit <n>",
+    `Max rows on the page (at most ${Links.MAX_LINKS_LIMIT}). Default 10.`,
+    (v: string) => {
+      if (!/^\d+$/.test(v) || !Number.isSafeInteger(Number(v)) || Number(v) < 1) {
+        throw new InvalidArgumentError("limit must be a positive safe integer");
+      }
+      if (Number(v) > Links.MAX_LINKS_LIMIT) {
+        throw new InvalidArgumentError(`limit must be at most ${Links.MAX_LINKS_LIMIT}`);
+      }
+      return Number(v);
+    },
+  )
+  .action((id: string, opts: Record<string, string | number | undefined>) =>
+    run(
+      Links.linksCommand(id, {
+        scope: opts.scope as string | undefined,
+        offset: opts.offset as number | undefined,
+        limit: opts.limit as number | undefined,
+      }),
+    ),
   );
 
 program

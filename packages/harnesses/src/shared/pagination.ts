@@ -3,6 +3,12 @@
 /** Hard backstop for any single tool result (~8 kB). */
 export const MAX_RESULT_CHARS = 8192;
 
+/** ENG-45 (R8): shared maximum page size for links reads. Enforced by
+ * `linksOp`, the CLI flag validators, and the Pi links parser so all three
+ * surfaces agree. 100 matches the context tool bound and core's
+ * `AUTO_CONTEXT_LIMIT_MAX`. */
+export const MAX_LINKS_LIMIT = 100;
+
 export interface Page<T> {
   readonly items: ReadonlyArray<T>;
   readonly total: number;

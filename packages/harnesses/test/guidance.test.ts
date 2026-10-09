@@ -244,4 +244,23 @@ describe("guidance / related links (ENG-42)", () => {
     expect(claudeSkillText).toContain("--clear-related");
     expect(claudeSkillText).toContain("--related");
   });
+
+  it("both skills document the links read surface (ENG-45)", () => {
+    for (const [name, skill, command] of [
+      ["pi", piSkillText, "/engram links"],
+      ["claude", claudeSkillText, "engram links"],
+    ] as const) {
+      expect(skill, `${name}: links command`).toContain(`${command} <id>`);
+      expect(skill, `${name}: exact ids`).toMatch(/exact/i);
+      expect(skill, `${name}: same-scope`).toMatch(/same-scope/i);
+      expect(skill, `${name}: authored outgoing order`).toMatch(/authored order/i);
+      expect(skill, `${name}: MISSING marker`).toContain("MISSING");
+      expect(skill, `${name}: AMBIGUOUS marker`).toContain("AMBIGUOUS");
+      expect(skill, `${name}: offset pagination`).toMatch(/--offset n/);
+      expect(skill, `${name}: bounded output`).toMatch(/size-capped|capped at/);
+    }
+    // The continuation footer names each harness's own command form.
+    expect(piSkillText).toContain("/engram links <id> --offset n");
+    expect(claudeSkillText).toContain("engram links <id> --offset n");
+  });
 });

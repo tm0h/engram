@@ -831,3 +831,232 @@ describe("engram check relation exit codes (process level, ENG-44)", () => {
     ]);
   });
 });
+
+describe("engram links (process level, ENG-45)", () => {
+  let tmp = "";
+  let home = "";
+
+  beforeAll(() => {
+    if (!spawnOk) return;
+    tmp = mkdtempSync(join(tmpdir(), "engram-proc-links-"));
+    home = mkdtempSync(join(tmpdir(), "engram-proc-links-home-"));
+  });
+  afterAll(() => {
+    if (tmp) rmSync(tmp, { recursive: true, force: true });
+    if (home) rmSync(home, { recursive: true, force: true });
+  });
+
+  let projectCounter = 0;
+  const freshProject = (name = "links-proj"): string => {
+    // Unique directory per call: tests in this describe share `tmp`, and
+    // leftover seeds from one test must never leak into another's scan.
+    const proj = join(tmp, `${name}-${(projectCounter += 1)}`);
+    mkdirSync(join(proj, ".engram", "engrams"), { recursive: true });
+    writeFileSync(
+      join(proj, ".engram", "config.json"),
+      JSON.stringify({ version: 1, tracked: true, defaultType: "note" }),
+    );
+    return proj;
+  };
+
+  /** Seed an entry whose filename slug matches its title (the scan's
+   * cross-check stays clean). */
+  const seedLink = (
+    proj: string,
+    id: string,
+    title: string,
+    over: { related?: string[]; created?: string } = {},
+  ): string => {
+    const created = over.created ?? "2026-08-16T10:00:00.000Z";
+    const slug =
+      title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 60) || "engram";
+    const file = join(proj, ".engram", "engrams", `${id}-${slug}.md`);
+    const fm = [
+      `id: "${id}"`,
+      `title: ${JSON.stringify(title)}`,
+      "type: note",
+      "tags: []",
+      "scope: project",
+      `created: ${created}`,
+      `updated: ${created}`,
+      'author: "Tester"',
+      ...(over.related !== undefined
+        ? [`related: [${over.related.map((r) => JSON.stringify(r)).join(", ")}]`]
+        : []),
+    ].join("\n");
+    writeFileSync(file, `---\n${fm}\n---\nBody\n`);
+    return file;
+  };
+
+  const snapshot = (proj: string): string =>
+    readdirSync(join(proj, ".engram", "engrams"))
+      .sort()
+      .map((f) => readFileSync(join(proj, ".engram", "engrams", f), "utf8"))
+      .join("\n%%%\n");
+
+  it("defaults to project scope and renders both directions with markers", () => {
+    if (!spawnOk) return;
+    const proj = freshProject();
+    seedLink(proj, "0001", "Root entry", { related: ["0005", "0002", "9999"] });
+    seedLink(proj, "0002", "Auth note");
+    seedLink(proj, "0005", "Newer peer");
+    seedLink(proj, "0007", "Backlink entry", { related: ["0001"] });
+    const before = snapshot(proj);
+
+    const res = runCli(["links", "0001"], proj, home);
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain("Links for 0001 - Root entry (note)");
+    expect(res.stdout).toContain("Outgoing");
+    expect(res.stdout.indexOf("0005")).toBeLessThan(res.stdout.indexOf("0002"));
+    expect(res.stdout).toContain("9999 MISSING");
+    expect(res.stdout).toContain("Incoming");
+    expect(res.stdout).toContain("0007 note Backlink entry");
+    expect(snapshot(proj)).toBe(before);
+  });
+
+  it("uses personal scope by default outside a project and with an explicit flag", () => {
+    if (!spawnOk) return;
+    const proj = freshProject();
+    const bare = join(tmp, "links-bare");
+    mkdirSync(bare, { recursive: true });
+    mkdirSync(join(home, ".engram", "engrams"), { recursive: true });
+    writeFileSync(
+      join(home, ".engram", "engrams", "9001-personal-entry.md"),
+      [
+        "---",
+        'id: "9001"',
+        'title: "Personal entry"',
+        "type: note",
+        "tags: []",
+        "scope: personal",
+        "created: 2026-08-16T10:00:00.000Z",
+        "updated: 2026-08-16T10:00:00.000Z",
+        "---",
+        "Body",
+        "",
+      ].join("\n"),
+    );
+
+    const fromBare = runCli(["links", "9001"], bare, home);
+    expect(fromBare.status).toBe(0);
+    expect(fromBare.stdout).toContain("Links for 9001 - Personal entry (note)");
+
+    const explicit = runCli(["links", "9001", "--scope", "personal"], proj, home);
+    expect(explicit.status).toBe(0);
+    expect(explicit.stdout).toContain("Links for 9001 - Personal entry (note)");
+
+    // Same-scope only: the personal id never resolves through project fallback.
+    const projectScope = runCli(["links", "9001", "--scope", "project"], proj, home);
+    expect(projectScope.status).toBe(0);
+    expect(projectScope.stdout).toContain("Links for 9001 - MISSING");
+  });
+
+  it("renders ambiguous targets with claimant context and exits zero", () => {
+    if (!spawnOk) return;
+    const proj = freshProject();
+    seedLink(proj, "0005", "Claim A");
+    seedLink(proj, "0005", "Claim B");
+    seedLink(proj, "0002", "Referrer", { related: ["0005"] });
+    const before = snapshot(proj);
+
+    const res = runCli(["links", "0005"], proj, home);
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain("Links for 0005 - AMBIGUOUS (2 claimants)");
+    expect(res.stdout).toContain("0002 note Referrer");
+    expect(snapshot(proj)).toBe(before);
+  });
+
+  it("paginates with the CLI footer and continues at the given offset", () => {
+    if (!spawnOk) return;
+    const proj = freshProject();
+    const authored = [
+      "0005",
+      "0002",
+      "0013",
+      "0004",
+      "0006",
+      "0007",
+      "0008",
+      "0009",
+      "0010",
+      "0011",
+      "0012",
+      "0003",
+    ];
+    seedLink(proj, "0001", "Root entry", { related: authored });
+    for (const id of authored) seedLink(proj, id, `Peer ${id}`);
+
+    const page1 = runCli(["links", "0001"], proj, home);
+    expect(page1.status).toBe(0);
+    expect(page1.stdout).toContain(
+      "(showing 1-10 of 12 - call engram links 0001 --offset 10 for more)",
+    );
+    expect(page1.stdout.length).toBeLessThanOrEqual(8192);
+
+    const page2 = runCli(["links", "0001", "--offset", "10"], proj, home);
+    expect(page2.status).toBe(0);
+    expect(page2.stdout).toContain("0003 note Peer 0003");
+    expect(page2.stdout).not.toContain("call engram links");
+  });
+
+  it("renders a warning summary for damaged sibling stores without failing", () => {
+    if (!spawnOk) return;
+    const proj = freshProject();
+    seedLink(proj, "0001", "Root entry", { related: ["0002"] });
+    seedLink(proj, "0002", "Peer 0002");
+    writeFileSync(join(proj, ".engram", "engrams", "broken.md"), "not frontmatter at all");
+    const before = snapshot(proj);
+
+    const res = runCli(["links", "0001"], proj, home);
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain("0002 note Peer 0002");
+    expect(res.stdout).toContain("WARNING: Engram memory is incomplete");
+    expect(res.stdout).toContain("store diagnostic");
+    expect(res.stdout).not.toContain("broken.md");
+    expect(snapshot(proj)).toBe(before);
+  });
+
+  it("exits nonzero on invalid flags and true read failures", () => {
+    if (!spawnOk) return;
+    const proj = freshProject();
+    seedLink(proj, "0001", "Root entry");
+
+    expect(runCli(["links", "0001", "--scope", "banana"], proj, home).status).not.toBe(0);
+    expect(runCli(["links", "0001", "--limit", "0"], proj, home).status).not.toBe(0);
+    expect(runCli(["links", "0001", "--limit", "101"], proj, home).status).not.toBe(0);
+    expect(runCli(["links", "0001", "--offset", "-1"], proj, home).status).not.toBe(0);
+    expect(runCli(["links", "0001", "--offset", "abc"], proj, home).status).not.toBe(0);
+
+    const bare = join(tmp, "links-bare-2");
+    mkdirSync(bare, { recursive: true });
+    const degraded = runCli(["links", "0001", "--scope", "project"], bare, home);
+    expect(degraded.status).toBe(1);
+    expect(degraded.stderr).toContain("error:");
+  });
+
+  it("keeps every file byte-identical across the read surface", () => {
+    if (!spawnOk) return;
+    const proj = freshProject();
+    seedLink(proj, "0001", "Root entry", { related: ["0002"] });
+    seedLink(proj, "0002", "Peer 0002");
+    const before = snapshot(proj);
+
+    for (const args of [
+      ["links", "0001"],
+      ["links", "0001", "--offset", "1"],
+      ["links", "0002", "--scope", "project", "--limit", "5"],
+      ["links", "9999"],
+    ]) {
+      const res = runCli(args, proj, home);
+      expect(res.status).toBe(0);
+    }
+
+    const names = readdirSync(join(proj, ".engram", "engrams")).sort();
+    expect(names).toEqual(readdirSync(join(proj, ".engram", "engrams")).sort());
+    expect(snapshot(proj)).toBe(before);
+  });
+});

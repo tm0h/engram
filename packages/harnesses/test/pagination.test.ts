@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vite-plus/test";
-import { paginate, capText, pageFooter, MAX_RESULT_CHARS } from "../src/shared/pagination.js";
+import {
+  paginate,
+  capText,
+  pageFooter,
+  MAX_RESULT_CHARS,
+  MAX_LINKS_LIMIT,
+} from "../src/shared/pagination.js";
 
 describe("paginate", () => {
   const items = Array.from({ length: 10 }, (_, i) => i + 1);
@@ -76,5 +82,12 @@ describe("pageFooter", () => {
   it("omits the call when on the last page", () => {
     const footer = pageFooter({ from: 51, to: 87, total: 87, nextOffset: null });
     expect(footer).toBe("(showing 51-87 of 87)");
+  });
+});
+
+describe("MAX_LINKS_LIMIT (ENG-45 R8)", () => {
+  it("is exported, equals 100, and sits under the hard result cap", () => {
+    expect(MAX_LINKS_LIMIT).toBe(100);
+    expect(MAX_LINKS_LIMIT).toBeLessThan(MAX_RESULT_CHARS);
   });
 });

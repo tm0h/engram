@@ -17,6 +17,7 @@ import {
   ENGRAM_STATUSES,
   ENGRAM_TYPES,
   SOURCE_TYPES,
+  computeLinkAdjacency,
   detectAuthor,
   effectiveStatus,
   ensureGitignoreLine,
@@ -28,6 +29,7 @@ import {
   projectReadmeContent,
   projectReadmePath,
   removeGitignoreLine,
+  renderLinks,
   resolveSecretPolicy,
   searchEngrams,
   searchReport,
@@ -36,16 +38,26 @@ import {
   type ConfigRepoShape,
   type Engram,
   type EngramPatch,
+  type LinksPage,
+  type LinksRow,
   type Scope,
   type ScanOptions,
 } from "@engram/core";
 import { PERSONAL_ONLY_NOTE, projectUninitialized } from "./degraded.js";
-import { MAX_RESULT_CHARS, capText, pageFooter, paginate, type Page } from "./pagination.js";
+import {
+  MAX_LINKS_LIMIT,
+  MAX_RESULT_CHARS,
+  capText,
+  pageFooter,
+  paginate,
+  type Page,
+} from "./pagination.js";
 import type {
   AddOptions,
   ContextOptions,
   EditOptions,
   InitOptions,
+  LinksOptions,
   OpResult,
   ScopeFilter,
   SearchOptions,
@@ -274,6 +286,21 @@ const applyCap = (text: string): string => {
   const capped = capText(text);
   return capped.truncated ? `${capped.text}\n(result truncated)` : capped.text;
 };
+
+/** ENG-45: trailing marker line added when the body is capped. Part of the
+ * reservation math so body + footer + marker never exceed MAX_RESULT_CHARS. */
+const LINKS_TRUNCATION_MARKER = "(list truncated to fit the size cap)";
+
+/** ENG-45 (F1): marker for the capped no-footer branch, reserved the same way
+ * the footer branch reserves the footer. */
+const LINKS_RESULT_MARKER = "(result truncated)";
+
+/** ENG-44 diagnostics never fail a links read: one bounded summary line after
+ * the adjacency, no per-diagnostic messages, no paths. Counts live in
+ * `details.diagnosticCount` / `details.omittedFiles`. */
+const diagnosticSummary = (count: number): string =>
+  `${count} store diagnostic${count === 1 ? "" : "s"} on sibling files; valid links above. ` +
+  "Run `engram check --scope all` for exact paths.";
 
 /* ------------------------------ ops ------------------------------ */
 
@@ -552,6 +579,191 @@ export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, Engram
          * mirroring the related precedent so no header elision is silent. */
         title: m.title,
         tags: m.tags,
+      });
+    }),
+  );
+
+/** ENG-45: the link graph around one exact id, in one scope. Missing and
+ * ambiguous targets are structured graph states, never errors; exactly one
+ * scan feeds `computeLinkAdjacency`; the flattened outgoing-then-incoming row
+ * stream is paginated with the shared helpers and capped with the footer
+ * reserved so a continuation is never truncated away. */
+export const linksOp = (opts: LinksOptions): Effect.Effect<OpResult, never, EngramStore> =>
+  capture(
+    Effect.gen(function* () {
+      const defaultLimit = opts.limit ?? DEFAULT_SEARCH_LIMIT;
+      const invalid = searchPaginationError(opts.offset ?? 0, defaultLimit);
+      if (invalid) return err(invalid);
+      if (defaultLimit > MAX_LINKS_LIMIT) {
+        return err(`limit must be at most ${MAX_LINKS_LIMIT}`);
+      }
+
+      const store = yield* EngramStore;
+      const root = yield* store.projectRoot();
+      // Explicit project scope outside a project gets the friendly hint (same
+      // contract as showOp); the default never re-targets the other scope.
+      if (opts.scope === "project" && Option.isNone(root)) {
+        return err(projectUninitialized("read"));
+      }
+      const scope: Scope = opts.scope ?? (Option.isSome(root) ? "project" : "personal");
+
+      // R1: exactly one scan per query; the same StoreScan feeds adjacency.
+      const scanned = yield* store.scan(scope);
+      const adjacency = computeLinkAdjacency(scanned, opts.id);
+
+      const rows: LinksRow[] = [
+        ...adjacency.outgoing.map((resolution) => ({
+          direction: "outgoing" as const,
+          resolution,
+        })),
+        ...adjacency.incoming.map((entry) => ({ direction: "incoming" as const, entry })),
+      ];
+      const page = paginate(rows, opts.offset ?? 0, defaultLimit);
+
+      const warnings: string[] = [];
+      if (scanned.omittedFiles > 0) warnings.push(incompleteMemoryWarning(scanned.omittedFiles));
+      if (scanned.diagnostics.length > 0) {
+        warnings.push(diagnosticSummary(scanned.diagnostics.length));
+      }
+
+      // P1a: the continuation points at the first row NOT fully emitted. The
+      // footer and offset are derived from `emitted`, not from the requested
+      // window, so a page the cap cut short never skips its hidden rows.
+      const footerFor = (emitted: number): string | null => {
+        const next = page.offset + emitted;
+        if (emitted === 0 || next >= page.total) return null;
+        // The footer names the slash form: this operation has no LLM tool.
+        const parts = [`/engram links ${opts.id}`];
+        if (opts.scope !== undefined) parts.push(`--scope ${opts.scope}`);
+        parts.push(`--offset ${next}`);
+        if (opts.limit !== undefined) parts.push(`--limit ${opts.limit}`);
+        return pageFooter({
+          from: page.offset + 1,
+          to: next,
+          total: page.total,
+          nextOffset: next,
+          nextCall: parts.join(" "),
+        });
+      };
+      // P2 efficiency: render each row of the window exactly once. A
+      // single-row page is headerBlock + "\n\n" + section + "\n" + rowLines,
+      // so each row's own rendering is recoverable exactly, and any page
+      // prefix composes from those chunks byte-identically (the join structure
+      // is the formatter's: header block, blank line, 8-char section label,
+      // rows joined by newlines, blank line + label at a direction switch).
+      const emptyPage = renderLinks(adjacency, {
+        offset: page.offset,
+        total: page.total,
+        rows: [],
+      } satisfies LinksPage);
+      const headerBlock = emptyPage.slice(0, emptyPage.indexOf("\n\n"));
+      const rendered = page.items.map((row) => {
+        const single = renderLinks(adjacency, {
+          offset: page.offset,
+          total: page.total,
+          rows: [row],
+        } satisfies LinksPage);
+        const section = row.direction === "outgoing" ? "Outgoing" : "Incoming";
+        return {
+          direction: row.direction,
+          text: single.slice(headerBlock.length + 2 + section.length + 1),
+        };
+      });
+      const compose = (emitted: number): string => {
+        const parts: string[] = [headerBlock];
+        let prev: LinksRow["direction"] | null = null;
+        for (const row of rendered.slice(0, emitted)) {
+          if (row.direction !== prev) {
+            parts.push("", row.direction === "outgoing" ? "Outgoing" : "Incoming");
+            prev = row.direction;
+          }
+          parts.push(row.text);
+        }
+        return parts.join("\n");
+      };
+      // cum[k] = length of compose(k); exact join arithmetic, computed once.
+      const cum: number[] = [headerBlock.length];
+      {
+        let acc = headerBlock.length;
+        let prev: LinksRow["direction"] | null = null;
+        for (const row of rendered) {
+          acc += row.direction === prev ? 1 + row.text.length : 11 + row.text.length;
+          prev = row.direction;
+          cum.push(acc);
+        }
+      }
+      // F3: the warnings block is page-constant but rendered on every page;
+      // fold its exact cost into every budget so the trim scan and fitting
+      // check measure what joinedFor actually emits, not just the body.
+      const warningsCost = warnings.length > 0 ? 2 + warnings.join("\n\n").length : 0;
+      const budgetFor = (emitted: number): number => {
+        const footer = footerFor(emitted);
+        const reserve =
+          footer === null
+            ? MAX_RESULT_CHARS - LINKS_RESULT_MARKER.length - 1
+            : MAX_RESULT_CHARS - footer.length - LINKS_TRUNCATION_MARKER.length - 2;
+        return reserve - warningsCost;
+      };
+      const joinedFor = (emitted: number): string => {
+        const body = emitted === 0 ? emptyPage : compose(emitted);
+        return warnings.length > 0 ? [body, ...warnings].join("\n\n") : body;
+      };
+
+      // Empty window: no rows, no trim, no footer (R13 offset note).
+      if (page.items.length === 0) {
+        const capped = capText(joinedFor(0), MAX_RESULT_CHARS - LINKS_RESULT_MARKER.length - 1);
+        return ok(capped.truncated ? `${capped.text}\n${LINKS_RESULT_MARKER}` : capped.text, {
+          id: opts.id,
+          scope,
+          targetStatus: adjacency.target.status,
+          outgoingTotal: adjacency.outgoing.length,
+          incomingTotal: adjacency.incoming.length,
+          offset: page.offset,
+          limit: page.limit,
+          nextOffset: null,
+          diagnosticCount: scanned.diagnostics.length,
+          omittedFiles: scanned.omittedFiles,
+          truncated: capped.truncated,
+        });
+      }
+
+      // Largest fully-emitted prefix: scan down from the full window while the
+      // composed page overflows its budget. If even one row overflows the page
+      // alone, the forced branch caps compose(1) with the bounded marker and
+      // advances exactly one row - deterministic, never zero.
+      let emitted = page.items.length;
+      while (emitted > 1 && cum[emitted]! > budgetFor(emitted)) emitted -= 1;
+      const footer = footerFor(emitted);
+      let text: string;
+      let truncated: boolean;
+      if (cum[emitted]! <= budgetFor(emitted)) {
+        const joined = joinedFor(emitted);
+        text = footer === null ? joined : `${joined}\n${footer}`;
+        truncated = false;
+      } else {
+        // emitted === 1 and it alone overflows the page.
+        const joined = joinedFor(1);
+        truncated = true;
+        const capped = capText(joined, budgetFor(1));
+        text =
+          footer === null
+            ? `${capped.text}\n${LINKS_RESULT_MARKER}`
+            : `${capped.text}\n${footer}\n${LINKS_TRUNCATION_MARKER}`;
+      }
+      const nextOffset = page.offset + emitted < page.total ? page.offset + emitted : null;
+
+      return ok(text, {
+        id: opts.id,
+        scope,
+        targetStatus: adjacency.target.status,
+        outgoingTotal: adjacency.outgoing.length,
+        incomingTotal: adjacency.incoming.length,
+        offset: page.offset,
+        limit: page.limit,
+        nextOffset,
+        diagnosticCount: scanned.diagnostics.length,
+        omittedFiles: scanned.omittedFiles,
+        truncated,
       });
     }),
   );

@@ -1256,3 +1256,186 @@ describe("engram extension / related schema contract (ENG-42)", () => {
     expect(fs.readFileSync(cleared.details.path as string, "utf8")).not.toMatch(/^related:/m);
   });
 });
+
+describe("engram extension / /engram links (ENG-45)", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "engram-pilinks-"));
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  /** Seed an entry with optional related list and creation time; the filename
+   * slug matches the title so the scan's cross-check stays clean. */
+  const seedLink = (
+    id: string,
+    title: string,
+    over: { related?: string[]; created?: string } = {},
+  ): void => {
+    const created = over.created ?? "2026-08-16T10:00:00.000Z";
+    const slug =
+      title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 60) || "engram";
+    const fm = [
+      `id: "${id}"`,
+      `title: ${JSON.stringify(title)}`,
+      "type: note",
+      "tags: []",
+      "scope: project",
+      `created: ${created}`,
+      `updated: ${created}`,
+      'author: "Tester"',
+      ...(over.related !== undefined
+        ? [`related: [${over.related.map((r) => JSON.stringify(r)).join(", ")}]`]
+        : []),
+    ].join("\n");
+    fs.writeFileSync(
+      path.join(projectEngramsDir(tmp), `${id}-${slug}.md`),
+      `---\n${fm}\n---\nBody of ${title}\n`,
+    );
+  };
+
+  const handler = async (args: string): Promise<ExtensionCommandContext> => {
+    const { pi, commands } = fakePi();
+    engramExtension(pi);
+    const ctx = fakeCtx();
+    await commands.get("engram")!.handler(args, ctx);
+    return ctx;
+  };
+
+  it("keeps the registered LLM tool surface at exactly the five tools", () => {
+    const { pi, tools, commands } = fakePi();
+    engramExtension(pi);
+    expect(tools.map((t) => t.name)).toEqual([
+      "engram_context",
+      "engram_search",
+      "engram_show",
+      "engram_add",
+      "engram_edit",
+    ]);
+    expect(commands.has("engram")).toBe(true);
+  });
+
+  it("help text documents the links arm", async () => {
+    const ctx = await handler("help");
+    expect(notified(ctx)[0].text).toContain("/engram links <id>");
+    expect(notified(ctx)[0].text).toContain("--scope project|personal");
+  });
+
+  it("renders the link graph for a valid id", async () => {
+    seedLink("0001", "Root entry", { related: ["0005", "0002"] });
+    seedLink("0002", "Auth note");
+    seedLink("0005", "Newer peer");
+    seedLink("0007", "Backlink entry", { related: ["0001"] });
+
+    const ctx = await handler("links 0001");
+    const note = notified(ctx)[0]!;
+    expect(note.level).toBe("info");
+    expect(note.text).toContain("Links for 0001 - Root entry (note)");
+    expect(note.text).toContain("Outgoing");
+    expect(note.text.indexOf("0005")).toBeLessThan(note.text.indexOf("0002"));
+    expect(note.text).toContain("Incoming");
+    expect(note.text).toContain("0007 note Backlink entry");
+  });
+
+  it("accepts every option and paginates with the slash-form footer", async () => {
+    const authored = [
+      "0005",
+      "0002",
+      "0013",
+      "0004",
+      "0006",
+      "0007",
+      "0008",
+      "0009",
+      "0010",
+      "0011",
+      "0012",
+      "0003",
+    ];
+    seedLink("0001", "Root entry", { related: authored });
+    for (const id of authored) seedLink(id, `Peer ${id}`);
+
+    const ctx = await handler("links 0001 --scope project --limit 10");
+    const note = notified(ctx)[0]!;
+    expect(note.level).toBe("info");
+    expect(note.text).toContain(
+      "(showing 1-10 of 12 - call /engram links 0001 --scope project --offset 10 --limit 10 for more)",
+    );
+    expect(note.text.length).toBeLessThanOrEqual(8192);
+
+    const page2 = await handler("links 0001 --scope project --offset 10 --limit 10");
+    expect(notified(page2)[0].text).toContain("0003 note Peer 0003");
+    expect(notified(page2)[0].text).not.toContain("for more)");
+  });
+
+  it("parses a quoted id through the shared tokenizer", async () => {
+    seedLink("0001", "Lonely");
+    const ctx = await handler('links "0001"');
+    expect(notified(ctx)[0].text).toContain("Links for 0001 - Lonely (note)");
+  });
+
+  it("rejects a missing id, unknown flags, repeated flags, trailing positionals, and bad numbers", async () => {
+    for (const [args, expected] of [
+      ["links", "Usage: /engram links"],
+      ["links --scope project", "Missing id"],
+      ["links 0001 --wat 3", 'Unknown flag "--wat"'],
+      ["links 0001 --scope project --scope personal", "Repeated flag --scope"],
+      ["links 0001 extra", "Unexpected argument"],
+      ["links 0001 --offset abc", "offset must be a nonnegative safe integer"],
+      ["links 0001 --offset -1", "offset must be a nonnegative safe integer"],
+      ["links 0001 --limit 0", "limit must be a positive safe integer"],
+      ["links 0001 --limit 101", "limit must be at most 100"],
+      ["links 0001 --limit 1.5", "limit must be a positive safe integer"],
+    ] as const) {
+      const ctx = await handler(args);
+      const note = notified(ctx)[0]!;
+      expect(note.level, args).toBe("error");
+      expect(note.text, args).toContain(expected);
+    }
+  });
+
+  it("rejects an invalid scope value", async () => {
+    const ctx = await handler("links 0001 --scope banana");
+    expect(notified(ctx)[0].level).toBe("error");
+    expect(notified(ctx)[0].text).toContain('Invalid --scope "banana"');
+  });
+
+  it("surfaces the degraded project error as a notification", async () => {
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), "engram-pilinks-empty-"));
+    process.chdir(empty);
+    try {
+      const ctx = await handler("links 0001 --scope project");
+      const note = notified(ctx)[0]!;
+      expect(note.level).toBe("error");
+      expect(note.text).toContain("No .engram/ project found");
+    } finally {
+      process.chdir(tmp);
+      fs.rmSync(empty, { recursive: true, force: true });
+    }
+  });
+
+  it("marks missing targets with backlinks as a successful read", async () => {
+    seedLink("0002", "Referrer", { related: ["9999"] });
+    const ctx = await handler("links 9999");
+    const note = notified(ctx)[0]!;
+    expect(note.level).toBe("info");
+    expect(note.text).toContain("Links for 9999 - MISSING");
+    expect(note.text).toContain("0002 note Referrer");
+  });
+});

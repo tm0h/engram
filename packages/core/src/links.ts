@@ -89,9 +89,13 @@ export const computeLinkAdjacency = (scan: StoreScan, targetId: string): LinkAdj
    * resolution. Duplicate claims take precedence over entries; an unclaimed
    * id resolves to its first entry in scan order (the previous `find`
    * behavior, kept for synthetic scans with unclaimed duplicate ids). */
-  const claimById = new Map<string, DuplicateIdClaim>(
-    scan.duplicateIds.map((c) => [c.id, c] as const),
-  );
+  /* ENG-45 R2: same first-wins rule as entryById. Map-from-iterable would
+   * keep the LAST of a pathological same-id claim pair; the guard keeps the
+   * FIRST (the old `find` semantics). */
+  const claimById = new Map<string, DuplicateIdClaim>();
+  for (const c of scan.duplicateIds) {
+    if (!claimById.has(c.id)) claimById.set(c.id, c);
+  }
   const entryById = new Map<string, Engram>();
   for (const m of scan.entries) {
     if (!entryById.has(m.id)) entryById.set(m.id, m);

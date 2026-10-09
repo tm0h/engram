@@ -1,15 +1,30 @@
 import { describe, it, expect, beforeEach, afterEach } from "@effect/vitest";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { MainLive, projectConfigPath, projectEngramsDir, projectReadmePath } from "@engram/core";
-import { EngramStore, ConfigRepo, computeLinkAdjacency, type LinkAdjacency } from "@engram/core";
+import {
+  EngramStore,
+  ConfigRepo,
+  computeLinkAdjacency,
+  slugify,
+  type LinkAdjacency,
+  type Scope,
+} from "@engram/core";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
 import type { EngramInput } from "@engram/core";
 import type { OpResult } from "../src/shared/types.js";
-import { contextDigest, searchOp, showOp, addOp, editOp, initOp } from "../src/shared/ops.js";
+import {
+  contextDigest,
+  searchOp,
+  showOp,
+  addOp,
+  editOp,
+  initOp,
+  linksOp,
+} from "../src/shared/ops.js";
 import type { EditOptions } from "../src/shared/types.js";
 
 /* ------------------------------ helpers ------------------------------ */
@@ -1637,5 +1652,573 @@ describe("shared ops / link adjacency consumer (ENG-43)", () => {
     }
     expect(adjacency.incoming.map((m) => m.id)).toEqual(["0001"]);
     expect(adjacency.outgoing).toEqual([]);
+  });
+});
+
+/* ------------------------- linksOp (ENG-45) ------------------------- */
+
+describe("shared ops / linksOp", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = mkHome();
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  /** Seed an entry with optional related list and creation time, directly
+   * into one scope's engrams directory. The filename slug matches the title
+   * (the scan's cross-check stays clean), so duplicate-id claim fixtures
+   * distinguish themselves through distinct titles. */
+  const seedWithRelated = (
+    base: string,
+    scope: Exclude<Scope, "all">,
+    id: string,
+    over: Partial<EngramInput> = {},
+    created = "2026-08-16T10:00:00.000Z",
+  ): void => {
+    const i = input({ ...over, title: over.title ?? `Entry ${id}` });
+    const file = path.join(base, `${id}-${slugify(i.title)}.md`);
+    const fm = [
+      `id: "${id}"`,
+      `title: ${JSON.stringify(i.title)}`,
+      `type: ${i.type}`,
+      `tags: [${(i.tags ?? []).map((t) => JSON.stringify(t)).join(", ")}]`,
+      `scope: ${scope}`,
+      `created: ${created}`,
+      `updated: ${created}`,
+      `author: ${JSON.stringify(i.author ?? "Tester")}`,
+      ...(i.related !== undefined
+        ? [`related: [${i.related.map((r) => JSON.stringify(r)).join(", ")}]`]
+        : []),
+    ].join("\n");
+    fs.writeFileSync(file, `---\n${fm}\n---\n${i.body}\n`);
+  };
+
+  /** Wrap MainLive's store so every scan call is counted. The proxy keeps
+   * MainLive's store for every other method and service. */
+  const countingRun = async <A>(
+    counter: { scans: number; scopes: Scope[] },
+    eff: Effect.Effect<A, never, EngramStore | ConfigRepo | FileSystem | Path>,
+  ): Promise<A> => {
+    const counting = Layer.effect(
+      EngramStore,
+      Effect.gen(function* () {
+        const base = yield* EngramStore;
+        return {
+          ...base,
+          scan: (scope: Scope) => {
+            counter.scans += 1;
+            counter.scopes.push(scope);
+            return base.scan(scope);
+          },
+        };
+      }),
+    );
+    return Effect.runPromise(Effect.provide(eff, Layer.provideMerge(counting, MainLive)));
+  };
+
+  /** Row ids (2-space-indented row lines) in rendered order. */
+  const rowIds = (text: string): string[] =>
+    text
+      .split("\n")
+      .filter((l) =>
+        /^  \S+ (note|decision|fact|preference|issue|context) |^  \S+ (MISSING|AMBIGUOUS)/.test(l),
+      )
+      .map((l) => l.trimStart().split(" ")[0]!);
+
+  it("defaults to project scope inside a project", async () => {
+    seed(tmp, "0001", { title: "Lonely root" });
+    const res = await run(linksOp({ id: "0001" }));
+    expect(res.isError).toBe(false);
+    expect(res.details).toMatchObject({ id: "0001", scope: "project", targetStatus: "found" });
+  });
+
+  it("defaults to personal scope outside a project", async () => {
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), "engram-empty-"));
+    process.chdir(empty);
+    try {
+      seedPersonal(home, "9001", { title: "Personal only" });
+      const res = await run(linksOp({ id: "9001" }));
+      expect(res.isError).toBe(false);
+      expect(res.details).toMatchObject({ scope: "personal", targetStatus: "found" });
+    } finally {
+      fs.rmSync(empty, { recursive: true, force: true });
+    }
+  });
+
+  it("explicit personal scope wins inside a project", async () => {
+    seed(tmp, "0001", { title: "Project entry" });
+    seedPersonal(home, "9001", { title: "Personal 9001" });
+    const res = await run(linksOp({ id: "9001", scope: "personal" }));
+    expect(res.isError).toBe(false);
+    expect(res.details).toMatchObject({ scope: "personal", targetStatus: "found" });
+    expect(res.text).toContain("Personal 9001");
+  });
+
+  it("explicit project scope outside a project returns the degraded read error", async () => {
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), "engram-empty-"));
+    process.chdir(empty);
+    try {
+      const res = await run(linksOp({ id: "0001", scope: "project" }));
+      expect(res.isError).toBe(true);
+      expect(res.text).toContain("No .engram/ project found");
+      expect(res.text).toContain("personal scope");
+    } finally {
+      fs.rmSync(empty, { recursive: true, force: true });
+    }
+  });
+
+  it("scans exactly once and feeds that same StoreScan to computeLinkAdjacency", async () => {
+    seedWithRelated(projectEngramsDir(tmp), "project", "0001", { related: ["0002"] });
+    seedWithRelated(projectEngramsDir(tmp), "project", "0002");
+    const counter = { scans: 0, scopes: [] as Scope[] };
+    const res = await countingRun(counter, linksOp({ id: "0001", scope: "project" }));
+    expect(res.isError).toBe(false);
+    expect(counter.scans).toBe(1);
+    expect(counter.scopes).toEqual(["project"]);
+    expect(res.details).toMatchObject({ outgoingTotal: 1, incomingTotal: 0 });
+  });
+
+  it("does not scan at all when numeric validation fails", async () => {
+    seed(tmp, "0001", { title: "Root" });
+    const counter = { scans: 0, scopes: [] as Scope[] };
+    const res = await countingRun(counter, linksOp({ id: "0001", limit: 101 }));
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain("limit must be at most 100");
+    expect(counter.scans).toBe(0);
+  });
+
+  it("treats a strict prefix of an existing id as missing; the exact id resolves", async () => {
+    seed(tmp, "0001", { title: "One" });
+    seed(tmp, "0012", { title: "Twelve" });
+    const prefix = await run(linksOp({ id: "001", scope: "project" }));
+    expect(prefix.isError).toBe(false);
+    expect(prefix.details).toMatchObject({ targetStatus: "missing" });
+    expect(prefix.text).toContain("Links for 001 - MISSING");
+
+    const exact = await run(linksOp({ id: "0012", scope: "project" }));
+    expect(exact.details).toMatchObject({ targetStatus: "found" });
+  });
+
+  it("missing target with backlinks is a successful graph read", async () => {
+    seedWithRelated(projectEngramsDir(tmp), "project", "0002", { related: ["9999"] });
+    const res = await run(linksOp({ id: "9999", scope: "project" }));
+    expect(res.isError).toBe(false);
+    expect(res.details).toMatchObject({
+      targetStatus: "missing",
+      outgoingTotal: 0,
+      incomingTotal: 1,
+    });
+    expect(res.text).toContain("Links for 9999 - MISSING");
+    expect(res.text).toContain("Incoming");
+    expect(res.text).toContain("0002 note Entry 0002");
+  });
+
+  it("ambiguous requested target is a successful read with claimant context and backlinks", async () => {
+    const dir = projectEngramsDir(tmp);
+    seedWithRelated(dir, "project", "0005", { title: "Claim A" }, "2026-08-16T10:00:00.000Z");
+    seedWithRelated(dir, "project", "0005", { title: "Claim B" }, "2026-08-16T10:00:00.000Z");
+    seedWithRelated(dir, "project", "0002", { related: ["0005"] });
+    const res = await run(linksOp({ id: "0005", scope: "project" }));
+    expect(res.isError).toBe(false);
+    expect(res.details).toMatchObject({
+      targetStatus: "ambiguous",
+      outgoingTotal: 0,
+      incomingTotal: 1,
+    });
+    expect(res.text).toContain("Links for 0005 - AMBIGUOUS (2 claimants)");
+    expect(res.text).toContain("/0005-claim-a.md");
+    expect(res.text).toContain("/0005-claim-b.md");
+    expect(res.text).toContain("Incoming");
+    expect(res.text).toContain("0002 note Entry 0002");
+  });
+
+  it("renders an ambiguous outgoing row with bounded claimant context", async () => {
+    const dir = projectEngramsDir(tmp);
+    seedWithRelated(dir, "project", "0001", { related: ["0005"] });
+    seedWithRelated(dir, "project", "0005", { title: "Claim A" }, "2026-08-16T10:00:00.000Z");
+    seedWithRelated(dir, "project", "0005", { title: "Claim B" }, "2026-08-16T10:00:00.000Z");
+    seedWithRelated(dir, "project", "0005", { title: "Claim C" }, "2026-08-16T10:00:00.000Z");
+    seedWithRelated(dir, "project", "0005", { title: "Claim D" }, "2026-08-16T10:00:00.000Z");
+    const res = await run(linksOp({ id: "0001", scope: "project" }));
+    expect(res.isError).toBe(false);
+    expect(res.details).toMatchObject({ outgoingTotal: 1, targetStatus: "found" });
+    expect(res.text).toContain("0005 AMBIGUOUS (4 claimants)");
+    expect(res.text).toContain("+1 more");
+    expect(res.text.match(/0005-claim-[abcd]\.md/g)).toHaveLength(3);
+  });
+
+  it("never falls back to the other scope", async () => {
+    seed(tmp, "0001", { title: "Project entry" });
+    seedPersonal(home, "9001", { title: "Personal 9001" });
+    const res = await run(linksOp({ id: "9001", scope: "project" }));
+    expect(res.isError).toBe(false);
+    expect(res.details).toMatchObject({ targetStatus: "missing", scope: "project" });
+    expect(res.text).not.toContain("Personal 9001");
+  });
+
+  it("details carry exactly the R5 contract fields and stay JSON-serializable", async () => {
+    seedWithRelated(projectEngramsDir(tmp), "project", "0001", { related: ["0002"] });
+    seedWithRelated(projectEngramsDir(tmp), "project", "0002");
+    const res = await run(linksOp({ id: "0001", scope: "project" }));
+    expect(res.isError).toBe(false);
+    expect(Object.keys(res.details).sort()).toEqual([
+      "diagnosticCount",
+      "id",
+      "incomingTotal",
+      "limit",
+      "nextOffset",
+      "offset",
+      "omittedFiles",
+      "outgoingTotal",
+      "scope",
+      "targetStatus",
+      "truncated",
+    ]);
+    expect(res.details).toMatchObject({
+      id: "0001",
+      scope: "project",
+      targetStatus: "found",
+      outgoingTotal: 1,
+      incomingTotal: 0,
+      offset: 0,
+      limit: 10,
+      nextOffset: null,
+      diagnosticCount: 0,
+      omittedFiles: 0,
+      truncated: false,
+    });
+    const roundTripped = JSON.parse(JSON.stringify(res.details)) as Record<string, unknown>;
+    expect(roundTripped).toEqual(res.details);
+  });
+
+  it("folds the warnings block into the cap on a near-cap page (F3)", async () => {
+    // Greptile/reviewer repro shape: every peer file is slug-mismatched
+    // (seed() writes <id>-entry.md), so the warnings block is present, plus a
+    // broken sibling for the omitted-files warning. Row titles are sized so
+    // the full-window body fits the no-footer budget but body + warnings does
+    // not: the measurement must fold the warnings cost in and trim.
+    const dir = projectEngramsDir(tmp);
+    seedWithRelated(dir, "project", "0001", {
+      related: Array.from({ length: 54 }, (_, i) => String(i + 2).padStart(4, "0")),
+    });
+    for (let i = 2; i <= 55; i++) {
+      seed(tmp, String(i).padStart(4, "0"), { title: "x".repeat(135) });
+    }
+    fs.writeFileSync(path.join(projectEngramsDir(tmp), "broken.md"), "not frontmatter at all");
+
+    const res = await run(linksOp({ id: "0001", scope: "project", limit: 54 }));
+    expect(res.isError).toBe(false);
+    expect(res.text.length).toBeLessThanOrEqual(8192);
+    expect(res.text).toContain("WARNING: Engram memory is incomplete");
+    expect(res.text).toContain("store diagnostic");
+    expect(res.details.truncated).toBe(false);
+    expect(res.details.diagnosticCount).toBeGreaterThanOrEqual(55);
+    expect(res.details.omittedFiles).toBeGreaterThanOrEqual(1);
+    const next = res.details.nextOffset as number;
+    expect(next).toBeGreaterThanOrEqual(1);
+    expect(next).toBeLessThanOrEqual(53);
+
+    // The continuation covers the remaining rows without duplication.
+    const page2 = await run(linksOp({ id: "0001", scope: "project", offset: next, limit: 54 }));
+    expect(page2.isError).toBe(false);
+    expect(page2.text.length).toBeLessThanOrEqual(8192);
+    expect(page2.details).toMatchObject({ nextOffset: null });
+  });
+
+  it("captures scan I/O failures as error results", async () => {
+    seed(tmp, "0001", { title: "Root" });
+    const dir = projectEngramsDir(tmp);
+    fs.chmodSync(dir, 0o000);
+    try {
+      const res = await run(linksOp({ id: "0001", scope: "project" }));
+      expect(res.isError).toBe(true);
+      expect(typeof res.details.error).toBe("string");
+    } finally {
+      fs.chmodSync(dir, 0o755);
+    }
+  });
+
+  it("warnings never fail the read: damaged siblings stay omitted, valid adjacency renders", async () => {
+    seedWithRelated(projectEngramsDir(tmp), "project", "0001", { related: ["0002"] });
+    seedWithRelated(projectEngramsDir(tmp), "project", "0002");
+    fs.writeFileSync(path.join(projectEngramsDir(tmp), "broken.md"), "not frontmatter at all");
+    const res = await run(linksOp({ id: "0001", scope: "project" }));
+    expect(res.isError).toBe(false);
+    expect(res.details.diagnosticCount).toBeGreaterThanOrEqual(1);
+    expect(res.details.omittedFiles).toBeGreaterThanOrEqual(1);
+    expect(res.text).toContain("0002 note Entry 0002");
+    expect(res.text).toContain("WARNING: Engram memory is incomplete");
+    expect(res.text).toContain("store diagnostic");
+    expect(res.text).not.toContain("broken.md");
+  });
+
+  it("trims an incoming-only page without losing rows or the section label", async () => {
+    const dir = projectEngramsDir(tmp);
+    seedWithRelated(dir, "project", "0001", { related: ["0009"] });
+    seedWithRelated(dir, "project", "0009", { title: "Only outgoing peer" });
+    seedWithRelated(
+      dir,
+      "project",
+      "0010",
+      {
+        title: "x".repeat(10_000),
+        related: ["0001"],
+      },
+      "2026-08-17T10:00:00.000Z",
+    );
+    seedWithRelated(
+      dir,
+      "project",
+      "0011",
+      { title: "Backlink 0011", related: ["0001"] },
+      "2026-08-18T10:00:00.000Z",
+    );
+    seedWithRelated(
+      dir,
+      "project",
+      "0012",
+      { title: "Backlink 0012", related: ["0001"] },
+      "2026-08-19T10:00:00.000Z",
+    );
+
+    // Offset 1 skips the single outgoing row: the whole window is incoming.
+    const page1 = await run(linksOp({ id: "0001", scope: "project", offset: 1, limit: 3 }));
+    expect(page1.isError).toBe(false);
+    expect(page1.text).toContain("Incoming");
+    expect(page1.text).not.toContain("Outgoing");
+    expect(page1.text).toContain("(list truncated to fit the size cap)");
+    expect(page1.details).toMatchObject({ nextOffset: 2 });
+
+    const page2 = await run(linksOp({ id: "0001", scope: "project", offset: 2, limit: 3 }));
+    expect(rowIds(page2.text)).toEqual(["0011", "0012"]);
+    expect(page2.text).not.toContain("Outgoing");
+    expect(page2.details).toMatchObject({ nextOffset: null });
+  });
+
+  it("defaults to the shared search limit of 10 and footers the slash continuation", async () => {
+    seedWithRelated(projectEngramsDir(tmp), "project", "0001", {
+      related: [
+        "0002",
+        "0003",
+        "0004",
+        "0005",
+        "0006",
+        "0007",
+        "0008",
+        "0009",
+        "0010",
+        "0011",
+        "0012",
+        "0013",
+      ],
+    });
+    for (let i = 2; i <= 13; i++) {
+      seedWithRelated(projectEngramsDir(tmp), "project", String(i).padStart(4, "0"), {
+        title: `Peer ${String(i).padStart(4, "0")}`,
+      });
+    }
+    const res = await run(linksOp({ id: "0001", scope: "project" }));
+    expect(res.isError).toBe(false);
+    expect(res.details).toMatchObject({ outgoingTotal: 12, limit: 10, offset: 0, nextOffset: 10 });
+    expect(rowIds(res.text)).toHaveLength(10);
+    expect(res.text).toContain("/engram links 0001 --scope project --offset 10 for more");
+    expect(res.text.length).toBeLessThanOrEqual(8192);
+  });
+
+  it("passes explicit scope and limit through to the continuation footer", async () => {
+    seedWithRelated(projectEngramsDir(tmp), "project", "0001", {
+      related: ["0002", "0003", "0004"],
+    });
+    for (const i of ["0002", "0003", "0004"]) seed(tmp, i, { title: `Peer ${i}` });
+    const res = await run(linksOp({ id: "0001", scope: "project", limit: 2 }));
+    expect(res.text).toContain("/engram links 0001 --scope project --offset 2 --limit 2 for more");
+  });
+
+  it("rejects negative offsets, zero limits, and limits over the shared maximum", async () => {
+    seed(tmp, "0001", { title: "Root" });
+    const negative = await run(linksOp({ id: "0001", scope: "project", offset: -1 }));
+    expect(negative.isError).toBe(true);
+    expect(negative.text).toContain("offset must be a nonnegative safe integer");
+
+    const zero = await run(linksOp({ id: "0001", scope: "project", limit: 0 }));
+    expect(zero.isError).toBe(true);
+    expect(zero.text).toContain("limit must be a positive safe integer");
+
+    const excessive = await run(linksOp({ id: "0001", scope: "project", limit: 101 }));
+    expect(excessive.isError).toBe(true);
+    expect(excessive.text).toContain("limit must be at most 100");
+  });
+
+  it("renders an explicit offset note at and beyond the total", async () => {
+    seedWithRelated(projectEngramsDir(tmp), "project", "0001", { related: ["0002", "0003"] });
+    seed(tmp, "0002", { title: "Peer 0002" });
+    seed(tmp, "0003", { title: "Peer 0003" });
+
+    const atTotal = await run(linksOp({ id: "0001", scope: "project", offset: 2 }));
+    expect(atTotal.isError).toBe(false);
+    expect(atTotal.details).toMatchObject({ offset: 2, nextOffset: null });
+    expect(atTotal.text).toContain("(offset 2 past the end - 2 rows total)");
+    expect(atTotal.text).not.toContain("(none)");
+
+    const beyond = await run(linksOp({ id: "0001", scope: "project", offset: 50 }));
+    expect(beyond.text).toContain("(offset 50 past the end - 2 rows total)");
+    expect(beyond.isError).toBe(false);
+  });
+
+  it("crosses the outgoing/incoming boundary across pages without dupes or omissions", async () => {
+    const dir = projectEngramsDir(tmp);
+    seedWithRelated(dir, "project", "0001", { related: ["0002", "0003"] });
+    seedWithRelated(dir, "project", "0002", { title: "Peer 0002" });
+    seedWithRelated(dir, "project", "0003", { title: "Peer 0003" });
+    seedWithRelated(dir, "project", "0004", { title: "Backlink 0004", related: ["0001"] });
+    seedWithRelated(dir, "project", "0005", { title: "Backlink 0005", related: ["0001"] });
+    const page1 = await run(linksOp({ id: "0001", scope: "project", limit: 3 }));
+    expect(page1.text).toContain("Outgoing");
+    expect(page1.text).toContain("Incoming");
+    expect(page1.details).toMatchObject({ nextOffset: 3, outgoingTotal: 2, incomingTotal: 2 });
+
+    const page2 = await run(linksOp({ id: "0001", scope: "project", offset: 3, limit: 3 }));
+    expect(page2.text).toContain("Incoming");
+    expect(page2.text).not.toContain("Outgoing");
+    expect(page2.details).toMatchObject({ nextOffset: null });
+
+    const combined = [...rowIds(page1.text), ...rowIds(page2.text)];
+    expect(combined).toEqual(["0002", "0003", "0004", "0005"]);
+    expect(new Set(combined).size).toBe(combined.length);
+  });
+
+  it("reconstructs the whole stream over multiple pages: authored outgoing then chronological incoming", async () => {
+    const dir = projectEngramsDir(tmp);
+    const authored = [
+      "0005",
+      "0002",
+      "0013",
+      "0004",
+      "0006",
+      "0007",
+      "0008",
+      "0009",
+      "0010",
+      "0011",
+      "0012",
+      "0003",
+    ];
+    seedWithRelated(dir, "project", "0001", { related: authored });
+    for (const id of authored) seedWithRelated(dir, "project", id, { title: `Peer ${id}` });
+    seedWithRelated(
+      dir,
+      "project",
+      "0020",
+      { title: "Backlink 0020", related: ["0001"] },
+      "2026-08-15T10:00:00.000Z",
+    );
+    seedWithRelated(
+      dir,
+      "project",
+      "0015",
+      { title: "Backlink 0015", related: ["0001"] },
+      "2026-08-16T11:00:00.000Z",
+    );
+    seedWithRelated(
+      dir,
+      "project",
+      "0014",
+      { title: "Backlink 0014", related: ["0001"] },
+      "2026-08-16T11:00:00.000Z",
+    );
+
+    const collected: string[] = [];
+    let offset = 0;
+    for (let page = 0; page < 5; page++) {
+      const res = await run(linksOp({ id: "0001", scope: "project", offset, limit: 10 }));
+      expect(res.isError).toBe(false);
+      collected.push(...rowIds(res.text));
+      expect(res.text.length).toBeLessThanOrEqual(8192);
+      const next = res.details.nextOffset as number | null;
+      if (next === null) break;
+      offset = next;
+    }
+    expect(collected).toEqual([...authored, "0020", "0014", "0015"]);
+  });
+
+  it("caps oversized rows: bounded marker, footer survives, deterministic advance", async () => {
+    const dir = projectEngramsDir(tmp);
+    seedWithRelated(dir, "project", "0001", { related: ["0002", "0003"] });
+    seedWithRelated(dir, "project", "0002", { title: "x".repeat(10_000) });
+    seedWithRelated(dir, "project", "0003", { title: "Small peer" });
+    const res = await run(linksOp({ id: "0001", scope: "project", limit: 1 }));
+    expect(res.isError).toBe(false);
+    expect(res.text.length).toBeLessThanOrEqual(8192);
+    expect(res.text).toContain("(list truncated to fit the size cap)");
+    expect(res.text).toContain("(showing 1-1 of 2");
+    expect(res.text).toContain("/engram links 0001 --scope project --offset 1 --limit 1 for more");
+    expect(res.details).toMatchObject({ truncated: true, nextOffset: 1 });
+
+    // The next page renders the small row whole: no loop, no re-emission.
+    const page2 = await run(linksOp({ id: "0001", scope: "project", offset: 1, limit: 1 }));
+    expect(page2.details).toMatchObject({ truncated: false, nextOffset: null });
+    expect(page2.text).toContain("0003 note Small peer");
+  });
+
+  it("keeps the no-footer truncated page within the hard cap (F1)", async () => {
+    const dir = projectEngramsDir(tmp);
+    seedWithRelated(dir, "project", "0001", { related: ["0003", "0002"] });
+    seedWithRelated(dir, "project", "0003", { title: "Small peer" });
+    seedWithRelated(dir, "project", "0002", { title: "x".repeat(10_000) });
+
+    // Page 1: the small leading row fits; the oversized row is deferred.
+    const page1 = await run(linksOp({ id: "0001", scope: "project" }));
+    expect(page1.isError).toBe(false);
+    expect(page1.details).toMatchObject({ nextOffset: 1, truncated: false });
+    expect(page1.text).toContain("0003 note Small peer");
+
+    // Page 2 holds the single oversized last row: no continuation exists, so
+    // the no-footer truncated branch bounds it at the cap with the marker.
+    const page2 = await run(linksOp({ id: "0001", scope: "project", offset: 1 }));
+    expect(page2.isError).toBe(false);
+    expect(page2.details).toMatchObject({ nextOffset: null, truncated: true });
+    expect(page2.text.length).toBeLessThanOrEqual(8192);
+    expect(page2.text).toContain("(result truncated)");
+    expect(page2.text).not.toContain("call /engram links");
+  });
+
+  it("continues at the first hidden row when the cap cuts the page (P1a)", async () => {
+    const dir = projectEngramsDir(tmp);
+    seedWithRelated(dir, "project", "0001", { related: ["0002", "0003", "0004"] });
+    seedWithRelated(dir, "project", "0002", { title: "x".repeat(10_000) });
+    seedWithRelated(dir, "project", "0003", { title: "Peer 0003" });
+    seedWithRelated(dir, "project", "0004", { title: "Peer 0004" });
+
+    // Greptile's scenario: limit 2 over three links, first peer pathological.
+    // The cap cuts the second row, so the continuation must point at the
+    // first hidden row (1), never past it (2).
+    const page1 = await run(linksOp({ id: "0001", scope: "project", limit: 2 }));
+    expect(page1.isError).toBe(false);
+    expect(page1.text.length).toBeLessThanOrEqual(8192);
+    expect(page1.text).toContain("(list truncated to fit the size cap)");
+    expect(page1.text).toContain("(showing 1-1 of 3");
+    expect(page1.text).toContain(
+      "/engram links 0001 --scope project --offset 1 --limit 2 for more",
+    );
+    expect(page1.details).toMatchObject({ nextOffset: 1 });
+
+    // Full reconstruction covers every row: page 2 starts at the hidden row.
+    const page2 = await run(linksOp({ id: "0001", scope: "project", offset: 1, limit: 2 }));
+    expect(page2.isError).toBe(false);
+    expect(rowIds(page2.text)).toEqual(["0003", "0004"]);
+    expect(page2.details).toMatchObject({ nextOffset: null });
   });
 });

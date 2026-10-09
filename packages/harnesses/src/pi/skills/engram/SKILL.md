@@ -44,6 +44,18 @@ context tools exclude inactive entries. When the packaged CLI is available,
 use `engram search <query> --all` or `engram context --all` only when you need
 superseded, archived, or expired entries. Use `engram_show` for a known id.
 
+### Link graph
+
+`/engram links <id>` shows the link graph around one entry: outgoing
+`related` targets in authored order, then incoming backlinks in creation order
+(ties break by id). Flags: `--scope project|personal`, `--offset n`,
+`--limit n` (max 100). Ids are exact and same-scope only; a strict prefix
+never resolves, and a wrong-scope id reads as missing instead of falling
+back. Missing targets carry a literal `MISSING` marker; duplicate-id targets
+carry `AMBIGUOUS` with a bounded claimant list. Both are successful reads.
+Output is size-capped and paginated; the footer names the next call as
+`/engram links <id> --offset n`.
+
 ## When to record (and when not to)
 
 Record:
