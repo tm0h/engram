@@ -1653,6 +1653,39 @@ describe("engram extension / aliases (ENG-46)", () => {
     expect(refreshes).toBe(0);
   });
 
+  it("slash add parses a quoted multiword --aliases as one alias (P1-2, R16)", async () => {
+    const { pi, commands } = fakePi();
+    registerEngramCommand(pi);
+    const handler = commands.get("engram")!.handler;
+
+    const ctx = fakeCtx();
+    await handler('add Row note --aliases "row level security" -- body', ctx);
+    expect(notified(ctx)).toHaveLength(1);
+    expect(notified(ctx)[0]!.level).toBe("info");
+    const dir = projectEngramsDir(tmp);
+    const raw = fs
+      .readdirSync(dir)
+      .map((f) => fs.readFileSync(path.join(dir, f), "utf8"))
+      .join("\n");
+    expect(raw).toMatch(/^aliases:\n  - row level security$/m);
+    expect(raw).toContain("title: Row note");
+    expect(raw).not.toContain('"row');
+  });
+
+  it("slash add errors on a missing --aliases value without consuming a flag (P1-2, R16)", async () => {
+    const { pi, commands } = fakePi();
+    registerEngramCommand(pi);
+    const handler = commands.get("engram")!.handler;
+
+    const ctx = fakeCtx();
+    await handler("add T --aliases --pinned -- body", ctx);
+    expect(notified(ctx)).toHaveLength(1);
+    expect(notified(ctx)[0]!.level).toBe("error");
+    expect(notified(ctx)[0]!.text).toContain("Missing value for --aliases");
+    const dir = projectEngramsDir(tmp);
+    expect(fs.readdirSync(dir).filter((f) => f.endsWith(".md"))).toHaveLength(0);
+  });
+
   it("HELP documents the aliases flags", async () => {
     const { pi, commands } = fakePi();
     registerEngramCommand(pi);

@@ -128,8 +128,19 @@ function parseAdd(rest: string): ParsedAdd | { ok: false; error: string } {
       .filter(Boolean);
   // ENG-46: commas-only split with empty members preserved, so the core
   // boundary rejects them with the same wording as the CLI flags (R6/R14a).
-  const aliases = flag("--aliases");
-  if (aliases !== null) parsed.aliases = splitAliasList(aliases);
+  // ENG-46 (P1-2/R16): quote-aware like the edit parser, so a quoted value
+  // may contain spaces and commas. A missing value (bare flag or end of
+  // input) is an error, never a consumed token.
+  if (/\s--aliases(\s|$)/.test(work)) {
+    const aliasesMatch = work.match(/\s--aliases\s+(?:"([^"]*)"|'([^']*)'|([^\s]+))/);
+    if (aliasesMatch === null) return parseAddError("Missing value for --aliases.");
+    work = work.replace(aliasesMatch[0], " ");
+    const raw = aliasesMatch[1] ?? aliasesMatch[2] ?? aliasesMatch[3]!;
+    if (aliasesMatch[3] !== undefined && raw.startsWith("--")) {
+      return parseAddError("Missing value for --aliases.");
+    }
+    parsed.aliases = splitAliasList(raw);
+  }
   if (/\s--pinned\b/.test(work)) {
     parsed.pinned = true;
     work = work.replace(/\s--pinned\b/, " ");
