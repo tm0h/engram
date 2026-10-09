@@ -10,7 +10,7 @@ import { InvalidTypeError, ValidationError } from "@engram/core";
 import { isInteractive, openEditor } from "../interactive.js";
 import type { EditedEngram } from "../interactive.js";
 import { resolveScanOptions, reportScanOutcome } from "../scanPolicy.js";
-import { parseTags } from "@engram/core";
+import { parseTags, splitAliasList, validateAliases } from "@engram/core";
 import { readStdin, out } from "../io.js";
 import { checkLifecycleConflicts, checkLifecycleValues } from "../lifecycle.js";
 import type {
@@ -34,6 +34,11 @@ export interface EditOptions extends LifecycleValueFlags, LifecycleClearFlags {
   readonly related?: string;
   /** ENG-42: remove the related list (mutually exclusive with --related). */
   readonly clearRelated?: boolean;
+  /** ENG-46: comma-separated alternate names; replaces the whole set. Empty
+   * members are preserved by the split and rejected by the core boundary. */
+  readonly aliases?: string;
+  /** ENG-46: remove the aliases list (mutually exclusive with --aliases). */
+  readonly clearAliases?: boolean;
   /** ENG-15: explicit per-write override for a blocking scan policy. */
   readonly allowSecrets?: boolean;
 }
@@ -126,6 +131,22 @@ const relatedPatchFromEditor = (mem: Engram, edited: EditedEngram): Partial<Engr
   return unchanged ? {} : { related: [...next] };
 };
 
+/** Editor-driven ENG-46 aliases patch. Unlike related (whose blank line is
+ * what an unchanged save of an empty list looks like), a blank or removed
+ * aliases line always clears a stored list (AC7): aliases has no absent
+ * state on the model. Unchanged preserves, changed replaces; a replacement
+ * array may carry empty comma members, which the core boundary rejects with
+ * the flag wording. */
+const aliasesPatchFromEditor = (mem: Engram, edited: EditedEngram): Partial<EngramPatch> => {
+  const next = edited.aliases;
+  if (next === undefined) {
+    return mem.aliases.length > 0 ? { aliases: null } : {};
+  }
+  const unchanged =
+    mem.aliases.length === next.length && mem.aliases.every((alias, i) => alias === next[i]);
+  return unchanged ? {} : { aliases: [...next] };
+};
+
 export const editCommand = (id: string, opts: EditOptions) =>
   Effect.gen(function* () {
     const store = yield* EngramStore;
@@ -141,6 +162,26 @@ export const editCommand = (id: string, opts: EditOptions) =>
     let lifecycle = yield* checkLifecycleValues(opts);
     const flagRelated = yield* relatedFromFlag(opts.related);
 
+    /* ENG-46: a value together with --clear-aliases is a usage error, and a
+     * present value fast-checks with the core validator — both BEFORE any
+     * read or write (R14a). The store boundary re-validates. */
+    if (opts.aliases !== undefined && opts.clearAliases === true) {
+      return yield* Effect.fail(
+        new ValidationError({
+          message: "Use either --aliases <aliases> or --clear-aliases, not both.",
+        }),
+      );
+    }
+    const flagAliases = splitAliasList(opts.aliases);
+    if (flagAliases !== undefined) {
+      const aliasIssues = validateAliases(flagAliases);
+      if (aliasIssues.length > 0) {
+        return yield* Effect.fail(
+          new ValidationError({ message: aliasIssues.map((i) => i.message).join("; ") }),
+        );
+      }
+    }
+
     const mem = yield* store.get(scope, id);
 
     let patch: EngramPatch = { ...lifecyclePatchFromFlags(lifecycle, opts) };
@@ -149,6 +190,11 @@ export const editCommand = (id: string, opts: EditOptions) =>
     // absent flag (or a value that trims to nothing) preserves.
     if (opts.clearRelated === true) patch = { ...patch, related: null };
     else if (flagRelated !== undefined) patch = { ...patch, related: flagRelated };
+
+    // ENG-46 three-state mapping: clear wins, a parsed value replaces, an
+    // absent flag preserves. Rejection wording comes from the core boundary.
+    if (opts.clearAliases === true) patch = { ...patch, aliases: null };
+    else if (flagAliases !== undefined) patch = { ...patch, aliases: flagAliases };
 
     if (opts.title !== undefined) patch = { ...patch, title: opts.title };
     const type = yield* checkType(opts.type);
@@ -190,6 +236,7 @@ export const editCommand = (id: string, opts: EditOptions) =>
           sourceType: mem.sourceType,
           sourceRef: mem.sourceRef,
           related: mem.related,
+          aliases: mem.aliases,
         });
         if (!edited) {
           yield* out(chalk.gray("Cancelled."));
@@ -209,6 +256,7 @@ export const editCommand = (id: string, opts: EditOptions) =>
           body: edited.body,
           ...lifecyclePatchFromEditor(mem, lifecycle),
           ...relatedPatchFromEditor(mem, edited),
+          ...aliasesPatchFromEditor(mem, edited),
         };
       }
     }

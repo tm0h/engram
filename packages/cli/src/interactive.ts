@@ -10,6 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ValidationError } from "@engram/core";
+import { splitAliasList } from "@engram/core";
 import { parseRelatedIds } from "./related.js";
 
 /** True when stdin is a TTY (i.e. a human is at the keyboard). */
@@ -51,6 +52,11 @@ export interface EditedEngram {
   /* ENG-42 same-scope related ids; undefined means the line was absent or
    * blank (add: no list, edit: explicit clear via the command's diff). */
   readonly related?: ReadonlyArray<string> | undefined;
+  /* ENG-46 aliases; undefined means the line was absent or blank (add: no
+   * aliases, edit: clear via the command's diff). Unlike related, a populated
+   * line may carry empty comma members: they are preserved for the core
+   * boundary to reject with the same wording as the flags. */
+  readonly aliases?: ReadonlyArray<string> | undefined;
   /* ENG-42 (turn 3): true only when the document had frontmatter but the
    * related line itself is missing. The renderer always writes the line, so
    * a missing line is an explicit user deletion, while a blank line is what
@@ -83,6 +89,7 @@ export const renderEditorDocument = (initial: Partial<EditedEngram> = {}): strin
     return `${key}:${value ? " " + value : ""}`;
   });
   const related = initial.related;
+  const aliases = initial.aliases;
   return [
     "---",
     `title: ${initial.title ?? ""}`,
@@ -90,6 +97,7 @@ export const renderEditorDocument = (initial: Partial<EditedEngram> = {}): strin
     `tags: ${(initial.tags ?? []).join(", ")}`,
     ...lifecycle,
     `related:${related !== undefined && related.length > 0 ? " " + related.join(", ") : ""}`,
+    `aliases:${aliases !== undefined && aliases.length > 0 ? " " + aliases.join(", ") : ""}`,
     "---",
     "",
     initial.body ?? BODY_PLACEHOLDER,
@@ -119,6 +127,12 @@ export const parseEditorDocument = (raw: string): EditedEngram => {
   if (related.kind === "invalid") {
     throw new ValidationError({ message: `invalid related line in the editor: ${related.reason}` });
   }
+  /* ENG-46: a blank or absent aliases line means none (undefined); a
+   * populated line splits on commas with empty members preserved, so the
+   * core boundary rejects them exactly like the flags. */
+  const rawAliases = data.aliases;
+  const aliases =
+    rawAliases === undefined || rawAliases.trim() === "" ? undefined : splitAliasList(rawAliases);
   return {
     title: data.title ?? "",
     type: data.type || undefined,
@@ -134,6 +148,7 @@ export const parseEditorDocument = (raw: string): EditedEngram => {
     sourceRef: lifecycle("sourceRef"),
     related: related.kind === "ids" ? related.ids : undefined,
     relatedDeleted: !("related" in data) || undefined,
+    aliases,
     body: m[2].trim(),
   };
 };

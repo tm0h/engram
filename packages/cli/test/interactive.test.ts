@@ -168,3 +168,72 @@ describe("related in the editor document (ENG-42)", () => {
     expect(parseEditorDocument("just text").relatedDeleted).toBeFalsy();
   });
 });
+
+/* ENG-46: the aliases line in the editor document */
+
+describe("renderEditorDocument / aliases (ENG-46)", () => {
+  it("renders the aliases line after related, comma-separated", () => {
+    const doc = renderEditorDocument({
+      title: "T",
+      type: "note",
+      tags: [],
+      body: "b",
+      related: ["0002"],
+      aliases: ["pg", "postgres"],
+    });
+    expect(doc).toContain("related: 0002");
+    expect(doc).toContain("aliases: pg, postgres");
+    expect(doc.indexOf("related:")).toBeLessThan(doc.indexOf("aliases:"));
+  });
+
+  it("renders a blank aliases line when unset or empty", () => {
+    const doc = renderEditorDocument({ title: "T", type: "note", tags: [], body: "b" });
+    expect(doc).toMatch(/^aliases:$/m);
+    const empty = renderEditorDocument({
+      title: "T",
+      type: "note",
+      tags: [],
+      body: "b",
+      aliases: [],
+    });
+    expect(empty).toMatch(/^aliases:$/m);
+  });
+});
+
+describe("parseEditorDocument / aliases (ENG-46)", () => {
+  it("parses a populated line into raw members (empties preserved for core)", () => {
+    const doc = renderEditorDocument({
+      title: "T",
+      type: "note",
+      tags: [],
+      body: "b",
+      aliases: ["pg", "postgres"],
+    });
+    expect(parseEditorDocument(doc).aliases).toEqual(["pg", "postgres"]);
+  });
+
+  it("a blank or absent line means none (undefined)", () => {
+    const blank = renderEditorDocument({ title: "T", type: "note", tags: [], body: "b" });
+    expect(parseEditorDocument(blank).aliases).toBeUndefined();
+    const absent = parseEditorDocument("title: T\n\nBody only, no frontmatter close");
+    expect(absent.aliases).toBeUndefined();
+  });
+
+  it("a removed line differs from a populated one (edit diffs drive clear/replace)", () => {
+    const populated = parseEditorDocument(
+      "---\ntitle: T\ntype: note\ntags: \nstatus: \nsupersedes: \nreviewAfter: \nexpires: \nsourceType: \nsourceRef: \nrelated: \naliases: pg\n---\n\nBody\n",
+    );
+    expect(populated.aliases).toEqual(["pg"]);
+    const removed = parseEditorDocument(
+      "---\ntitle: T\ntype: note\ntags: \nstatus: \nsupersedes: \nreviewAfter: \nexpires: \nsourceType: \nsourceRef: \nrelated: \n---\n\nBody\n",
+    );
+    expect(removed.aliases).toBeUndefined();
+  });
+
+  it("empty comma members survive the parse and fail at the core boundary", () => {
+    const doc = parseEditorDocument(
+      "---\ntitle: T\ntype: note\ntags: \nstatus: \nsupersedes: \nreviewAfter: \nexpires: \nsourceType: \nsourceRef: \nrelated: \naliases: ok,,fine\n---\n\nBody\n",
+    );
+    expect(doc.aliases).toEqual(["ok", "", "fine"]);
+  });
+});
