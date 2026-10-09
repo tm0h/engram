@@ -356,6 +356,20 @@ describe("renderLinks (ENG-45)", () => {
     expect(out).not.toContain(longTitle);
   });
 
+  it("keeps the target header single-line for short titles containing newlines (F4)", () => {
+    const out = renderLinks(
+      foundAdjacency({
+        target: {
+          status: "found",
+          id: "0012",
+          entry: mem({ id: "0012", title: "bad\n\nmulti", type: "note" }),
+        },
+      }),
+      page([]),
+    );
+    expect(out.startsWith("Links for 0012 - bad … (+7 chars) (note)\n")).toBe(true);
+  });
+
   it("renders an explicit offset note when the window is at or past the total", () => {
     const out = renderLinks(foundAdjacency(), page([], 25, 4));
     expect(out).toContain("offset 25");

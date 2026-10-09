@@ -692,11 +692,17 @@ export const linksOp = (opts: LinksOptions): Effect.Effect<OpResult, never, Engr
           cum.push(acc);
         }
       }
+      // F3: the warnings block is page-constant but rendered on every page;
+      // fold its exact cost into every budget so the trim scan and fitting
+      // check measure what joinedFor actually emits, not just the body.
+      const warningsCost = warnings.length > 0 ? 2 + warnings.join("\n\n").length : 0;
       const budgetFor = (emitted: number): number => {
         const footer = footerFor(emitted);
-        return footer === null
-          ? MAX_RESULT_CHARS - LINKS_RESULT_MARKER.length - 1
-          : MAX_RESULT_CHARS - footer.length - LINKS_TRUNCATION_MARKER.length - 2;
+        const reserve =
+          footer === null
+            ? MAX_RESULT_CHARS - LINKS_RESULT_MARKER.length - 1
+            : MAX_RESULT_CHARS - footer.length - LINKS_TRUNCATION_MARKER.length - 2;
+        return reserve - warningsCost;
       };
       const joinedFor = (emitted: number): string => {
         const body = emitted === 0 ? emptyPage : compose(emitted);
@@ -738,16 +744,11 @@ export const linksOp = (opts: LinksOptions): Effect.Effect<OpResult, never, Engr
         // emitted === 1 and it alone overflows the page.
         const joined = joinedFor(1);
         truncated = true;
-        if (footer === null) {
-          const capped = capText(joined, MAX_RESULT_CHARS - LINKS_RESULT_MARKER.length - 1);
-          text = `${capped.text}\n${LINKS_RESULT_MARKER}`;
-        } else {
-          const capped = capText(
-            joined,
-            MAX_RESULT_CHARS - footer.length - LINKS_TRUNCATION_MARKER.length - 2,
-          );
-          text = `${capped.text}\n${footer}\n${LINKS_TRUNCATION_MARKER}`;
-        }
+        const capped = capText(joined, budgetFor(1));
+        text =
+          footer === null
+            ? `${capped.text}\n${LINKS_RESULT_MARKER}`
+            : `${capped.text}\n${footer}\n${LINKS_TRUNCATION_MARKER}`;
       }
       const nextOffset = page.offset + emitted < page.total ? page.offset + emitted : null;
 

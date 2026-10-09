@@ -228,6 +228,45 @@ describe("engram links command", () => {
     expect(output()).not.toContain("call engram links");
   });
 
+  it("folds the warnings block into the cap on a near-cap page (F3)", async () => {
+    // Same shape as the ops regression: slug-mismatched filenames keep the
+    // warnings block present while the body sits just under the budget.
+    const wrongSlug = (id: string, title: string, related?: string[]): void => {
+      const fm = [
+        `id: "${id}"`,
+        `title: ${JSON.stringify(title)}`,
+        "type: note",
+        "tags: []",
+        "scope: project",
+        "created: 2026-08-16T10:00:00.000Z",
+        "updated: 2026-08-16T10:00:00.000Z",
+        'author: "Tester"',
+        ...(related !== undefined
+          ? [`related: [${related.map((r) => JSON.stringify(r)).join(", ")}]`]
+          : []),
+      ].join("\n");
+      fs.writeFileSync(path.join(engramsDir(), `${id}-wrong.md`), `---\n${fm}\n---\nBody\n`);
+    };
+    const related = Array.from({ length: 54 }, (_, i) => String(i + 2).padStart(4, "0"));
+    wrongSlug("0001", "Entry 0001", related);
+    for (const id of related) wrongSlug(id, "x".repeat(135));
+    fs.writeFileSync(path.join(engramsDir(), "broken.md"), "not frontmatter at all");
+
+    await run(linksCommand("0001", { scope: "project", limit: 54 }));
+    const page1 = output();
+    expect(page1.length).toBeLessThanOrEqual(8192);
+    expect(page1).toContain("WARNING: Engram memory is incomplete");
+    expect(page1).toContain("store diagnostic");
+    expect(page1).toContain("--offset");
+
+    outLines = [];
+    const next = Number(page1.match(/--offset (\d+)/)?.[1]);
+    await run(linksCommand("0001", { scope: "project", offset: next, limit: 54 }));
+    expect(output().length).toBeLessThanOrEqual(8192);
+    expect(output()).toContain("0055 note");
+    expect(output()).not.toContain("call engram links");
+  });
+
   it("rejects invalid numeric options before scanning", async () => {
     seedEntry("0001", "Root");
     await expect(

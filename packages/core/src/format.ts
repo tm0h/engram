@@ -210,18 +210,22 @@ function targetHeader(target: LinkTargetResolution): string {
 }
 
 /** P1b: the target header repeats on every page, so its title is bounded with
- * ENG-77's convention: at most this many characters, cut at the first
- * newline, with an explicit `… (+N chars)` marker naming the elision. Row
- * titles stay verbatim: a pathological row costs exactly one page and
- * advances deterministically; it can never loop or hide other rows. */
+ * ENG-77's convention: at most this many characters, always cut at the first
+ * newline (for short titles too, F4), with an explicit `… (+N chars)` marker
+ * naming the elision. The header block is therefore guaranteed newline-free
+ * per line, which the op and CLI composer rely on when splitting single-row
+ * pages into reusable row chunks. Row titles stay verbatim: a pathological
+ * row costs exactly one page and advances deterministically; it can never
+ * loop or hide other rows. */
 const LINKS_TITLE_BUDGET = 1024;
 
 function linksTitle(title: string): string {
-  if (title.length <= LINKS_TITLE_BUDGET) return title;
   const newlineIndex = title.indexOf("\n");
-  const keep =
-    newlineIndex === -1 ? LINKS_TITLE_BUDGET : Math.min(LINKS_TITLE_BUDGET, newlineIndex);
-  return `${title.slice(0, keep)} … (+${title.length - keep} chars)`;
+  if (newlineIndex !== -1 && newlineIndex <= LINKS_TITLE_BUDGET) {
+    return `${title.slice(0, newlineIndex)} … (+${title.length - newlineIndex} chars)`;
+  }
+  if (title.length <= LINKS_TITLE_BUDGET) return title;
+  return `${title.slice(0, LINKS_TITLE_BUDGET)} … (+${title.length - LINKS_TITLE_BUDGET} chars)`;
 }
 
 function rowLines(row: LinksRow): string[] {

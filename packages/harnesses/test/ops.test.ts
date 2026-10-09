@@ -1904,6 +1904,40 @@ describe("shared ops / linksOp", () => {
     expect(roundTripped).toEqual(res.details);
   });
 
+  it("folds the warnings block into the cap on a near-cap page (F3)", async () => {
+    // Greptile/reviewer repro shape: every peer file is slug-mismatched
+    // (seed() writes <id>-entry.md), so the warnings block is present, plus a
+    // broken sibling for the omitted-files warning. Row titles are sized so
+    // the full-window body fits the no-footer budget but body + warnings does
+    // not: the measurement must fold the warnings cost in and trim.
+    const dir = projectEngramsDir(tmp);
+    seedWithRelated(dir, "project", "0001", {
+      related: Array.from({ length: 54 }, (_, i) => String(i + 2).padStart(4, "0")),
+    });
+    for (let i = 2; i <= 55; i++) {
+      seed(tmp, String(i).padStart(4, "0"), { title: "x".repeat(135) });
+    }
+    fs.writeFileSync(path.join(projectEngramsDir(tmp), "broken.md"), "not frontmatter at all");
+
+    const res = await run(linksOp({ id: "0001", scope: "project", limit: 54 }));
+    expect(res.isError).toBe(false);
+    expect(res.text.length).toBeLessThanOrEqual(8192);
+    expect(res.text).toContain("WARNING: Engram memory is incomplete");
+    expect(res.text).toContain("store diagnostic");
+    expect(res.details.truncated).toBe(false);
+    expect(res.details.diagnosticCount).toBeGreaterThanOrEqual(55);
+    expect(res.details.omittedFiles).toBeGreaterThanOrEqual(1);
+    const next = res.details.nextOffset as number;
+    expect(next).toBeGreaterThanOrEqual(1);
+    expect(next).toBeLessThanOrEqual(53);
+
+    // The continuation covers the remaining rows without duplication.
+    const page2 = await run(linksOp({ id: "0001", scope: "project", offset: next, limit: 54 }));
+    expect(page2.isError).toBe(false);
+    expect(page2.text.length).toBeLessThanOrEqual(8192);
+    expect(page2.details).toMatchObject({ nextOffset: null });
+  });
+
   it("captures scan I/O failures as error results", async () => {
     seed(tmp, "0001", { title: "Root" });
     const dir = projectEngramsDir(tmp);
