@@ -124,6 +124,10 @@ program
     "Comma-separated exact entry ids to link (same scope; missing targets are a warning).",
   )
   .option(
+    "--aliases <aliases>",
+    "Comma-separated alternate names (max 20, 80 chars each; a comma cannot be part of an alias through this flag).",
+  )
+  .option(
     "--allow-secrets",
     "Write even if the secret scanner flags this content (project policy may block by default).",
   )
@@ -141,6 +145,7 @@ program
         status: opts.status as string | undefined,
         supersedes: opts.supersedes as string | undefined,
         related: opts.related as string | undefined,
+        aliases: opts.aliases as string | undefined,
         reviewAfter: opts.reviewAfter as string | undefined,
         expires: opts.expires as string | undefined,
         sourceType: opts.sourceType as string | undefined,
@@ -278,6 +283,10 @@ program
     "Comma-separated exact entry ids to link (replaces the list; same scope; missing targets are a warning).",
   )
   .option(
+    "--aliases <aliases>",
+    "Comma-separated alternate names; replaces the set (max 20, 80 chars each; a comma cannot be part of an alias through this flag).",
+  )
+  .option(
     "--allow-secrets",
     "Write even if the secret scanner flags the resulting entry (project policy may block by default).",
   )
@@ -288,6 +297,7 @@ program
   .option("--clear-source-type", "Remove the source type.")
   .option("--clear-source-ref", "Remove the source reference.")
   .option("--clear-related", "Remove the related list.")
+  .option("--clear-aliases", "Remove the aliases list.")
   .action(
     (id: string, content: string | undefined, opts: Record<string, string | boolean | undefined>) =>
       run(
@@ -303,6 +313,7 @@ program
           status: opts.status as string | undefined,
           supersedes: opts.supersedes as string | undefined,
           related: opts.related as string | undefined,
+          aliases: opts.aliases as string | undefined,
           reviewAfter: opts.reviewAfter as string | undefined,
           expires: opts.expires as string | undefined,
           sourceType: opts.sourceType as string | undefined,
@@ -315,6 +326,7 @@ program
           clearSourceType: opts.clearSourceType as boolean | undefined,
           clearSourceRef: opts.clearSourceRef as boolean | undefined,
           clearRelated: opts.clearRelated as boolean | undefined,
+          clearAliases: opts.clearAliases as boolean | undefined,
         }),
       ),
   );

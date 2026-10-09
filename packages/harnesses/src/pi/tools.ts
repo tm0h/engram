@@ -7,7 +7,13 @@
 import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { ENGRAM_STATUSES, ENGRAM_TYPES, SOURCE_TYPES } from "@engram/core";
+import {
+  ENGRAM_STATUSES,
+  ENGRAM_TYPES,
+  MAX_ALIAS_LENGTH,
+  MAX_ALIASES,
+  SOURCE_TYPES,
+} from "@engram/core";
 import {
   DEFAULT_CONTEXT_LIMIT,
   DEFAULT_SEARCH_LIMIT,
@@ -157,7 +163,9 @@ export const engramAddTool = {
     `that must stay on this machine. Optional lifecycle/provenance metadata (status, supersedes, ` +
     `reviewAfter, expires, sourceType, sourceRef) is an unauthenticated claim, not a verified truth. ` +
     `Optional related links exact same-scope entry ids as directional metadata: the whole list is ` +
-    `stored as given, and missing targets only dangle as a warning.`,
+    `stored as given, and missing targets only dangle as a warning. Optional aliases are alternate ` +
+    `names for the entry (max ${MAX_ALIASES}, ${MAX_ALIAS_LENGTH} characters each); the store trims, ` +
+    `lowercases, and deduplicates them.`,
   promptSnippet:
     "Record durable decisions (with rationale), gotchas, and conventions as you discover them; ask scope personal only for machine-private notes.",
   parameters: Type.Object({
@@ -219,6 +227,13 @@ export const engramAddTool = {
           'Exact engram ids in the same scope, e.g. ["0002"]. Replaces the whole list in this order; duplicates are rejected. Missing targets are advisory (a warning on check, not an error). Optional.',
       }),
     ),
+    aliases: Type.Optional(
+      Type.Array(Type.String({ maxLength: MAX_ALIAS_LENGTH }), {
+        maxItems: MAX_ALIASES,
+        description:
+          'Alternate names for this entry, e.g. ["pg", "postgres row level security"]. The store trims, lowercases, and deduplicates them (first occurrence wins); the whole set is replaced. Optional.',
+      }),
+    ),
     allowSecrets: Type.Optional(
       Type.Boolean({
         description:
@@ -243,6 +258,7 @@ export const engramAddTool = {
           sourceType: params.sourceType,
           sourceRef: params.sourceRef,
           related: params.related,
+          aliases: params.aliases,
           allowSecrets: params.allowSecrets,
         }),
       ),
@@ -259,7 +275,8 @@ export const engramEditTool = {
     `(status, supersedes, reviewAfter, expires, sourceType, sourceRef) are three-state: a concrete ` +
     `value replaces, null clears, omission preserves. related is three-state the same way: an array ` +
     `replaces the whole list with exact same-scope ids, null clears it, omission preserves; links are ` +
-    `directional and may dangle with a warning. Use this to correct a title or tags, change a ` +
+    `directional and may dangle with a warning. aliases is three-state too: an array replaces the ` +
+    `whole set, null clears it, omission preserves. Use this to correct a title or tags, change a ` +
     `type, pin or unpin, or clear a lifecycle field after acting on it. Scope defaults to project ` +
     `inside a project and personal outside one.`,
   promptSnippet:
@@ -331,6 +348,18 @@ export const engramEditTool = {
           "Replace the whole related list with exact same-scope ids in this order. Null clears; omit to preserve. Missing targets are advisory (a warning on check, not an error).",
       }),
     ),
+    aliases: Type.Optional(
+      Type.Union(
+        [
+          Type.Array(Type.String({ maxLength: MAX_ALIAS_LENGTH }), { maxItems: MAX_ALIASES }),
+          Type.Null(),
+        ],
+        {
+          description:
+            "Replace the whole alias set with these alternate names. The store trims, lowercases, and deduplicates them. Null clears; omit to preserve.",
+        },
+      ),
+    ),
     allowSecrets: Type.Optional(
       Type.Boolean({
         description:
@@ -357,6 +386,7 @@ export const engramEditTool = {
           sourceType: params.sourceType,
           sourceRef: params.sourceRef,
           related: params.related,
+          aliases: params.aliases,
           allowSecrets: params.allowSecrets,
         }),
       ),

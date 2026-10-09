@@ -1060,3 +1060,115 @@ describe("engram links (process level, ENG-45)", () => {
     expect(snapshot(proj)).toBe(before);
   });
 });
+
+describe("engram add/edit aliases flags (process level, ENG-46)", () => {
+  let tmp = "";
+  let home = "";
+
+  beforeAll(() => {
+    if (!spawnOk) return;
+    tmp = mkdtempSync(join(tmpdir(), "engram-proc-aliases-"));
+    home = mkdtempSync(join(tmpdir(), "engram-proc-aliases-home-"));
+  });
+  afterAll(() => {
+    if (tmp) rmSync(tmp, { recursive: true, force: true });
+    if (home) rmSync(home, { recursive: true, force: true });
+  });
+
+  let projSeq = 0;
+  const freshProject = (): string => {
+    projSeq += 1;
+    const proj = join(tmp, `proj-${projSeq}`);
+    mkdirSync(join(proj, ".engram", "engrams"), { recursive: true });
+    writeFileSync(
+      join(proj, ".engram", "config.json"),
+      JSON.stringify({ version: 1, tracked: true, defaultType: "note" }),
+    );
+    return proj;
+  };
+  const fm = (id: string, title: string): string =>
+    [
+      "---",
+      `id: "${id}"`,
+      `title: ${JSON.stringify(title)}`,
+      "type: note",
+      "tags: []",
+      "scope: project",
+      "created: 2025-08-15T10:00:00.000Z",
+      "updated: 2025-08-15T11:00:00.000Z",
+      "---",
+      "Body",
+      "",
+    ].join("\n");
+  const entryRaw = (proj: string, needle: string): string => {
+    const dir = join(proj, ".engram", "engrams");
+    const name = readdirSync(dir)
+      .filter((f) => f.endsWith(".md"))
+      .find((f) => readFileSync(join(dir, f), "utf8").includes(needle));
+    if (name === undefined) throw new Error(`no entry matching ${needle}`);
+    return readFileSync(join(dir, name), "utf8");
+  };
+
+  it("add --aliases writes the normalized list and documents the comma limit in help", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    const r = runCli(
+      ["add", "--title", "Aliased", "--aliases", " Postgres , pg_dump", "body"],
+      proj,
+      home,
+    );
+    expect(r.status).toBe(0);
+    expect(entryRaw(proj, "Aliased")).toMatch(/^aliases:\n  - postgres\n  - pg_dump$/m);
+
+    const help = runCli(["add", "--help"], proj, home);
+    expect(help.stdout).toContain("--aliases");
+    expect(help.stdout).toMatch(/comma/i);
+  });
+
+  it("add --aliases with an empty member fails with the core wording and no write (R14a)", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    const r = runCli(["add", "--title", "Bad", "--aliases", "pg,,x", "body"], proj, home);
+    expect(r.status).not.toBe(0);
+    expect(`${r.stderr}${r.stdout}`).toContain("aliases (position 2) is empty after trimming");
+    expect(readdirSync(join(proj, ".engram", "engrams"))).toHaveLength(0);
+  });
+
+  it("add --aliases whitespace-only fails instead of recording nothing (R14a)", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    const r = runCli(["add", "--title", "Bad", "--aliases", "   ", "body"], proj, home);
+    expect(r.status).not.toBe(0);
+    expect(`${r.stderr}${r.stdout}`).toContain("aliases (position 1) is empty after trimming");
+    expect(readdirSync(join(proj, ".engram", "engrams"))).toHaveLength(0);
+  });
+
+  it("edit --aliases replaces, omission preserves, --clear-aliases removes", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    writeFileSync(join(proj, ".engram", "engrams", "0001-aliased.md"), fm("0001", "Aliased"));
+
+    expect(runCli(["edit", "0001", "--aliases", " PG ,New One", "Set"], proj, home).status).toBe(0);
+    expect(entryRaw(proj, "Aliased")).toMatch(/^aliases:\n  - pg\n  - new one$/m);
+
+    expect(runCli(["edit", "0001", "Still"], proj, home).status).toBe(0);
+    expect(entryRaw(proj, "Aliased")).toMatch(/^aliases:\n  - pg\n  - new one$/m);
+
+    expect(runCli(["edit", "0001", "--clear-aliases"], proj, home).status).toBe(0);
+    expect(entryRaw(proj, "Aliased")).not.toMatch(/^aliases:/m);
+  });
+
+  it("edit --aliases with --clear-aliases is a usage error before any read or write", (ctx) => {
+    if (!spawnOk) ctx.skip();
+    const proj = freshProject();
+    writeFileSync(join(proj, ".engram", "engrams", "0001-aliased.md"), fm("0001", "Aliased"));
+    const r = runCli(["edit", "0001", "--aliases", "pg", "--clear-aliases"], proj, home);
+    expect(r.status).not.toBe(0);
+    expect(`${r.stderr}${r.stdout}`).toContain("not both");
+    expect(entryRaw(proj, "Aliased")).not.toMatch(/^aliases:/m);
+
+    const help = runCli(["edit", "--help"], proj, home);
+    expect(help.stdout).toContain("--aliases");
+    expect(help.stdout).toContain("--clear-aliases");
+  });
+});

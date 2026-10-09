@@ -94,9 +94,15 @@ no reciprocal link is written to the target, and a missing target is only a
 `related_not_found` warning, so forward references are fine. Prefixes are not
 ids; use exact ids.
 
+`aliases` are optional alternate names searchers may actually use, e.g.
+`aliases: ["pg", "postgres row level security"]`. They may be multiword
+phrases and are distinct from `tags`. The store trims, lowercases, and
+deduplicates them (first occurrence wins). Limits: at most 20 unique aliases,
+80 characters each.
+
 Example: `engram_add({ title: "…", body: "…", status: "superseded",
-supersedes: "0012", related: ["0007"], sourceType: "conversation",
-sourceRef: "refactor sync" })`
+supersedes: "0012", related: ["0007"], aliases: ["pg"],
+sourceType: "conversation", sourceRef: "refactor sync" })`
 
 ## Editing an entry
 
@@ -105,15 +111,17 @@ fields (`title`, `type`, `tags`, `body`, `pinned`, `author`) are replaced when
 passed and preserved when omitted. The six lifecycle fields (`status`,
 `supersedes`, `reviewAfter`, `expires`, `sourceType`, `sourceRef`) are
 three-state: a concrete value replaces, null clears the field, and omission
-preserves it. Clear a field once it no longer applies. `related` is
-three-state the same way: pass an array to replace the whole list, null to
-clear it, or omit it to preserve.
+preserves it. Clear a field once it no longer applies. `related` and
+`aliases` are three-state the same way: pass an array to replace the whole
+list or set, null to clear it, or omit it to preserve.
 
 Example: `engram_edit({ id: "0012", status: null, reviewAfter: null })`
 clears both fields after the review has happened.
 
 Example: `engram_edit({ id: "0012", related: ["0007"] })` replaces the whole
 list; `engram_edit({ id: "0012", related: null })` clears it.
+`engram_edit({ id: "0012", aliases: null })` clears the alias set the same
+way.
 
 ## Review and integrity maintenance
 

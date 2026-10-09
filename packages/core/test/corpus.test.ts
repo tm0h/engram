@@ -403,6 +403,7 @@ describe("evaluateCase mechanics (small fixtures, no corpus)", () => {
     author: undefined,
     pinned: false,
     schemaVersion: 1,
+    aliases: [],
     body: "",
     path: "",
     ...over,

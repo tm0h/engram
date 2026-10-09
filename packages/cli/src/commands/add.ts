@@ -9,7 +9,7 @@ import type { EngramType } from "@engram/core";
 import { InvalidTypeError, ValidationError } from "@engram/core";
 import { isInteractive, openEditor } from "../interactive.js";
 import { resolveScanOptions, reportScanOutcome } from "../scanPolicy.js";
-import { parseTags, detectAuthor } from "@engram/core";
+import { parseTags, detectAuthor, splitAliasList, validateAliases } from "@engram/core";
 import { readStdin, out } from "../io.js";
 import { checkLifecycleValues } from "../lifecycle.js";
 import type { LifecycleValueFlags } from "../lifecycle.js";
@@ -27,6 +27,9 @@ export interface AddOptions extends LifecycleValueFlags {
   /** ENG-42: comma-separated same-scope related ids (Q1: a value that
    * trims to nothing records no key; Q2: empty tokens are a usage error). */
   readonly related?: string;
+  /** ENG-46: comma-separated alternate names. Split on commas with empty
+   * members preserved (R6); the core boundary rejects them (R14a). */
+  readonly aliases?: string;
   /** ENG-15: explicit per-write override for a blocking scan policy. */
   readonly allowSecrets?: boolean;
 }
@@ -55,6 +58,22 @@ export const addCommand = (opts: AddOptions) =>
     let lifecycle = yield* checkLifecycleValues(opts);
     let related = yield* relatedFromFlag(opts.related);
 
+    /* ENG-46: split first (commas only, empty members preserved), then
+     * fast-check with the core validator so a rejected value fails with the
+     * exact core wording BEFORE the editor opens or anything is written
+     * (R14a: an empty flag value must fail, never silently vanish into the
+     * editor round-trip). The store boundary re-validates: it stays
+     * authoritative for every non-CLI caller. */
+    let aliases = splitAliasList(opts.aliases);
+    if (aliases !== undefined) {
+      const aliasIssues = validateAliases(aliases);
+      if (aliasIssues.length > 0) {
+        return yield* Effect.fail(
+          new ValidationError({ message: aliasIssues.map((i) => i.message).join("; ") }),
+        );
+      }
+    }
+
     if (opts.stdin) {
       body = (yield* readStdin()).trim();
     } else if (opts.content) {
@@ -79,6 +98,7 @@ export const addCommand = (opts: AddOptions) =>
           sourceType: opts.sourceType,
           sourceRef: opts.sourceRef,
           related,
+          aliases,
         });
         if (!edited || !edited.title) {
           yield* out(chalk.gray("Aborted: a title is required."));
@@ -90,6 +110,7 @@ export const addCommand = (opts: AddOptions) =>
         body = edited.body;
         lifecycle = yield* checkLifecycleValues(edited);
         related = edited.related;
+        aliases = edited.aliases;
       }
     }
 
@@ -127,6 +148,7 @@ export const addCommand = (opts: AddOptions) =>
         status: lifecycle.status,
         supersedes: lifecycle.supersedes,
         related,
+        aliases: aliases ?? [],
         reviewAfter: lifecycle.reviewAfter,
         expires: lifecycle.expires,
         sourceType: lifecycle.sourceType,

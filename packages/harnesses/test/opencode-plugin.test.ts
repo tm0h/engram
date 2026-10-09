@@ -5,6 +5,8 @@ import path from "node:path";
 import { z } from "zod";
 import { projectConfigPath, projectEngramsDir } from "@engram/core";
 import engramPlugin from "../src/opencode/index.js";
+import { engramAddTool, engramEditTool } from "../src/pi/tools.js";
+import { Value } from "typebox/value";
 
 /* ------------------------------- fixtures ------------------------------- */
 
@@ -134,6 +136,7 @@ describe("engram opencode plugin / registration", () => {
       "sourceType",
       "sourceRef",
       "related",
+      "aliases",
       "allowSecrets",
     ]);
     expect(Object.keys(tools.engram_edit.args)).toEqual([
@@ -152,6 +155,7 @@ describe("engram opencode plugin / registration", () => {
       "sourceType",
       "sourceRef",
       "related",
+      "aliases",
       "allowSecrets",
     ]);
   });
@@ -548,5 +552,147 @@ describe("engram opencode plugin / related schema contract (ENG-42)", () => {
     const cleared = await execute(tools.engram_edit, { id: "0001", related: null }, env.tmp);
     expect(cleared.metadata?.isError).toBe(false);
     expect(fs.readFileSync(replacedPath, "utf8")).not.toMatch(/^related:/m);
+  });
+});
+
+describe("engram opencode plugin / aliases (ENG-46)", () => {
+  let env: ToolEnv;
+  beforeEach(() => {
+    env = enterProject();
+  });
+  afterEach(() => leaveProject(env));
+
+  const shapeOf = async (tool: string): Promise<z.ZodType> =>
+    z.object((await loadTools())[tool]!.args as Record<string, z.ZodType>);
+
+  it("engram_add args cap the array at 20 items of at most 80 characters", async () => {
+    const shape = await shapeOf("engram_add");
+    const base = { title: "T", body: "b" };
+    expect(shape.safeParse({ ...base, aliases: ["pg"] }).success).toBe(true);
+    expect(shape.safeParse({ ...base, aliases: [] }).success).toBe(true);
+    expect(shape.safeParse({ ...base, aliases: ["x".repeat(80)] }).success).toBe(true);
+    expect(shape.safeParse({ ...base, aliases: ["x".repeat(81)] }).success).toBe(false);
+    expect(
+      shape.safeParse({ ...base, aliases: Array.from({ length: 21 }, (_, i) => `a${i}`) }).success,
+    ).toBe(false);
+    expect(shape.safeParse({ ...base, aliases: "pg" }).success).toBe(false);
+    expect(shape.safeParse({ ...base, aliases: [7] }).success).toBe(false);
+    expect(shape.safeParse({ ...base, aliases: null }).success).toBe(false);
+  });
+
+  it("engram_edit args accept array, null, or omission with the same caps", async () => {
+    const shape = await shapeOf("engram_edit");
+    const base = { id: "0001" };
+    expect(shape.safeParse(base).success).toBe(true);
+    expect(shape.safeParse({ ...base, aliases: ["pg"] }).success).toBe(true);
+    expect(shape.safeParse({ ...base, aliases: null }).success).toBe(true);
+    expect(shape.safeParse({ ...base, aliases: "pg" }).success).toBe(false);
+    expect(shape.safeParse({ ...base, aliases: [7] }).success).toBe(false);
+    expect(shape.safeParse({ ...base, aliases: ["x".repeat(81)] }).success).toBe(false);
+  });
+
+  it("descriptions state normalization, replacement, clear, and omission", async () => {
+    const tools = await loadTools();
+    const addArgs = tools.engram_add.args as Record<string, { description?: string }>;
+    expect(addArgs.aliases?.description).toMatch(/alternate names/i);
+    expect(addArgs.aliases?.description).toMatch(/trim|lowercas/i);
+    expect(addArgs.aliases?.description).toMatch(/deduplicat/i);
+    expect(addArgs.aliases?.description).toMatch(/replac/i);
+
+    const editArgs = tools.engram_edit.args as Record<string, { description?: string }>;
+    expect(editArgs.aliases?.description).toMatch(/replac/i);
+    expect(editArgs.aliases?.description).toMatch(/null clears/i);
+    expect(editArgs.aliases?.description).toMatch(/omit/i);
+  });
+
+  it("execution normalizes through the store and maps the three edit states", async () => {
+    seedEntry(env.tmp, "0001", "OC alias target");
+    const tools = await loadTools();
+
+    const added = await execute(tools.engram_add!, {
+      title: "OC aliased",
+      body: "b",
+      aliases: [" Postgres ", "PG"],
+    });
+    expect(added.output).not.toMatch(/isError/i);
+    expect(added.metadata?.path as string).toMatch(/\.md$/);
+    expect(fs.readFileSync(added.metadata?.path as string, "utf8")).toMatch(
+      /^aliases:\n  - postgres\n  - pg$/m,
+    );
+
+    const editTool = tools.engram_edit!;
+    const id = added.metadata?.id as string;
+    const replaced = await execute(editTool, { id, aliases: ["fresh"] });
+    expect(replaced.output).toBeDefined();
+    expect(fs.readFileSync(replaced.metadata?.path as string, "utf8")).toMatch(
+      /^aliases:\n  - fresh$/m,
+    );
+
+    await execute(editTool, { id, aliases: null });
+    expect(fs.readFileSync(replaced.metadata?.path as string, "utf8")).not.toMatch(/^aliases:/m);
+  });
+
+  it("execution surfaces rule violations as errors without writing", async () => {
+    const tools = await loadTools();
+    const res = await execute(tools.engram_add!, {
+      title: "OC bad",
+      body: "b",
+      aliases: ["ok", ""],
+    });
+    expect(res.output).toContain("aliases (position 2) is empty after trimming");
+    expect(
+      fs.readdirSync(projectEngramsDir(env.tmp)).filter((f) => f.endsWith(".md")),
+    ).toHaveLength(0);
+  });
+
+  /** AC10 parity matrix: Pi (TypeBox Value.Check) and OpenCode (Zod
+   * safeParse) accept and reject exactly the same alias shapes for add and
+   * edit. */
+  it("Pi and OpenCode alias schemas agree on every cross-layer case", async () => {
+    const ocAdd = await shapeOf("engram_add");
+    const ocEdit = await shapeOf("engram_edit");
+    const piAdd = engramAddTool.parameters;
+    const piEdit = engramEditTool.parameters;
+
+    const eighty = "x".repeat(80);
+    const addCases: ReadonlyArray<Record<string, unknown>> = [
+      { title: "T", body: "b" },
+      { title: "T", body: "b", aliases: [] },
+      { title: "T", body: "b", aliases: ["pg"] },
+      { title: "T", body: "b", aliases: [" Multi word value "] },
+      { title: "T", body: "b", aliases: ["PG", "pg"] },
+      { title: "T", body: "b", aliases: [""] },
+      { title: "T", body: "b", aliases: ["   "] },
+      { title: "T", body: "b", aliases: [eighty] },
+      { title: "T", body: "b", aliases: [eighty + "x"] },
+      { title: "T", body: "b", aliases: Array.from({ length: 20 }, (_, i) => `a${i}`) },
+      { title: "T", body: "b", aliases: Array.from({ length: 21 }, (_, i) => `a${i}`) },
+      { title: "T", body: "b", aliases: "pg" },
+      { title: "T", body: "b", aliases: [7] },
+      { title: "T", body: "b", aliases: null },
+    ];
+    for (const [i, args] of addCases.entries()) {
+      const pi = Value.Check(piAdd, args);
+      const oc = ocAdd.safeParse(args).success;
+      expect([i, pi, oc]).toEqual([i, oc, pi]);
+    }
+
+    const editCases: ReadonlyArray<Record<string, unknown>> = [
+      { id: "0001" },
+      { id: "0001", aliases: [] },
+      { id: "0001", aliases: ["pg"] },
+      { id: "0001", aliases: [""] },
+      { id: "0001", aliases: [eighty] },
+      { id: "0001", aliases: [eighty + "x"] },
+      { id: "0001", aliases: Array.from({ length: 21 }, (_, i) => `a${i}`) },
+      { id: "0001", aliases: "pg" },
+      { id: "0001", aliases: [7] },
+      { id: "0001", aliases: null },
+    ];
+    for (const [i, args] of editCases.entries()) {
+      const pi = Value.Check(piEdit, args);
+      const oc = ocEdit.safeParse(args).success;
+      expect([i, pi, oc]).toEqual([i, oc, pi]);
+    }
   });
 });

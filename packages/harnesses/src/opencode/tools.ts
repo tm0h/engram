@@ -9,6 +9,8 @@ import { z } from "zod";
 import {
   ENGRAM_STATUSES,
   ENGRAM_TYPES,
+  MAX_ALIAS_LENGTH,
+  MAX_ALIASES,
   SOURCE_TYPES,
   type EngramType,
   type SourceType,
@@ -148,7 +150,9 @@ export const engramAddTool = {
     `that must stay on this machine. Optional lifecycle/provenance metadata (status, supersedes, ` +
     `reviewAfter, expires, sourceType, sourceRef) is an unauthenticated claim, not a verified truth. ` +
     `Optional related links exact same-scope entry ids as directional metadata: the whole list is ` +
-    `stored as given, and missing targets only dangle as a warning.`,
+    `stored as given, and missing targets only dangle as a warning. Optional aliases are alternate ` +
+    `names for the entry (max ${MAX_ALIASES}, ${MAX_ALIAS_LENGTH} characters each); the store trims, ` +
+    `lowercases, and deduplicates them.`,
   args: {
     title: z.string().describe("Short, descriptive title (one line)."),
     body: z.string().describe("Full content: rationale, context, details."),
@@ -200,6 +204,13 @@ export const engramAddTool = {
       .describe(
         'Exact engram ids in the same scope, e.g. ["0002"]. Replaces the whole list in this order; duplicates are rejected. Missing targets are advisory (a warning on check, not an error). Optional.',
       ),
+    aliases: z
+      .array(z.string().max(MAX_ALIAS_LENGTH))
+      .max(MAX_ALIASES)
+      .optional()
+      .describe(
+        'Alternate names for this entry, e.g. ["pg", "postgres row level security"]. The store trims, lowercases, and deduplicates them (first occurrence wins); the whole set is replaced. Optional.',
+      ),
     allowSecrets: z
       .boolean()
       .optional()
@@ -222,6 +233,7 @@ export const engramAddTool = {
       sourceType?: SourceType;
       sourceRef?: string;
       related?: string[];
+      aliases?: string[];
       allowSecrets?: boolean;
     },
     context: OpenCodeToolContext,
@@ -237,7 +249,8 @@ export const engramEditTool = {
     `(status, supersedes, reviewAfter, expires, sourceType, sourceRef) are three-state: a concrete ` +
     `value replaces, null clears, omission preserves. related is three-state the same way: an array ` +
     `replaces the whole list with exact same-scope ids, null clears it, omission preserves; links are ` +
-    `directional and may dangle with a warning. Use this to correct a title or tags, change a ` +
+    `directional and may dangle with a warning. aliases is three-state too: an array replaces the ` +
+    `whole set, null clears it, omission preserves. Use this to correct a title or tags, change a ` +
     `type, pin or unpin, or clear a lifecycle field after acting on it. Scope defaults to project ` +
     `inside a project and personal outside one.`,
   args: {
@@ -302,6 +315,14 @@ export const engramEditTool = {
       .describe(
         "Replace the whole related list with exact same-scope ids in this order. Null clears; omit to preserve. Missing targets are advisory (a warning on check, not an error).",
       ),
+    aliases: z
+      .array(z.string().max(MAX_ALIAS_LENGTH))
+      .max(MAX_ALIASES)
+      .nullable()
+      .optional()
+      .describe(
+        "Replace the whole alias set with these alternate names. The store trims, lowercases, and deduplicates them. Null clears; omit to preserve.",
+      ),
     allowSecrets: z
       .boolean()
       .optional()
@@ -326,6 +347,7 @@ export const engramEditTool = {
       sourceType?: SourceType | null;
       sourceRef?: string | null;
       related?: string[] | null;
+      aliases?: string[] | null;
       allowSecrets?: boolean;
     },
     context: OpenCodeToolContext,

@@ -36,6 +36,7 @@ const input = (over: Partial<EngramInput> = {}): EngramInput => ({
   body: "Some body",
   pinned: false,
   author: "Tester",
+  aliases: [],
   ...over,
 });
 
@@ -2220,5 +2221,125 @@ describe("shared ops / linksOp", () => {
     expect(page2.isError).toBe(false);
     expect(rowIds(page2.text)).toEqual(["0003", "0004"]);
     expect(page2.details).toMatchObject({ nextOffset: null });
+  });
+});
+
+describe("shared ops / ENG-46 aliases", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject("note");
+    home = mkHome();
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    if (origHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = origHome;
+    }
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const rawFile = (needle: string): string => {
+    const dir = projectEngramsDir(tmp);
+    for (const f of fs.readdirSync(dir).sort()) {
+      const raw = fs.readFileSync(path.join(dir, f), "utf8");
+      if (raw.includes(needle)) return raw;
+    }
+    throw new Error(`no entry containing ${needle}`);
+  };
+
+  it("addOp passes aliases through the core normalizer", async () => {
+    const res = await run(addOp({ title: "Op aliased", body: "b", aliases: [" Postgres ", "PG"] }));
+    expect(res.isError).toBe(false);
+    expect(rawFile("Op aliased")).toMatch(/^aliases:\n  - postgres\n  - pg$/m);
+  });
+
+  it("addOp without aliases omits the key entirely", async () => {
+    await run(addOp({ title: "Op plain", body: "b" }));
+    expect(rawFile("Op plain")).not.toMatch(/^aliases:/m);
+  });
+
+  it("addOp rejects rule violations with the core wording and no write", async () => {
+    const res = await run(addOp({ title: "Op bad", body: "b", aliases: ["ok", ""] }));
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain("aliases (position 2) is empty after trimming");
+    const dir = projectEngramsDir(tmp);
+    expect(fs.readdirSync(dir).filter((f) => f.endsWith(".md"))).toHaveLength(0);
+  });
+
+  it("editOp is three-state: omission preserves, array replaces, null clears", async () => {
+    const added = await run(addOp({ title: "Op edit", body: "b", aliases: ["postgres", "pg"] }));
+    const id = added.details.id as string;
+
+    // omission preserves
+    await run(editOp({ id, body: "kept" }));
+    expect(rawFile("Op edit")).toMatch(/^aliases:\n  - postgres\n  - pg$/m);
+
+    // an array replaces the whole set, normalized
+    await run(editOp({ id, aliases: [" Fresh One ", "pg"] }));
+    expect(rawFile("Op edit")).toMatch(/^aliases:\n  - fresh one\n  - pg$/m);
+
+    // an empty array replaces to empty: same stored result as clearing
+    await run(editOp({ id, aliases: [] }));
+    expect(rawFile("Op edit")).not.toMatch(/^aliases:/m);
+
+    // null clears explicitly (seeding fresh state first)
+    await run(editOp({ id, aliases: ["back again"] }));
+    const cleared = await run(editOp({ id, aliases: null }));
+    expect(cleared.isError).toBe(false);
+    expect(rawFile("Op edit")).not.toMatch(/^aliases:/m);
+  });
+
+  it("editOp rejects rule violations without mutation", async () => {
+    const added = await run(addOp({ title: "Op guard", body: "b", aliases: ["pg"] }));
+    const id = added.details.id as string;
+    const before = rawFile("Op guard");
+    const res = await run(editOp({ id, aliases: [""] }));
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain("aliases (position 1) is empty after trimming");
+    expect(rawFile("Op guard")).toBe(before);
+  });
+
+  it("showOp renders one bounded aliases line and carries the full list in details", async () => {
+    const added = await run(addOp({ title: "Op show", body: "b", aliases: ["postgres", "pg"] }));
+    const id = added.details.id as string;
+    const shown = await run(showOp({ id }));
+    expect(shown.text).toContain("aliases: postgres, pg");
+    expect(shown.details.aliases as ReadonlyArray<string>).toEqual(["postgres", "pg"]);
+  });
+
+  it("showOp prints nothing for an empty alias set", async () => {
+    const added = await run(addOp({ title: "Op empty show", body: "b" }));
+    const shown = await run(showOp({ id: added.details.id as string }));
+    expect(shown.text).not.toMatch(/^aliases:/m);
+  });
+
+  it("showOp elides an over-budget aliases line with an explicit marker (R14-d)", async () => {
+    // 20 aliases of 60 characters each: the rendered line passes the 1024
+    // budget, so the marker names the remainder and details keep the full set
+    const aliases = Array.from(
+      { length: 20 },
+      (_, i) => `alias-${String(i).padStart(2, "0")}-${"x".repeat(45)}`,
+    );
+    const added = await run(addOp({ title: "Op wide", body: "start", aliases }));
+    const id = added.details.id as string;
+    const shown = await run(showOp({ id }));
+    expect(shown.text).toMatch(/^aliases: .+ \u2026 \(\+\d+ more\)$/m);
+    expect(shown.details.aliases).toEqual(aliases);
+  });
+
+  it("digest output stays alias-free (no EngramLine change)", async () => {
+    await run(addOp({ title: "Op digest", body: "b", aliases: ["postgres"] }));
+    const digest = await run(contextDigest({ scope: "project" }));
+    expect(digest.text).not.toMatch(/aliases:/);
   });
 });

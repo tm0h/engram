@@ -32,7 +32,7 @@ import {
   SUPPORTED_ENTRY_SCHEMA_VERSION,
 } from "./domain.js";
 import type { EngramType, Frontmatter, Scope, SourceType, Status } from "./domain.js";
-import { isValidId, parseTimestamp } from "./util.js";
+import { isValidId, parseTimestamp, validateAliases } from "./util.js";
 
 export interface ParsedFrontmatter {
   /** Whatever the YAML block resolved to; validating it is the caller's job. */
@@ -128,6 +128,10 @@ export type EntryIssueCode =
   | "related_invalid"
   | "self_relation"
   | "duplicate_relation"
+  /* ENG-46 aliases: shape and value defects are entry-preventing.
+   * Noncanonical-but-valid values are NOT defects: they read as authored
+   * and canonicalize on the next mediated write. */
+  | "aliases_invalid"
   /* ENG-41 entry format version. Only schema_version_unsupported is
    * non-entry-preventing: a future-format file still reads. */
   | "schema_version_invalid"
@@ -406,6 +410,34 @@ export const validateEntry = (raw: string): ValidatedEntry => {
     issues.push(fieldTypeIssue("tags", "a list of strings", tags));
   }
 
+  /* ENG-46 search aliases. The raw value is inspected directly (R13), not
+   * through the null-normalizing `field()` accessor: a YAML `aliases:` (null)
+   * is a present bad shape, not an absent key. Per-value rules and the
+   * deduped-count cap come from the shared validator in util.ts, so every
+   * surface words failures identically. Valid noncanonical values are
+   * retained verbatim; canonicalization happens only on mediated rewrites.
+   * All defects are entry-preventing. */
+  const rawAliases = fm.aliases;
+  let aliases: ReadonlyArray<string> | undefined;
+  if (rawAliases !== undefined) {
+    if (Array.isArray(rawAliases)) {
+      issues.push(
+        ...validateAliases(rawAliases).map((issue): EntryIssue => ({
+          code: "aliases_invalid",
+          message: issue.message,
+          hint: issue.hint,
+        })),
+      );
+      aliases = rawAliases.filter((m): m is string => typeof m === "string");
+    } else {
+      issues.push({
+        code: "aliases_invalid",
+        message: `"aliases" must be a list of aliases, got ${describeValue(rawAliases)}`,
+        hint: "Write aliases as a YAML list of strings, e.g. aliases: [postgres, psql], or remove the line.",
+      });
+    }
+  }
+
   const scope = field("scope");
   let partialScope: Scope | undefined;
   if (scope !== undefined) {
@@ -634,6 +666,7 @@ export const validateEntry = (raw: string): ValidatedEntry => {
         status: status as Status | undefined,
         supersedes: supersedes as string | undefined,
         related,
+        aliases,
         reviewAfter: reviewAfter as string | undefined,
         expires: expires as string | undefined,
         sourceType: sourceType as SourceType | undefined,

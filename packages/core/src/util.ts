@@ -90,6 +90,116 @@ export const parseTags = (input?: string): ReadonlyArray<string> => {
   );
 };
 
+/* ------------------------------ aliases ------------------------------ */
+
+/** ENG-46: the maximum number of unique aliases one entry may hold. */
+export const MAX_ALIASES = 20;
+
+/** ENG-46: the maximum length of one alias, counted in Unicode code points
+ * AFTER trimming (via `Array.from(value).length`, never UTF-16 units). */
+export const MAX_ALIAS_LENGTH = 80;
+
+/** One rejected alias list: a stable, repair-focused message and hint.
+ * Wording is generated only here, so the frontmatter scan, the store write
+ * boundary, the CLI, slash commands, and the shared ops all show identical
+ * text for the same defect. */
+export interface AliasIssue {
+  readonly message: string;
+  readonly hint: string;
+}
+
+const aliasDescribe = (v: unknown): string =>
+  v === null ? "null" : Array.isArray(v) ? "a sequence" : `a ${typeof v}`;
+
+const aliasQuote = (v: unknown): string => {
+  const s = JSON.stringify(v);
+  return s === undefined ? aliasDescribe(v) : s;
+};
+
+const ALIAS_LIST_HINT = "Write aliases as a list of strings, e.g. aliases: [postgres, psql].";
+
+/** ENG-46: normalize alias members — trim surrounding whitespace, lowercase,
+ * deduplicate while keeping the first occurrence. Internal whitespace is
+ * preserved and values are never split on spaces. Pure.
+ *
+ * This transform never drops a member, not even an empty one: emptiness and
+ * the caps are validated separately by `validateAliases`, so nothing is ever
+ * silently discarded. Callers validate first; the write boundary owns that
+ * ordering. */
+export const normalizeAliases = (values: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const alias = value.trim().toLowerCase();
+    if (!seen.has(alias)) {
+      seen.add(alias);
+      out.push(alias);
+    }
+  }
+  return out;
+};
+
+/** ENG-46: validate raw alias members against the one alias contract. Every
+ * member must be a string that is non-empty after trimming, and its
+ * NORMALIZED form (post-trim, post-lowercase) must be at most
+ * `MAX_ALIAS_LENGTH` code points long — lowercasing can expand a value
+ * (e.g. U+0130 doubles), so the cap measures what would actually be stored
+ * (R17a). The list may hold at most `MAX_ALIASES` unique normalized values;
+ * the count rule dedupes through `normalizeAliases` itself (R12), so read
+ * and write sides share a single predicate and duplicates count once.
+ * Member issues come back in list order, then the count issue. Pure. */
+export const validateAliases = (values: ReadonlyArray<unknown>): ReadonlyArray<AliasIssue> => {
+  const issues: AliasIssue[] = [];
+  const valid: string[] = [];
+  for (const [position, member] of values.entries()) {
+    if (typeof member !== "string") {
+      issues.push({
+        message: `aliases (position ${position + 1}) must be a string, got ${aliasDescribe(member)}`,
+        hint: ALIAS_LIST_HINT,
+      });
+      continue;
+    }
+    const trimmed = member.trim();
+    if (trimmed === "") {
+      issues.push({
+        message: `aliases (position ${position + 1}) is empty after trimming`,
+        hint: 'Aliases must be non-empty: remove the empty values, or remove the whole "aliases" line.',
+      });
+      continue;
+    }
+    const normalized = trimmed.toLowerCase();
+    const length = Array.from(normalized).length;
+    if (length > MAX_ALIAS_LENGTH) {
+      issues.push({
+        message: `aliases ${aliasQuote(normalized)} (position ${position + 1}) is longer than ${MAX_ALIAS_LENGTH} code points (${length})`,
+        hint: `Shorten the alias to at most ${MAX_ALIAS_LENGTH} characters after lowercasing (Unicode code points, not bytes).`,
+      });
+      continue;
+    }
+    valid.push(trimmed);
+  }
+  const unique = normalizeAliases(valid);
+  if (unique.length > MAX_ALIASES) {
+    issues.push({
+      message: `aliases lists ${unique.length} unique values; the maximum is ${MAX_ALIASES}`,
+      hint: `Keep at most ${MAX_ALIASES} unique aliases; duplicates are counted once after lowercasing and trimming.`,
+    });
+  }
+  return issues;
+};
+
+/** ENG-46: split one raw comma-separated alias value (a CLI flag, a slash
+ * flag, or an interactive editor line) into members. This is NEW parsing,
+ * deliberately unlike `parseTags` above: it cuts on commas ONLY (never on
+ * whitespace, so multiword aliases survive) and PRESERVES empty members so
+ * the core write boundary can reject them — an empty alias must fail, never
+ * disappear. Members are trimmed so an editor round-trip parses back to the
+ * exact stored values; emptiness and the caps stay the core boundary's job.
+ * `undefined` (flag absent) stays `undefined`; a present value always yields
+ * at least one member. Pure. */
+export const splitAliasList = (raw: string | undefined): ReadonlyArray<string> | undefined =>
+  raw === undefined ? undefined : raw.split(",").map((member) => member.trim());
+
 export const padId = (n: number): string => String(n).padStart(4, "0");
 
 /* ------------------------------ ids ------------------------------ */

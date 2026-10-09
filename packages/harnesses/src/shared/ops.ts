@@ -25,6 +25,7 @@ import {
   findProjectRoot,
   formatDomainError,
   incompleteMemoryWarning,
+  normalizeAliases,
   projectEngramsDir,
   projectReadmeContent,
   projectReadmePath,
@@ -34,6 +35,7 @@ import {
   searchEngrams,
   searchReport,
   searchPaginationError,
+  validateAliases,
   type ConfigErrorUnion,
   type ConfigRepoShape,
   type Engram,
@@ -455,6 +457,26 @@ const relatedHeaderLine = (related: ReadonlyArray<string> | undefined): string |
   return rest > 0 ? `${line} \u2026 (+${rest} more)` : line;
 };
 
+const ALIASES_HEADER_BUDGET = 1024;
+
+/** ENG-46: the aliases line uses the same bounded pattern as the related
+ * line (R14-d): fixed character budget, explicit remainder marker, and the
+ * full list stays available in the result details. */
+const aliasesHeaderLine = (aliases: ReadonlyArray<string>): string | null => {
+  if (aliases.length === 0) return null;
+  let used = 0;
+  let shown = 0;
+  for (const alias of aliases) {
+    const cost = alias.length + (shown === 0 ? 0 : 2);
+    if (used + cost > ALIASES_HEADER_BUDGET) break;
+    used += cost;
+    shown += 1;
+  }
+  const line = `aliases: ${aliases.slice(0, shown).join(", ")}`;
+  const rest = aliases.length - shown;
+  return rest > 0 ? `${line} \u2026 (+${rest} more)` : line;
+};
+
 /** ENG-77: the tags line uses the same bounded pattern; the cost model
  * mirrors relatedHeaderLine on the rendered `#tag` units plus `, `
  * separator cost beyond the first (the `tags:` prefix and the remainder
@@ -516,6 +538,7 @@ export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, Engram
       // sees the growth. Plain text; no authority implication.
       const source = [m.sourceType, m.sourceRef].filter((p) => p !== undefined).join(" \u00b7 ");
       const relatedLine = relatedHeaderLine(m.related);
+      const aliasesLine = aliasesHeaderLine(m.aliases);
 
       const header = [
         titleHeaderLine(m.id, m.title),
@@ -530,6 +553,9 @@ export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, Engram
         /* ENG-42: one bounded ordered line (see RELATED_HEADER_BUDGET), part
          * of the header so pagination's body-capacity math sees its size. */
         ...(relatedLine !== null ? [relatedLine] : []),
+        /* ENG-46: one bounded ordered aliases line (see
+         * ALIASES_HEADER_BUDGET), right after the related line (R14-d). */
+        ...(aliasesLine !== null ? [aliasesLine] : []),
         ...(m.reviewAfter !== undefined ? [`review-after: ${m.reviewAfter}`] : []),
         ...(m.expires !== undefined ? [`expires: ${m.expires}`] : []),
         ...(source !== "" ? [`source: ${source}`] : []),
@@ -575,6 +601,9 @@ export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, Engram
         /* ENG-42 (turn 3): the full exact list, so ids elided by the header
          * budget stay retrievable when the rendered line is truncated. */
         related: m.related,
+        /* ENG-46: the full exact alias set, so entries elided by the header
+         * budget stay retrievable when the rendered line is truncated. */
+        aliases: m.aliases,
         /* ENG-77: the full untruncated title and the full tags list,
          * mirroring the related precedent so no header elision is silent. */
         title: m.title,
@@ -813,6 +842,15 @@ export const addOp = (opts: AddOptions): Effect.Effect<OpResult, never, EngramSt
         new Set((opts.tags ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean)),
       );
 
+      /* ENG-46: normalize through the core normalizer; rule failures surface
+       * here with the exact core wording. The store boundary re-validates:
+       * it stays authoritative for every caller. */
+      const aliasIssues = validateAliases(opts.aliases ?? []);
+      if (aliasIssues.length > 0) {
+        return err(aliasIssues.map((i) => i.message).join("; "));
+      }
+      const aliases = normalizeAliases(opts.aliases ?? []);
+
       const scan = yield* resolveScan(cfg, scope, root, opts.allowSecrets);
       const attempted = yield* Effect.result(
         store.add(
@@ -827,6 +865,7 @@ export const addOp = (opts: AddOptions): Effect.Effect<OpResult, never, EngramSt
             status: opts.status,
             supersedes: opts.supersedes,
             related: opts.related,
+            aliases,
             reviewAfter: opts.reviewAfter,
             expires: opts.expires,
             sourceType: opts.sourceType,
@@ -945,6 +984,9 @@ export const editOp = (
       patch.status = opts.status;
       patch.supersedes = opts.supersedes;
       patch.related = opts.related;
+      /* ENG-46: three-state like related — undefined preserves, null clears,
+       * an array replaces; the core normalizer validates and normalizes it. */
+      patch.aliases = opts.aliases;
       patch.reviewAfter = opts.reviewAfter;
       patch.expires = opts.expires;
       patch.sourceType = opts.sourceType;

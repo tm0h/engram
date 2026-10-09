@@ -749,3 +749,92 @@ describe("validateEntry / related partial retention (ENG-44 R4)", () => {
     expect(v.partial.scope).toBe("project");
   });
 });
+
+describe("validateEntry / aliases (ENG-46)", () => {
+  it("absent aliases decode as absent (the store defaults to [])", () => {
+    const v = validateEntry(raw());
+    expect(v.issues).toEqual([]);
+    expect(v.frontmatter?.aliases).toBeUndefined();
+  });
+
+  it("valid aliases read back verbatim", () => {
+    const v = validateEntry(raw({ aliases: ["Postgres", "pg_dump"] }));
+    expect(v.issues).toEqual([]);
+    expect(v.frontmatter?.aliases).toEqual(["Postgres", "pg_dump"]);
+  });
+
+  it("noncanonical valid aliases stay readable (raw retained)", () => {
+    const v = validateEntry(raw({ aliases: ["POSTGRES", "Postgres"] }));
+    expect(v.issues).toEqual([]);
+    expect(v.frontmatter?.aliases).toEqual(["POSTGRES", "Postgres"]);
+  });
+
+  it("every non-list shape is aliases_invalid and entry-preventing", () => {
+    for (const bad of ["pg", 7, true, null, { a: 1 }]) {
+      const v = validateEntry(raw({ aliases: bad }));
+      expect(codes(v), JSON.stringify(bad)).toEqual(["aliases_invalid"]);
+      expect(v.frontmatter).toBeUndefined();
+      expect(v.issues[0]!.message).toContain("aliases");
+      expect(v.issues[0]!.hint).not.toBe("");
+    }
+  });
+
+  it("every non-string member is aliases_invalid", () => {
+    for (const member of [7, null, true, {}, []]) {
+      const v = validateEntry(raw({ aliases: ["pg", member] }));
+      expect(codes(v), JSON.stringify(member)).toEqual(["aliases_invalid"]);
+      expect(v.issues[0]!.message).toContain("position 2");
+      expect(v.issues[0]!.hint).not.toBe("");
+    }
+  });
+
+  it("empty-after-trim members are aliases_invalid", () => {
+    for (const member of ["", "   "]) {
+      const v = validateEntry(raw({ aliases: [member] }));
+      expect(codes(v), JSON.stringify(member)).toEqual(["aliases_invalid"]);
+      expect(v.issues[0]!.message).toContain("empty after trimming");
+    }
+  });
+
+  it("81 code points is aliases_invalid; 80 is valid", () => {
+    expect(validateEntry(raw({ aliases: ["p".repeat(80)] })).issues).toEqual([]);
+    const v = validateEntry(raw({ aliases: ["p".repeat(81)] }));
+    expect(codes(v)).toEqual(["aliases_invalid"]);
+    expect(v.frontmatter).toBeUndefined();
+    expect(v.issues[0]!.message).toContain("longer than 80 code points (81)");
+  });
+
+  it("the cap measures the normalized value: 80 raw Turkish i is aliases_invalid (P1-3)", () => {
+    // 40 raw code points lowercase to exactly 80: valid at the boundary
+    expect(validateEntry(raw({ aliases: ["\u0130".repeat(40)] })).issues).toEqual([]);
+    // 80 raw code points lowercase to 160: invalid on read, entry-preventing
+    const v = validateEntry(raw({ aliases: ["\u0130".repeat(80)] }));
+    expect(codes(v)).toEqual(["aliases_invalid"]);
+    expect(v.frontmatter).toBeUndefined();
+  });
+
+  it("21 unique aliases are aliases_invalid; 20 are valid", () => {
+    const twenty = Array.from({ length: 20 }, (_, i) => `alias-${i}`);
+    expect(validateEntry(raw({ aliases: twenty })).issues).toEqual([]);
+    const over = validateEntry(raw({ aliases: [...twenty, "alias-over"] }));
+    expect(codes(over)).toEqual(["aliases_invalid"]);
+    expect(over.frontmatter).toBeUndefined();
+    expect(over.issues[0]!.message).toContain("21 unique values");
+  });
+
+  it("duplicates count once toward the cap (R12: same deduped rule as write)", () => {
+    const twenty = Array.from({ length: 20 }, (_, i) => `alias-${i}`);
+    expect(validateEntry(raw({ aliases: [...twenty, ...twenty] })).issues).toEqual([]);
+  });
+
+  it("aliases joins the modeled key set, so it never lands in metadata", () => {
+    expect(KNOWN_FRONTMATTER_KEYS.has("aliases")).toBe(true);
+    expect(validateEntry(raw({ aliases: ["pg"] })).metadata).toEqual({});
+  });
+
+  it("an unknown-field collision cannot shadow modeled aliases", () => {
+    const merged = mergeUnknownFields({ aliases: ["pg"] }, { aliases: ["forgotten"], keep: "x" });
+    expect(merged.aliases).toEqual(["pg"]);
+    expect(merged.keep).toBe("x");
+  });
+});

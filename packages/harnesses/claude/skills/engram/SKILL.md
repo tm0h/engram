@@ -110,12 +110,20 @@ directional one-way metadata: no reciprocal link is written to the target,
 and a missing target is only a `related_not_found` warning, so forward
 references are fine. Prefixes are not ids; use exact ids.
 
+`aliases` records alternate names a searcher may actually use:
+`--aliases "pg,postgres row level security"` stores them under the YAML key
+`aliases`. Values may be multiword phrases and are distinct from `tags`. The
+store trims, lowercases, and deduplicates them (first occurrence wins).
+Limits: at most 20 unique aliases, 80 characters each. A comma cannot be
+part of an alias through the flag: it is the separator.
+
 `engram edit <id>` changes an existing entry: title, type, tags, body,
 pinned, author, and every lifecycle field. A passed value replaces the
 current one; omitting a flag preserves it; each of the six lifecycle fields
 clears through its paired `--clear-*` flag. Quote multiword values
 (`--title "Two words"`). `--related` replaces the whole list and
-`--clear-related` removes it.
+`--clear-related` removes it. `--aliases` replaces the whole alias set and
+`--clear-aliases` removes it.
 
 ```bash
 engram edit 0012 --clear-status --clear-review-after

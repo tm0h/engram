@@ -74,6 +74,9 @@ export interface AddOptions {
   /** ENG-42: exact same-scope ids, stored as given (order preserved,
    * duplicates rejected); missing targets are advisory. */
   readonly related?: ReadonlyArray<string>;
+  /** ENG-46: alternate names; the core normalizer owns trimming, casing,
+   * dedup, and caps, and the write boundary stays authoritative. */
+  readonly aliases?: ReadonlyArray<string>;
   readonly reviewAfter?: string;
   readonly expires?: string;
   readonly sourceType?: SourceType;
@@ -104,6 +107,9 @@ export interface EditOptions {
   readonly supersedes?: string | null;
   /** ENG-42: undefined preserves, null clears, an array replaces the list. */
   readonly related?: ReadonlyArray<string> | null;
+  /** ENG-46: undefined preserves, null clears, an array replaces the set;
+   * the core normalizer validates and normalizes the replacement. */
+  readonly aliases?: ReadonlyArray<string> | null;
   readonly reviewAfter?: string | null;
   readonly expires?: string | null;
   readonly sourceType?: SourceType | null;

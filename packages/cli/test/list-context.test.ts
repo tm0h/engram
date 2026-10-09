@@ -107,6 +107,7 @@ describe("list and context integrity warnings", () => {
             body: "b",
             pinned: false,
             author: undefined,
+            aliases: [],
           },
           NOSCAN,
         );
@@ -126,6 +127,7 @@ describe("list and context integrity warnings", () => {
             body: "b",
             pinned: false,
             author: undefined,
+            aliases: [],
           },
           NOSCAN,
         );

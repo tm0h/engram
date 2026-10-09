@@ -12,6 +12,7 @@ const mem = (over: Partial<Engram> & { id: string; title: string }): Engram => (
   author: undefined,
   pinned: false,
   schemaVersion: 1,
+  aliases: [],
   body: "",
   path: "",
   ...over,

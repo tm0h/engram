@@ -264,3 +264,63 @@ describe("guidance / related links (ENG-42)", () => {
     expect(claudeSkillText).toContain("engram links <id> --offset n");
   });
 });
+
+describe("guidance / aliases (ENG-46)", () => {
+  const piAdd = piTools.find((t) => t.name === "engram_add")!;
+  const piEdit = piTools.find((t) => t.name === "engram_edit")!;
+  const readSkill = (rel: string): string => fs.readFileSync(path.join(repoRoot, rel), "utf8");
+  const piSkillText = readSkill("packages/harnesses/src/pi/skills/engram/SKILL.md");
+  const claudeSkillText = readSkill("packages/harnesses/claude/skills/engram/SKILL.md");
+  const readmeText = readSkill("README.md");
+
+  it("add tool guidance mentions aliases with the normalization contract", () => {
+    for (const [name, desc] of [
+      ["pi", piAdd.description],
+      ["opencode", ocAdd.description],
+    ] as const) {
+      expect(desc, `${name}: aliases mentioned`).toContain("aliases");
+      expect(desc, `${name}: normalization`).toMatch(/trims|lowercases|deduplicates/i);
+    }
+    const piProps = piAdd.parameters.properties as Record<string, { description?: string }>;
+    expect(piProps.aliases?.description).toMatch(/alternate names/i);
+    const ocArgs = ocAdd.args as Record<string, { description?: string }>;
+    expect(ocArgs.aliases?.description).toMatch(/alternate names/i);
+  });
+
+  it("edit tool guidance states the three-state aliases contract", () => {
+    for (const [name, desc] of [
+      ["pi", piEdit.description],
+      ["opencode", ocEdit.description],
+    ] as const) {
+      expect(desc, `${name}: aliases mentioned`).toContain("aliases");
+      expect(desc, `${name}: null clears`).toMatch(/null clears|clears/i);
+    }
+  });
+
+  it("both skills document aliases together with limits and edit semantics", () => {
+    for (const [name, skill] of [
+      ["pi", piSkillText],
+      ["claude", claudeSkillText],
+    ] as const) {
+      expect(skill, `${name}: aliases guidance`).toMatch(/`?aliases`?/);
+      expect(skill, `${name}: alternate names`).toMatch(/alternate names/i);
+      expect(skill, `${name}: unique cap`).toMatch(/20 unique|max 20|at most 20/i);
+      expect(skill, `${name}: length cap`).toMatch(/80 characters|80 code points/i);
+      expect(skill, `${name}: normalization`).toMatch(/lowercas/i);
+      expect(skill, `${name}: whole-set replacement`).toMatch(/replaces the whole|three-state/i);
+    }
+    // clear surface, named per harness
+    expect(piSkillText).toMatch(/aliases: null|aliases: \[\]/);
+    expect(claudeSkillText).toContain("--clear-aliases");
+    expect(claudeSkillText).toContain("--aliases");
+    // comma limitation is documented on the flag surfaces
+    expect(claudeSkillText).toMatch(/comma/i);
+  });
+
+  it("the README file-format section documents aliases", () => {
+    expect(readmeText).toMatch(/^aliases:/m);
+    expect(readmeText).toMatch(/alternate names/i);
+    expect(readmeText).toMatch(/aliases_invalid/);
+    expect(readmeText).toContain("--clear-aliases");
+  });
+});
