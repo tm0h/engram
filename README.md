@@ -264,7 +264,8 @@ still dropped on edit, while the six modeled lifecycle fields, `related`, and
   store normalizes them: surrounding whitespace is trimmed, values are
   lowercased, and duplicates collapse to the first occurrence, preserving
   order; internal whitespace is kept and values are never split on spaces.
-  Each alias is at most 80 Unicode code points long after trimming, and one
+  Each alias is at most 80 Unicode code points long after trimming and
+  lowercasing, and one
   entry holds at most 20 unique aliases. `engram add --aliases` and
   `engram edit --aliases` split on commas only, so a comma cannot be part of
   an alias through a flag (the structured Pi and OpenCode tools take arrays
