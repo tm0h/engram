@@ -140,12 +140,14 @@ export const normalizeAliases = (values: ReadonlyArray<string>): ReadonlyArray<s
 };
 
 /** ENG-46: validate raw alias members against the one alias contract. Every
- * member must be a string that is non-empty after trimming and at most
- * `MAX_ALIAS_LENGTH` code points long (after trimming); the list may hold at
- * most `MAX_ALIASES` unique normalized values. The count rule dedupes
- * through `normalizeAliases` itself (R12), so read and write sides share a
- * single cap rule and duplicates count once. Member issues come back in list
- * order, then the count issue. Pure. */
+ * member must be a string that is non-empty after trimming, and its
+ * NORMALIZED form (post-trim, post-lowercase) must be at most
+ * `MAX_ALIAS_LENGTH` code points long — lowercasing can expand a value
+ * (e.g. U+0130 doubles), so the cap measures what would actually be stored
+ * (R17a). The list may hold at most `MAX_ALIASES` unique normalized values;
+ * the count rule dedupes through `normalizeAliases` itself (R12), so read
+ * and write sides share a single predicate and duplicates count once.
+ * Member issues come back in list order, then the count issue. Pure. */
 export const validateAliases = (values: ReadonlyArray<unknown>): ReadonlyArray<AliasIssue> => {
   const issues: AliasIssue[] = [];
   const valid: string[] = [];
@@ -165,11 +167,12 @@ export const validateAliases = (values: ReadonlyArray<unknown>): ReadonlyArray<A
       });
       continue;
     }
-    const length = Array.from(trimmed).length;
+    const normalized = trimmed.toLowerCase();
+    const length = Array.from(normalized).length;
     if (length > MAX_ALIAS_LENGTH) {
       issues.push({
-        message: `aliases ${aliasQuote(trimmed)} (position ${position + 1}) is longer than ${MAX_ALIAS_LENGTH} code points (${length})`,
-        hint: `Shorten the alias to at most ${MAX_ALIAS_LENGTH} characters (Unicode code points, not bytes).`,
+        message: `aliases ${aliasQuote(normalized)} (position ${position + 1}) is longer than ${MAX_ALIAS_LENGTH} code points (${length})`,
+        hint: `Shorten the alias to at most ${MAX_ALIAS_LENGTH} characters after lowercasing (Unicode code points, not bytes).`,
       });
       continue;
     }

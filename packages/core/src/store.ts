@@ -1225,12 +1225,31 @@ const makeEngramStoreLive = (
               // partial progress explicit when earlier records committed.
               // Write-then-remove order is load-bearing: removing the source
               // first would turn a failed successor write into data loss.
+              /* ENG-46 (P1-3/R17b): the renumber rewrite validates its
+               * normalized candidate BEFORE any write or removal. A repair
+               * that would produce an invalid entry blocks instead (the
+               * relation-errors-block-dedupe precedent), leaving every file
+               * byte-identical. */
+              const successor: Engram = {
+                ...m,
+                id,
+                updated: nowISO(),
+                aliases: normalizeAliases(m.aliases),
+              };
+              const invalid = yield* Effect.result(validateCandidate(successor, file));
+              if (Result.isFailure(invalid)) {
+                return yield* Effect.fail(
+                  new IntegrityCheckFailedError({
+                    message:
+                      `refusing to dedupe: renumbering "${m.id}" would produce an invalid ` +
+                      `entry (${invalid.failure.message}). Resolve the entry by hand, then retry.`,
+                  }),
+                );
+              }
               const written = yield* Effect.result(
-                fs.writeFileString(
-                  file,
-                  serialize({ ...m, id, updated: nowISO(), aliases: normalizeAliases(m.aliases) }),
-                  { flag: "wx" },
-                ),
+                fs.writeFileString(file, serialize(successor), {
+                  flag: "wx",
+                }),
               );
               if (Result.isFailure(written)) {
                 const step = yield* rollbackStep(

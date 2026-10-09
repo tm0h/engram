@@ -415,6 +415,20 @@ describe("validateAliases (ENG-46)", () => {
     expect(validateAliases([...twenty, ...twenty.map((a) => a.toUpperCase())])).toEqual([]);
   });
 
+  it("measures the cap on the NORMALIZED value (Turkish i expands on lowercase)", () => {
+    // 40 raw code points lowercase to exactly 80: still valid
+    expect(validateAliases(["\u0130".repeat(40)])).toEqual([]);
+    // 41 raw code points lowercase to 82: invalid even though the raw value
+    // is only 41 code points (the pre-fix predicate passed this)
+    const issues = validateAliases(["\u0130".repeat(41)]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.message).toContain("(82)");
+  });
+
+  it("an 80-raw-code-point alias that lowercases to 160 is invalid (P1-3)", () => {
+    expect(validateAliases(["\u0130".repeat(80)])).toHaveLength(1);
+  });
+
   it("reports member issues and the count issue in one pass", () => {
     const twentyOne = Array.from({ length: 21 }, (_, i) => `a${i}`);
     const issues = validateAliases([...twentyOne, ""]);

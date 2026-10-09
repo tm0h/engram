@@ -804,6 +804,15 @@ describe("validateEntry / aliases (ENG-46)", () => {
     expect(v.issues[0]!.message).toContain("longer than 80 code points (81)");
   });
 
+  it("the cap measures the normalized value: 80 raw Turkish i is aliases_invalid (P1-3)", () => {
+    // 40 raw code points lowercase to exactly 80: valid at the boundary
+    expect(validateEntry(raw({ aliases: ["\u0130".repeat(40)] })).issues).toEqual([]);
+    // 80 raw code points lowercase to 160: invalid on read, entry-preventing
+    const v = validateEntry(raw({ aliases: ["\u0130".repeat(80)] }));
+    expect(codes(v)).toEqual(["aliases_invalid"]);
+    expect(v.frontmatter).toBeUndefined();
+  });
+
   it("21 unique aliases are aliases_invalid; 20 are valid", () => {
     const twenty = Array.from({ length: 20 }, (_, i) => `alias-${i}`);
     expect(validateEntry(raw({ aliases: twenty })).issues).toEqual([]);

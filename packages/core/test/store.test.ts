@@ -4848,6 +4848,21 @@ describe("EngramStore / ENG-46 aliases", () => {
     }).pipe(Effect.provide(StoreLive)),
   );
 
+  it.live(
+    "an alias that expands past the cap on lowercase blocks dedupe byte-identically (P1-3)",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* EngramStore;
+        seed("0001-keep-a.md", { ...BASE, title: "Keep a", aliases: ["\u0130".repeat(80)] });
+        seed("0001-keep-b.md", { ...BASE, id: "0001", title: "Keep b" });
+        const before = snapshot(dir());
+
+        const blocked = yield* Effect.flip(store.dedupe("project"));
+        expect((blocked as { _tag: string })._tag).toBe("IntegrityCheckFailedError");
+        expect(snapshot(dir())).toBe(before);
+      }).pipe(Effect.provide(StoreLive)),
+  );
+
   it.live("dedupe renumbering preserves and canonicalizes aliases", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;
