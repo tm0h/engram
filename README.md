@@ -332,7 +332,10 @@ You can edit these by hand (they're just files), but never invent an id:
 ### Structured search
 
 Search uses field-weighted Okapi BM25. Tags carry the most weight, followed by
-titles, types, and bodies. Ranking also rewards rarer terms, normalizes field
+aliases, titles, types, and bodies (tag 5, alias 4, title 3, type 2, body 1,
+plus +0.5 for pinned). Aliases are alternate names, distinct from tags;
+entries hold at most 20 aliases of 80 characters, and multi-word aliases match
+through the phrase bonus. Ranking also rewards rarer terms, normalizes field
 length, and gives pinned entries a small boost.
 
 The query language supports quoted phrases, bounded prefixes, field filters,

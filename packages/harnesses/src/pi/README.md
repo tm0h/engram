@@ -54,14 +54,14 @@ engram config set autoContextLimit 10        # entries per digest, 1..100 (defau
 
 ## What you get
 
-| Surface               | What it does                                                                                                      |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `engram_context` tool | Digest one-liners (id · type · title · tags), decisions & pinned first, `limit`/`offset` pagination.              |
-| `engram_search` tool  | Relevance search with paginated score metadata. Optional `explain` adds matched fields and score contributions.   |
-| `engram_show` tool    | Full entry by id (unique prefixes work); long bodies are char-sliced with a next-call footer.                     |
-| `engram_add` tool     | Record an entry (type defaults from project config; `scope` defaults to `project` in a repo, `personal` outside). |
-| `/engram` command     | Human dispatcher: `context` (default), `search`, `show`, `add <title> -- <body>`, `init`, `help`.                 |
-| `engram` skill        | When to load, search, and record; personal-vs-project rules.                                                      |
+| Surface               | What it does                                                                                                                                         |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `engram_context` tool | Digest one-liners (id · type · title · tags), decisions & pinned first, `limit`/`offset` pagination.                                                 |
+| `engram_search` tool  | Relevance search (tags > alias > title > type > body) with paginated score metadata. Optional `explain` adds matched fields and score contributions. |
+| `engram_show` tool    | Full entry by id (unique prefixes work); long bodies are char-sliced with a next-call footer.                                                        |
+| `engram_add` tool     | Record an entry (type defaults from project config; `scope` defaults to `project` in a repo, `personal` outside).                                    |
+| `/engram` command     | Human dispatcher: `context` (default), `search`, `show`, `add <title> -- <body>`, `init`, `help`.                                                    |
+| `engram` skill        | When to load, search, and record; personal-vs-project rules.                                                                                         |
 
 ## Behavior notes
 

@@ -76,7 +76,7 @@ or load failed), call `engram_context` — it renders the same digest on demand.
 | Tool             | What it does                                                                                                    |
 | ---------------- | --------------------------------------------------------------------------------------------------------------- |
 | `engram_context` | Digest one-liners (id · type · title · tags), decisions and pinned entries first, with `limit`/`offset` paging. |
-| `engram_search`  | Relevance search (tags > title > type > body), paginated.                                                       |
+| `engram_search`  | Relevance search (tags > alias > title > type > body), paginated.                                               |
 | `engram_show`    | Full entry by id (unique prefixes work); long bodies are character-sliced with a next-call footer.              |
 | `engram_add`     | Record an entry (type defaults from project config; `scope` defaults to `project`, including outside a repo).   |
 

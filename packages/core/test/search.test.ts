@@ -370,3 +370,44 @@ describe("call-form identifier ranking (ENG-60)", () => {
     expect(r.map((x) => x.engram.id)).toContain("rival");
   });
 });
+
+describe("searchEngrams: alias field (ENG-47)", () => {
+  it("explains an alias-only match with alias contributions summing to the score", () => {
+    const list = [mem({ id: "0001", title: "", type: "note", aliases: ["postgres"] })];
+    const r = searchEngrams(list, "postgres", undefined, { explain: true });
+    expect(r).toHaveLength(1);
+    expect(r[0]?.explanation?.contributions).toEqual([
+      { field: "alias", token: "postgres", score: expect.any(Number), component: "bm25" },
+    ]);
+    expect(r[0]?.explanation?.contributions.reduce((s, c) => s + c.score, 0)).toBe(r[0]?.score);
+  });
+
+  it("keeps alias-free scores bit-identical and tie order unchanged (D4)", () => {
+    const solo = searchEngrams([mem({ id: "0001", title: "alpha" })], "alpha");
+    expect(solo[0]?.score).toBe(0.39229373516151933);
+    const pair = [
+      mem({ id: "0002", title: "alpha", aliases: ["unrelated"] }),
+      mem({ id: "0001", title: "alpha" }),
+    ];
+    const r = searchEngrams(pair, "alpha");
+    expect(r.map((x) => x.engram.id)).toEqual(["0001", "0002"]);
+    expect(r[0]?.score).toBe(r[1]?.score);
+  });
+
+  it("keeps searchEngramsLegacy alias-free for shadow comparison", () => {
+    const list = [mem({ id: "l1", title: "", type: "note", aliases: ["auth"] })];
+    expect(searchEngramsLegacy(list, "auth")).toEqual([]);
+    expect(searchEngrams(list, "auth").map((x) => x.engram.id)).toEqual(["l1"]);
+  });
+
+  it("degrades an alias:-prefixed chunk to plain words; a title-only match still surfaces (D1)", () => {
+    const list = [mem({ id: "d1", title: "auth", type: "note" })];
+    const r = searchEngrams(list, "alias:auth", undefined, { explain: true });
+    expect(r.map((x) => x.engram.id)).toEqual(["d1"]);
+    expect(r[0]?.explanation?.contributions[0]).toMatchObject({
+      field: "title",
+      token: "auth",
+      component: "bm25",
+    });
+  });
+});

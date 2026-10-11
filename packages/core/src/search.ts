@@ -2,7 +2,7 @@
  * Relevance search over engrams.
  *
  * ENG-18 default ranker: a BM25-style lexical scorer (see `./rank.js`) over
- * the title, tag, type, and body fields, with query syntax from
+ * the tag, alias, title, type, and body fields, with query syntax from
  * `./query.js` (phrases, bounded prefixes, field filters, AND/OR groups).
  * The legacy fixed-points ranker (tag +5, title +3, type +2, body +1,
  * pinned +0.5, substring matching) remains callable as `searchEngramsLegacy`
@@ -29,7 +29,7 @@ export interface SearchResult {
 export type ScoreComponent = "bm25" | "phrase" | "prefix" | "pinned";
 
 export interface ScoreContribution {
-  readonly field: "tag" | "title" | "type" | "body" | "pinned";
+  readonly field: "tag" | "alias" | "title" | "type" | "body" | "pinned";
   /** Normalized query token (or folded phrase text), not source text or a
    * source offset. */
   readonly token: string | null;

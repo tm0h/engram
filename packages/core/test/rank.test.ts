@@ -350,3 +350,214 @@ describe("rankEntries (BM25-style)", () => {
     );
   });
 });
+
+describe("rankEntries: alias field scoring (ENG-47)", () => {
+  it("scores an alias-only match with the alias field weight 4 under controlled statistics", () => {
+    // N=1, df=1: idf = ln(4/3); tfNorm = 1/2.2; alias points = 4 * idf * tfNorm
+    const r = rankEntries(
+      [mem({ id: "e1", title: "", type: "note", aliases: ["alpha"] })],
+      parseQuery("alpha"),
+      { explain: false },
+    );
+    expect(r).toHaveLength(1);
+    expect(r[0]?.score).toBeCloseTo(0.5230583135486924, 5);
+  });
+
+  it("includes an entry whose only query match lives in the alias field (inclusion gate)", () => {
+    const r = rankEntries(
+      [mem({ id: "gate", title: "", type: "note", aliases: ["postgres"] })],
+      parseQuery("postgres"),
+      { explain: false },
+    );
+    expect(ids(r)).toEqual(["gate"]);
+  });
+
+  it("orders tag above alias above title for identical per-field statistics", () => {
+    const entries = [
+      mem({ id: "a-title", title: "fact", type: "note" }),
+      mem({ id: "a-alias", title: "", type: "note", aliases: ["fact"] }),
+      mem({ id: "a-tag", title: "", type: "note", tags: ["fact"] }),
+    ];
+    const r = rankEntries(entries, parseQuery("fact"), { explain: false });
+    // the shared type "note" cannot match "fact"; each remaining field has
+    // exactly one non-empty entry, so idf and tfNorm are identical across
+    // fields (N=3, df=1, avgdl=1/3, len=1) and only the weight differs
+    expect(ids(r)).toEqual(["a-tag", "a-alias", "a-title"]);
+    expect(r[0]?.score).toBeCloseTo(1.2260365662646577, 5);
+    expect(r[1]?.score).toBeCloseTo(0.9808292530117262, 5);
+    expect(r[2]?.score).toBeCloseTo(0.7356219397587946, 5);
+  });
+
+  it("matches a quoted phrase spanning an alias boundary through the joined alias text (R9)", () => {
+    const r = rankEntries(
+      [mem({ id: "r9", title: "", type: "note", aliases: ["row", "level security"] })],
+      parseQuery('"row level"'),
+      { explain: true },
+    );
+    expect(ids(r)).toEqual(["r9"]);
+    const phrase = r[0]?.explanation?.contributions.find((c) => c.component === "phrase");
+    expect(phrase).toMatchObject({ field: "alias", token: "row level", score: 8 });
+  });
+
+  it("adds the alias phrase bonus once per field", () => {
+    const r = rankEntries(
+      [
+        mem({
+          id: "once",
+          title: "",
+          type: "note",
+          aliases: ["alpha row level", "row level beta"],
+        }),
+      ],
+      parseQuery('"row level"'),
+      { explain: true },
+    );
+    const phrases = r[0]?.explanation?.contributions.filter(
+      (c) => c.component === "phrase" && c.field === "alias",
+    );
+    expect(phrases).toHaveLength(1);
+    expect(phrases?.[0]?.score).toBe(8);
+  });
+
+  it("falls back to prefix matching through alias tokens for eligible words", () => {
+    const r = rankEntries(
+      [mem({ id: "k8s", title: "", type: "note", aliases: ["kubernetes"] })],
+      parseQuery("kuber"),
+      { explain: true },
+    );
+    expect(ids(r)).toEqual(["k8s"]);
+    // a word term stays component "bm25" even when counted in prefix mode;
+    // only explicit stem* terms report "prefix"
+    const c = r[0]?.explanation?.contributions[0];
+    expect(c).toMatchObject({ field: "alias", token: "kuber", component: "bm25" });
+    // N=1, df=1, tf=1, len=1, avgdl=1: same controlled value as exact alias matches
+    expect(r[0]?.score).toBeCloseTo(0.5230583135486924, 5);
+  });
+
+  it("matches a stem* term only through the alias field", () => {
+    const r = rankEntries(
+      [mem({ id: "d1", title: "ops notes", type: "note", aliases: ["deploying"] })],
+      parseQuery("deploy*"),
+      { explain: true },
+    );
+    expect(ids(r)).toEqual(["d1"]);
+    const c = r[0]?.explanation?.contributions[0];
+    expect(c).toMatchObject({ field: "alias", token: "deploy", component: "prefix" });
+  });
+
+  it("cannot double-score a repeated query term on an alias-carrying entry (D2)", () => {
+    const entry = [mem({ id: "d2", title: "guide", type: "note", aliases: ["auth"] })];
+    const once = rankEntries(entry, parseQuery("auth"), { explain: false });
+    const twice = rankEntries(entry, parseQuery("auth auth"), { explain: false });
+    expect(twice[0]?.score).toBe(once[0]?.score);
+  });
+
+  it("ignores a degenerate empty-split alias while sibling aliases still score (D3)", () => {
+    const entry = [mem({ id: "d3", title: "", type: "note", aliases: ["...", "kubernetes"] })];
+    expect(ids(rankEntries(entry, parseQuery("..."), { explain: true }))).toEqual([]);
+    const r = rankEntries(entry, parseQuery("kubernetes"), { explain: true });
+    expect(ids(r)).toEqual(["d3"]);
+    expect(r[0]?.explanation?.contributions.every((c) => c.score > 0)).toBe(true);
+  });
+
+  it("scores within the ENG-46 caps: 20 aliases of 80 characters each", () => {
+    const aliases = Array.from({ length: 20 }, (_, i) => `alias${i}-${"x".repeat(80 - 8)}`);
+    const entry = [mem({ id: "cap", title: "", type: "note", aliases })];
+    const q = parseQuery(aliases[19] ?? "");
+    const first = rankEntries(entry, q, { explain: true });
+    expect(ids(first)).toEqual(["cap"]);
+    expect(rankEntries(entry, q, { explain: true })).toEqual(first);
+  });
+
+  it("breaks alias-match score ties by id ascending", () => {
+    const entries = [
+      mem({ id: "b", title: "", type: "note", aliases: ["same"] }),
+      mem({ id: "a", title: "", type: "note", aliases: ["same"] }),
+    ];
+    const r = rankEntries(entries, parseQuery("same"), { explain: false });
+    expect(ids(r)).toEqual(["a", "b"]);
+    expect(r[0]?.score).toBe(r[1]?.score);
+  });
+
+  it("keeps alias-free scores bit-identical, with or without non-matching aliases (D4)", () => {
+    // exact golden, derived from the documented model: 3 * ln(4/3) / 2.2
+    const plain = rankEntries([mem({ id: "g", title: "alpha" })], parseQuery("alpha"), {
+      explain: false,
+    });
+    expect(plain[0]?.score).toBe(0.39229373516151933);
+    const withAliases = rankEntries(
+      [mem({ id: "g", title: "alpha", aliases: ["unrelated"] })],
+      parseQuery("alpha"),
+      { explain: false },
+    );
+    expect(withAliases[0]?.score).toBe(plain[0]?.score);
+  });
+
+  it("emits alias contributions between tag and title for a token hitting several fields", () => {
+    const entry = mem({
+      id: "ord",
+      title: "alpha",
+      type: "note",
+      tags: ["alpha"],
+      aliases: ["alpha"],
+      body: "",
+    });
+    const r = rankEntries([entry], parseQuery("alpha"), { explain: true });
+    expect(r[0]?.explanation?.contributions.map((c) => c.field)).toEqual(["tag", "alias", "title"]);
+  });
+
+  it("emits the full fixed order tag, alias, title, type, body, pinned last, summing to the score", () => {
+    // one token ("note") hits all five fields, pinning the within-token field
+    // order; the phrase term shows token-major interleaving after it
+    const entry = mem({
+      id: "mix",
+      title: "note",
+      type: "note",
+      tags: ["note"],
+      aliases: ["note pg admin"],
+      body: "note",
+      pinned: true,
+    });
+    const explained = rankEntries([entry], parseQuery('note "pg admin"'), {
+      explain: true,
+    });
+    const contributions = explained[0]?.explanation?.contributions ?? [];
+    expect(contributions.map((c) => [c.field, c.token, c.component])).toEqual([
+      ["tag", "note", "bm25"],
+      ["alias", "note", "bm25"],
+      ["title", "note", "bm25"],
+      ["type", "note", "bm25"],
+      ["body", "note", "bm25"],
+      ["alias", "pg", "bm25"],
+      ["alias", "admin", "bm25"],
+      ["alias", "pg admin", "phrase"],
+      ["pinned", null, "pinned"],
+    ]);
+    expect(contributions[7]?.score).toBe(8);
+    expect(contributions.reduce((s, c) => s + c.score, 0)).toBe(explained[0]?.score);
+    const plain = rankEntries([entry], parseQuery('note "pg admin"'), {
+      explain: false,
+    });
+    expect(plain[0]?.score).toBe(explained[0]?.score);
+    expect(plain[0]).not.toHaveProperty("explanation");
+  });
+
+  it("treats a missing aliases key as an empty alias field (HIGH-1 regression)", () => {
+    // Benchmark fixtures cast JSON into Engram, so the aliases key can be
+    // absent in memory even though store reads default it to []. Scoring
+    // must not throw and must be indistinguishable from aliases: [].
+    const { aliases: _omitted, ...withoutKey } = mem({ id: "twin", title: "alpha" });
+    const absent = withoutKey as unknown as Engram;
+    const twin = mem({ id: "twin", title: "alpha" });
+    expect(() => rankEntries([absent], parseQuery("alpha"), { explain: true })).not.toThrow();
+    // scoring is identical; only the input payload differs (key absent vs [])
+    const strip = (rs: ReturnType<typeof rankEntries>) =>
+      rs.map((r) => ({ score: r.score, explanation: r.explanation }));
+    expect(strip(rankEntries([absent], parseQuery("alpha"), { explain: true }))).toEqual(
+      strip(rankEntries([twin], parseQuery("alpha"), { explain: true })),
+    );
+    expect(rankEntries([absent], parseQuery("alpha"), { explain: true })[0]?.score).toBe(
+      rankEntries([twin], parseQuery("alpha"), { explain: true })[0]?.score,
+    );
+  });
+});

@@ -112,10 +112,13 @@ references are fine. Prefixes are not ids; use exact ids.
 
 `aliases` records alternate names a searcher may actually use:
 `--aliases "pg,postgres row level security"` stores them under the YAML key
-`aliases`. Values may be multiword phrases and are distinct from `tags`. The
-store trims, lowercases, and deduplicates them (first occurrence wins).
-Limits: at most 20 unique aliases, 80 characters each. A comma cannot be
-part of an alias through the flag: it is the separator.
+`aliases`. Values may be multiword phrases and are distinct from `tags`.
+Search scores them as a weighted BM25 field between tags and titles
+(tag 5, alias 4, title 3, type 2, body 1, plus pinned +0.5). Multi-word aliases
+match through the phrase bonus. The store trims, lowercases, and
+deduplicates them (first occurrence wins). Limits: at most 20 unique aliases,
+80 characters each. A comma cannot be part of an alias through the flag: it
+is the separator.
 
 `engram edit <id>` changes an existing entry: title, type, tags, body,
 pinned, author, and every lifecycle field. A passed value replaces the

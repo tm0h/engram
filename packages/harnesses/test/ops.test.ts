@@ -76,6 +76,9 @@ const seed = (root: string, id: string, over: Partial<EngramInput>): string => {
     ...(i.expires !== undefined ? [`expires: ${i.expires}`] : []),
     ...(i.sourceType !== undefined ? [`sourceType: ${i.sourceType}`] : []),
     ...(i.sourceRef !== undefined ? [`sourceRef: ${JSON.stringify(i.sourceRef)}`] : []),
+    ...(i.aliases !== undefined && i.aliases.length > 0
+      ? [`aliases: ${JSON.stringify(i.aliases)}`]
+      : []),
   ].join("\n");
   fs.writeFileSync(file, `---\n${fm}\n---\n${i.body}\n`);
   return file;
@@ -395,6 +398,54 @@ describe("shared ops / searchOp", () => {
     expect(JSON.stringify(res)).not.toContain(tmp);
     const plain = await run(searchOp({ query: "auth", scope: "project" }));
     expect((plain.details.results as object[])[0]).not.toHaveProperty("explanation");
+  });
+
+  it("surfaces an alias-only match through the shared search op (ENG-47)", async () => {
+    seed(tmp, "0001", { title: "Connection pool", aliases: ["pgbouncer"] });
+    const res = await run(searchOp({ query: "pgbouncer", scope: "project", explain: true }));
+    expect(res.isError).toBe(false);
+    expect(res.details).toMatchObject({ total: 1 });
+    expect(res.text).toContain("Connection pool");
+    const results = res.details.results as Array<{
+      id: string;
+      explanation: { contributions: Array<{ field: string; token: string; component: string }> };
+    }>;
+    expect(results[0]?.explanation.contributions[0]).toMatchObject({
+      field: "alias",
+      token: "pgbouncer",
+      component: "bm25",
+    });
+  });
+
+  it("ranks a tag match above an equal alias match (ENG-47)", async () => {
+    seed(tmp, "0001", { title: "Tag entry", tags: ["auth"] });
+    seed(tmp, "0002", { title: "Alias entry", aliases: ["auth"] });
+    const res = await run(searchOp({ query: "auth", scope: "project" }));
+    const iTag = res.text.indexOf("Tag entry");
+    const iAlias = res.text.indexOf("Alias entry");
+    expect(iTag).toBeGreaterThan(-1);
+    expect(iAlias).toBeGreaterThan(-1);
+    expect(iTag).toBeLessThan(iAlias);
+  });
+
+  it("breaks alias-match ties by id ascending (ENG-47)", async () => {
+    seed(tmp, "0002", { title: "Second", aliases: ["kappa"] });
+    seed(tmp, "0001", { title: "First", aliases: ["kappa"] });
+    const res = await run(searchOp({ query: "kappa", scope: "project" }));
+    const iFirst = res.text.indexOf("First");
+    const iSecond = res.text.indexOf("Second");
+    expect(iFirst).toBeGreaterThan(-1);
+    expect(iFirst).toBeLessThan(iSecond);
+  });
+
+  it("paginates alias-only matches after ranking (ENG-47)", async () => {
+    for (let i = 1; i <= 12; i++)
+      seed(tmp, String(i).padStart(4, "0"), { title: `Alias page ${i}`, aliases: ["zeta"] });
+    const page1 = await run(searchOp({ query: "zeta", scope: "project", limit: 10 }));
+    expect(page1.details).toMatchObject({ total: 12, nextOffset: 10 });
+    const page2 = await run(searchOp({ query: "zeta", scope: "project", limit: 10, offset: 10 }));
+    expect(page2.details).toMatchObject({ nextOffset: null });
+    expect(page2.text).toContain("Alias page 12");
   });
 });
 

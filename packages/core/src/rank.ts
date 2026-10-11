@@ -11,8 +11,9 @@
  *              with k1 = 1.2, b = 0.75
  *   points     = FIELD_WEIGHTS[f] * idf * tfNorm
  *
- * Field weights keep the legacy ranker's preference order (tag > title >
- * type > body). Entries get the legacy +0.5 pinned boost when pinned. The
+ * Field weights keep the legacy ranker's preference order, extended with the
+ * ENG-47 alias field: tag 5, alias 4, title 3, type 2, body 1. Entries get
+ * the legacy +0.5 pinned boost when pinned. The
  * boost may surface an otherwise unrelated entry for a plain query, but it
  * cannot bypass explicit field filters or AND requirements.
  *
@@ -38,7 +39,7 @@
  *   evidence-complete across the whole query.
  *
  * Explanations (contributions) are token-major, fields in the fixed order
- * tag, title, type, body, pinned last, and sum exactly to the score. They
+ * tag, alias, title, type, body, pinned last, and sum exactly to the score. They
  * carry normalized query tokens only, never source text or offsets.
  *
  * Performance notes (measured, see benchmark/shadow.ts): field folding has
@@ -55,9 +56,17 @@ import type { ScoreComponent, ScoreContribution, SearchResult } from "./search.j
 
 export const BM25_K1 = 1.2;
 export const BM25_B = 0.75;
-/** Field weights: the legacy ranker's hierarchy (tag 5, title 3, type 2, body 1). */
-export const FIELD_WEIGHTS: Record<SearchFieldName, number> = {
+/** Rank-side field names: the queryable search fields plus the ENG-47 alias
+ * field. Aliases have no query syntax (no `alias:` filter) and are scored
+ * only as part of unscoped terms, so this union exists on the rank side
+ * only; the parser's `SearchFieldName` stays unchanged. */
+type RankFieldName = SearchFieldName | "alias";
+
+/** Field weights: the legacy ranker's hierarchy (tag 5, title 3, type 2,
+ * body 1) with the ENG-47 alias field at 4, between tag and title. */
+export const FIELD_WEIGHTS: Record<RankFieldName, number> = {
   tag: 5,
+  alias: 4,
   title: 3,
   type: 2,
   body: 1,
@@ -69,7 +78,7 @@ export const PHRASE_WEIGHT = 2;
 /** Minimum folded length for a word token to fall back to prefix matching. */
 export const PREFIX_FALLBACK_MIN = 3;
 
-const FIELD_ORDER: ReadonlyArray<SearchFieldName> = ["tag", "title", "type", "body"];
+const FIELD_ORDER: ReadonlyArray<RankFieldName> = ["tag", "alias", "title", "type", "body"];
 
 const FIELD_SPLIT = /[^\p{L}\p{N}\p{M}]+/u;
 
@@ -84,11 +93,18 @@ function foldField(raw: string): string {
   return raw.toLowerCase();
 }
 
-/** Folded field text: tags join with spaces; everything else is the field. */
-function fieldText(m: Engram, field: SearchFieldName): string {
+/** Folded field text: tags and aliases join with spaces; everything else
+ * is the field. Alias text is the joined-then-folded list, so a phrase may
+ * span an alias boundary exactly as it spans a tag boundary (ENG-47 R9). */
+function fieldText(m: Engram, field: RankFieldName): string {
   switch (field) {
     case "tag":
       return m.tags.join(" ");
+    case "alias":
+      // aliases is store-defaulted to [] but can be absent on Engram values
+      // built outside the store (JSON fixture casts); an entry without alias
+      // data simply has an empty alias field (ENG-47 D3 family).
+      return (m.aliases ?? []).join(" ");
     case "title":
       return m.title;
     case "type":
@@ -116,7 +132,7 @@ interface FieldStats {
   readonly avgdl: number;
 }
 
-function buildFieldStats(candidates: ReadonlyArray<Engram>, field: SearchFieldName): FieldStats {
+function buildFieldStats(candidates: ReadonlyArray<Engram>, field: RankFieldName): FieldStats {
   const tokens: string[][] = [];
   const texts: string[] = [];
   const lengths: number[] = [];
@@ -225,7 +241,7 @@ function expandCallFormTokens(parsed: ParsedQuery): ParsedQuery {
   return changed ? { alternatives } : parsed;
 }
 
-function tfNorm(stats: FieldStats, field: SearchFieldName, index: number, tf: number): number {
+function tfNorm(stats: FieldStats, field: RankFieldName, index: number, tf: number): number {
   if (tf === 0 || stats.avgdl === 0) return 0;
   return tf / (tf + BM25_K1 * (1 - BM25_B + (BM25_B * stats.lengths[index]) / stats.avgdl));
 }
@@ -247,9 +263,9 @@ function idfFromDf(stats: FieldStats, df: number): number {
 /** Memoized document frequency for one (field, stem) with prefix or exact
  * counting, lazily computed over the candidate set once per query. */
 function dfOf(
-  stats: Record<SearchFieldName, FieldStats>,
+  stats: Record<RankFieldName, FieldStats>,
   memo: Map<string, number>,
-  field: SearchFieldName,
+  field: RankFieldName,
   stem: string,
   prefix: boolean,
 ): number {
@@ -268,7 +284,7 @@ function dfOf(
 function scoreTerm(
   term: QueryTerm,
   entryIndex: number,
-  stats: Record<SearchFieldName, FieldStats>,
+  stats: Record<RankFieldName, FieldStats>,
   dfMemo: Map<string, number>,
   /** Point values in contribution order; the entry score is the exact
    * left-to-right sum of this sequence (always collected). */
@@ -276,11 +292,11 @@ function scoreTerm(
   /** Contribution objects; only built when explaining. */
   contributions: ScoreContribution[] | undefined,
 ): boolean {
-  const fields: ReadonlyArray<SearchFieldName> =
+  const fields: ReadonlyArray<RankFieldName> =
     term.field !== undefined ? [term.field] : FIELD_ORDER;
   let matched = false;
   const add = (
-    field: SearchFieldName,
+    field: RankFieldName,
     token: string,
     score: number,
     component: ScoreComponent,
@@ -368,10 +384,11 @@ export function rankEntries(
   const expanded = expandCallFormTokens(parsed);
   const stats = {
     tag: buildFieldStats(candidates, "tag"),
+    alias: buildFieldStats(candidates, "alias"),
     title: buildFieldStats(candidates, "title"),
     type: buildFieldStats(candidates, "type"),
     body: buildFieldStats(candidates, "body"),
-  } satisfies Record<SearchFieldName, FieldStats>;
+  } satisfies Record<RankFieldName, FieldStats>;
   const dfMemo = new Map<string, number>();
 
   const results: SearchResult[] = [];
