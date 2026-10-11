@@ -26,7 +26,7 @@ describe("search explanations and public reports", () => {
   it("accounts for every score contribution without exposing field contents", () => {
     const [r] = searchEngrams([entry()], "café note", undefined, { explain: true });
     const contributions = r.explanation?.contributions ?? [];
-    // token-major order, fields tag/title/type/body, pinned last
+    // token-major order, fields tag/alias/title/type/body, pinned last
     expect(contributions.map((c) => [c.field, c.token, c.component])).toEqual([
       ["tag", "cafe", "bm25"],
       ["title", "cafe", "bm25"],

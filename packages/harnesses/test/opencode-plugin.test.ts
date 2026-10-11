@@ -10,12 +10,19 @@ import { Value } from "typebox/value";
 
 /* ------------------------------- fixtures ------------------------------- */
 
-const seedEntry = (root: string, id: string, title: string, type = "note"): void => {
+const seedEntry = (
+  root: string,
+  id: string,
+  title: string,
+  type = "note",
+  aliases: string[] = [],
+): void => {
   const fm = [
     `id: "${id}"`,
     `title: ${JSON.stringify(title)}`,
     `type: ${type}`,
     "tags: []",
+    ...(aliases.length > 0 ? [`aliases: ${JSON.stringify(aliases)}`] : []),
     "scope: project",
     "created: 2026-08-16T10:00:00.000Z",
     "updated: 2026-08-16T10:00:00.000Z",
@@ -694,5 +701,33 @@ describe("engram opencode plugin / aliases (ENG-46)", () => {
       const oc = ocEdit.safeParse(args).success;
       expect([i, pi, oc]).toEqual([i, oc, pi]);
     }
+  });
+});
+
+describe("engram opencode plugin / search aliases (ENG-47)", () => {
+  let env: ToolEnv;
+  beforeEach(() => {
+    env = enterProject();
+  });
+  afterEach(() => leaveProject(env));
+
+  it("engram_search description mentions alias scoring without alias: syntax (ENG-47)", async () => {
+    const tools = await loadTools();
+    const desc = tools.engram_search.description;
+    expect(desc).toMatch(/aliases/i);
+    expect(desc).toMatch(/tags score highest, then aliases/i);
+    // D1: no alias: filter syntax is documented anywhere on the surface
+    expect(desc).not.toMatch(/alias:/);
+    const args = tools.engram_search.args as Record<string, { description?: string }>;
+    expect(args.query?.description).toMatch(/matched against tags, aliases/i);
+    expect(args.query?.description).not.toMatch(/alias:/);
+  });
+
+  it("retrieves an alias-only match end to end (ENG-47)", async () => {
+    seedEntry(env.tmp, "0001", "Connection pool", "note", ["pgbouncer"]);
+    const tools = await loadTools();
+    const res = await execute(tools.engram_search, { query: "pgbouncer" });
+    expect(res.output).toContain("Connection pool");
+    expect(res.metadata).toMatchObject({ total: 1, isError: false });
   });
 });

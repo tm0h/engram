@@ -75,12 +75,14 @@ export const engramContextTool = {
 
 export const engramSearchTool = {
   description:
-    `Keyword-search recorded engrams (tags score highest, then titles, types, bodies). ` +
+    `Keyword-search recorded engrams (tags score highest, then aliases, titles, types, bodies). ` +
     `Use when you need specifics beyond the digest - "auth", "migrations", the name of a library. ` +
     `Returns matching one-line entries and structured score summaries; read one with engram_show. Results are paginated. ` +
     `Set explain to include matched fields and score contributions in metadata.`,
   args: {
-    query: z.string().describe("Search keywords (matched against tags, titles, bodies)."),
+    query: z
+      .string()
+      .describe("Search keywords (matched against tags, aliases, titles, types, and bodies)."),
     explain: z
       .boolean()
       .optional()

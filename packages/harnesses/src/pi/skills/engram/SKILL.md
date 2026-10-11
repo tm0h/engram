@@ -96,9 +96,11 @@ ids; use exact ids.
 
 `aliases` are optional alternate names searchers may actually use, e.g.
 `aliases: ["pg", "postgres row level security"]`. They may be multiword
-phrases and are distinct from `tags`. The store trims, lowercases, and
-deduplicates them (first occurrence wins). Limits: at most 20 unique aliases,
-80 characters each.
+phrases and are distinct from `tags`. Search scores them as a weighted BM25
+field between tags and titles (tag 5, alias 4, title 3, type 2, body 1, plus
+pinned +0.5); multi-word aliases match through the phrase bonus. The store
+trims, lowercases, and deduplicates them (first occurrence wins). Limits: at
+most 20 unique aliases, 80 characters each.
 
 Example: `engram_add({ title: "…", body: "…", status: "superseded",
 supersedes: "0012", related: ["0007"], aliases: ["pg"],

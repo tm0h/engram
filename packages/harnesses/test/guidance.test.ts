@@ -324,3 +324,36 @@ describe("guidance / aliases (ENG-46)", () => {
     expect(readmeText).toContain("--clear-aliases");
   });
 });
+
+describe("guidance / alias scoring (ENG-47)", () => {
+  const readSkill = (rel: string): string => fs.readFileSync(path.join(repoRoot, rel), "utf8");
+  const piSkillText = readSkill("packages/harnesses/src/pi/skills/engram/SKILL.md");
+  const claudeSkillText = readSkill("packages/harnesses/claude/skills/engram/SKILL.md");
+  const readmeText = readSkill("README.md");
+  const piReadmeText = readSkill("packages/harnesses/src/pi/README.md");
+  const ocReadmeText = readSkill("packages/harnesses/src/opencode/README.md");
+
+  it("both skills state alias scoring in R8 wording: relative weights, phrase path, no filter syntax", () => {
+    for (const [name, skill] of [
+      ["pi", piSkillText],
+      ["claude", claudeSkillText],
+    ] as const) {
+      expect(skill, `${name}: relative BM25 weight order`).toMatch(
+        /tag 5, alias 4, title 3, type 2, body 1/,
+      );
+      expect(skill, `${name}: pinned boost`).toMatch(/pinned \+0\.5/);
+      expect(skill, `${name}: phrase path`).toMatch(/multi-word aliases[^.]*phrase/i);
+      // D1: alias search guidance must not document alias filter syntax
+      expect(skill, `${name}: no alias filter syntax`).not.toMatch(/alias:\s/);
+    }
+  });
+
+  it("README surfaces carry the alias weight order and caps", () => {
+    expect(readmeText).toMatch(/aliases, titles, types, and bodies/);
+    expect(readmeText).toMatch(/alias 4/);
+    expect(readmeText).toMatch(/20 aliases of 80 characters/);
+    expect(readmeText).toMatch(/phrase bonus/);
+    expect(piReadmeText).toMatch(/tags > alias > title > type > body/);
+    expect(ocReadmeText).toMatch(/tags > alias > title > type > body/);
+  });
+});

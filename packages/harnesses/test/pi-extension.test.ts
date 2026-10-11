@@ -64,12 +64,19 @@ const notified = (ctx: ExtensionCommandContext): Array<{ text: string; level: st
 
 /* ------------------------------- tests ------------------------------- */
 
-const seedEntry = (root: string, id: string, title: string, type = "note"): void => {
+const seedEntry = (
+  root: string,
+  id: string,
+  title: string,
+  type = "note",
+  aliases: string[] = [],
+): void => {
   const fm = [
     `id: "${id}"`,
     `title: ${JSON.stringify(title)}`,
     `type: ${type}`,
     "tags: []",
+    ...(aliases.length > 0 ? [`aliases: ${JSON.stringify(aliases)}`] : []),
     "scope: project",
     "created: 2026-08-16T10:00:00.000Z",
     "updated: 2026-08-16T10:00:00.000Z",
@@ -1694,5 +1701,55 @@ describe("engram extension / aliases (ENG-46)", () => {
     const help = notified(ctx)[0]!.text;
     expect(help).toContain("--aliases");
     expect(help).toContain("--clear-aliases");
+  });
+});
+
+describe("engram extension / search aliases (ENG-47)", () => {
+  let orig = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  beforeEach(() => {
+    orig = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "engram-pi-aliassearch-"));
+    process.chdir(tmp);
+    process.env.HOME = home;
+  });
+  afterEach(() => {
+    process.chdir(orig);
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const searchTool = (): RegisteredTool => {
+    const { pi, tools } = fakePi();
+    engramExtension(pi);
+    return tools.find((t) => t.name === "engram_search")!;
+  };
+
+  it("engram_search description mentions alias scoring without alias: syntax (ENG-47)", () => {
+    const search = searchTool();
+    expect(search.description).toMatch(/aliases/i);
+    expect(search.description).toMatch(/tags score highest, then aliases/i);
+    // D1: no alias: filter syntax is documented anywhere on the surface
+    expect(search.description).not.toMatch(/alias:/);
+    const props = search.parameters.properties as Record<string, { description?: string }>;
+    expect(props.query?.description).toMatch(/matched against tags, aliases/i);
+    expect(props.query?.description).not.toMatch(/alias:/);
+  });
+
+  it("retrieves an alias-only match end to end (ENG-47)", async () => {
+    seedEntry(tmp, "0001", "Connection pool", "note", ["pgbouncer"]);
+    const search = searchTool();
+    const res = (await search.execute("c1", { query: "pgbouncer", scope: "project" })) as {
+      isError: boolean;
+      content: Array<{ type: string; text: string }>;
+    };
+    expect(res.isError).toBe(false);
+    expect(res.content[0]?.text).toContain("Connection pool");
   });
 });
