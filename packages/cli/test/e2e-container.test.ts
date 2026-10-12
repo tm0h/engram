@@ -139,6 +139,30 @@ describe("Docker E2E runner", () => {
     expect(e2e).toContain(`engram search '"slithy toves"' --json`);
   });
 
+  it("pins audit coverage for the schema version, frontmatter survival, and hook sidecar surfaces", () => {
+    const e2e = readRepoFile("scripts/e2e-cli.sh");
+
+    expect(e2e).toContain(`step "Entry schema version"`);
+    expect(e2e).toContain('item.code === "schema_version_unsupported"');
+    expect(e2e).toContain('item.code === "schema_version_invalid"');
+    expect(e2e).toContain('grep -F "[schema_version_invalid]"');
+    expect(e2e).toContain("/^updated: /i schemaVersion: 2");
+    expect(e2e).toContain("did not preserve exactly one schemaVersion key");
+
+    expect(e2e).toContain("confidence: high");
+    expect(e2e).toContain('grep -F "confidence: high"');
+
+    expect(e2e).toContain('grep -F "engram hook claude-code resume"');
+    expect(e2e).toContain('grep -F "engram hook claude-code compact"');
+    expect(e2e).toContain(
+      'grep -F "engram hook claude-code startup" "$hook_home/claude-config/engram-managed.json"',
+    );
+    expect(e2e).toContain("claude-code install did not write the ownership sidecar");
+    expect(e2e).toContain("claude-code uninstall left the ownership sidecar behind");
+    expect(e2e).toContain("codex install did not write the ownership sidecar");
+    expect(e2e).toContain("codex uninstall left the ownership sidecar behind");
+  });
+
   it("exposes executable entry points through the workspace package", () => {
     const packageJson = JSON.parse(readRepoFile("package.json")) as {
       scripts: Record<string, string>;

@@ -189,6 +189,18 @@ check_json=$(engram check --json)
 printf '%s\n' "$check_json" |
   parse_json 'value.ok === true && value.scopes.includes("project")'
 
+# ENG-40 (R7): unknown top-level frontmatter keys survive CLI-mediated
+# writes. The key is planted, a retitling edit rewrites the file, and both
+# the new title and the planted key must be in the rewritten file.
+replacement_file=$(find .engram/engrams -type f -name "${replacement_id}-*.md" -print -quit)
+[[ -n "$replacement_file" ]] || fail "could not locate replacement fixture"
+sed -i '/^updated: /i confidence: high' "$replacement_file"
+engram edit "$replacement_id" --title "Current release database v2" >/dev/null
+renamed_file=$(find .engram/engrams -type f -name "${replacement_id}-*.md" -print -quit)
+[[ -n "$renamed_file" ]] || fail "retitle lost the replacement fixture"
+grep -F "confidence: high" "$renamed_file"
+grep -F "title: Current release database v2" "$renamed_file"
+
 step "Related entry links"
 related_output=$(
   engram add \
@@ -394,6 +406,55 @@ rm -f "$malformed_path"
 engram check --json |
   parse_json 'value.ok === true && value.scopes.includes("project")'
 
+step "Entry schema version"
+# An unsupported integer version is warning-only: check stays green and a
+# CLI-mediated retitle preserves the version through the rewrite (ENG-41).
+future_output=$(
+  engram add \
+    --title "Future schema probe" \
+    "This entry carries an unsupported schema version."
+)
+future_id=$(printf '%s\n' "$future_output" | entry_id)
+future_file=$(find .engram/engrams -type f -name "${future_id}-*.md" -print -quit)
+[[ -n "$future_file" ]] || fail "could not locate schema fixture"
+sed -i '/^updated: /i schemaVersion: 2' "$future_file"
+engram check --json |
+  parse_json 'value.ok === true && value.diagnostics.some((item) => item.code === "schema_version_unsupported" && item.severity === "warning")'
+engram show "$future_id" | grep -F "Future schema probe"
+engram edit "$future_id" --title "Future schema probe, renamed" >/dev/null
+future_renamed_file=$(find .engram/engrams -type f -name "${future_id}-*.md" -print -quit)
+[[ -n "$future_renamed_file" ]] || fail "retitle lost the schema fixture"
+[[ $(grep -cF "schemaVersion: 2" "$future_renamed_file") == 1 ]] ||
+  fail "the rewrite did not preserve exactly one schemaVersion key"
+
+# A non-integer version is entry-preventing: check fails with the stable
+# code, the entry vanishes from the default list, and removing the file
+# restores a clean store.
+broken_output=$(
+  engram add \
+    --title "Broken schema probe" \
+    "This entry becomes unreadable on purpose."
+)
+broken_id=$(printf '%s\n' "$broken_output" | entry_id)
+broken_file=$(find .engram/engrams -type f -name "${broken_id}-*.md" -print -quit)
+[[ -n "$broken_file" ]] || fail "could not locate broken schema fixture"
+sed -i '/^updated: /i schemaVersion: not-a-number' "$broken_file"
+if engram check >"$run_root/schema-check.txt" 2>&1; then
+  fail "engram check accepted a non-integer schema version"
+fi
+grep -F "[schema_version_invalid]" "$run_root/schema-check.txt"
+if engram check --json >"$run_root/schema-check.json"; then
+  fail "engram check json accepted a non-integer schema version"
+fi
+parse_json 'value.ok === false && value.diagnostics.some((item) => item.code === "schema_version_invalid" && item.severity === "error")' <"$run_root/schema-check.json"
+if engram list | grep -F "Broken schema probe"; then
+  fail "a schema_version_invalid entry appeared in the default list"
+fi
+rm -f "$broken_file"
+engram remove --yes "$future_id"
+engram check --json |
+  parse_json 'value.ok === true && value.scopes.includes("project")'
+
 step "Configuration"
 engram config set defaultType fact
 [[ "$(engram config get defaultType)" == "fact" ]] || fail "defaultType did not persist"
@@ -521,6 +582,13 @@ mkdir -p "$hook_home"
 
   engram install claude-code --yes | grep -F "Installed"
   grep -F "engram hook claude-code startup" "$hook_home/claude-config/settings.json" >/dev/null
+  grep -F "engram hook claude-code resume" "$hook_home/claude-config/settings.json" >/dev/null
+  grep -F "engram hook claude-code compact" "$hook_home/claude-config/settings.json" >/dev/null
+  # The ownership ledger lives in the wholly-owned sidecar and names the
+  # installed commands; uninstall consumes it (R8).
+  [[ -f "$hook_home/claude-config/engram-managed.json" ]] ||
+    fail "claude-code install did not write the ownership sidecar"
+  grep -F "engram hook claude-code startup" "$hook_home/claude-config/engram-managed.json" >/dev/null
   engram install claude-code --yes |
     grep -F "Nothing to do: hooks for claude-code are already up to date."
 
@@ -567,10 +635,14 @@ mkdir -p "$hook_home"
   if grep -F "engram hook claude-code" "$hook_home/claude-config/settings.json" >/dev/null 2>&1; then
     fail "uninstall left engram-owned entries behind"
   fi
+  [[ ! -e "$hook_home/claude-config/engram-managed.json" ]] ||
+    fail "claude-code uninstall left the ownership sidecar behind"
 
   engram install codex --yes | grep -F "Installed"
   grep -F "engram hook codex startup" "$hook_home/codex-config/hooks.json" >/dev/null
   grep -F "engram hook codex compact" "$hook_home/codex-config/hooks.json" >/dev/null
+  [[ -f "$hook_home/codex-config/engram-managed.json" ]] ||
+    fail "codex install did not write the ownership sidecar"
   # Config-level check that the compact command lives under the PostCompact
   # event key, not just anywhere in the document.
   node -e '
@@ -586,6 +658,8 @@ mkdir -p "$hook_home"
   if grep -F "engram hook codex" "$hook_home/codex-config/hooks.json" >/dev/null 2>&1; then
     fail "codex uninstall left engram-owned entries behind"
   fi
+  [[ ! -e "$hook_home/codex-config/engram-managed.json" ]] ||
+    fail "codex uninstall left the ownership sidecar behind"
 )
 
 step "Removal and duplicate no-op"
