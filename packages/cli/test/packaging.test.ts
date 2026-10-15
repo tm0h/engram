@@ -10,7 +10,6 @@
 import { describe, it, expect, afterAll } from "vite-plus/test";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -74,11 +73,20 @@ describe("engram-cli packaging (pi extension)", () => {
       skills: ["./skills"],
     });
 
-    // typebox is a real dependency (pi-web-access tested pattern) and resolves
-    expect(manifest.peerDependencies?.typebox).toBeUndefined();
-    expect(manifest.dependencies?.typebox).toMatch(/^\^1\./);
-    const pkgRequire = createRequire(join(pkgRoot, "package.json"));
-    expect(pkgRequire.resolve("typebox")).toMatch(/node_modules[\\/]typebox/);
+    // typebox is host-provided: Pi maps it into extensions at runtime. It
+    // must be an optional "*" peer (docs/packages.md, "Declare
+    // dependencies"); a physical dependencies copy bypasses the extension
+    // module mapping and makes Pi warn on session start.
+    expect(manifest.dependencies?.typebox).toBeUndefined();
+    expect(manifest.peerDependencies?.typebox).toBe("*");
+    expect(manifest.peerDependenciesMeta?.typebox).toEqual({ optional: true });
+    // both Pi host packages stay declared as optional "*" peers
+    expect(manifest.peerDependencies?.["@earendil-works/pi-ai"]).toBe("*");
+    expect(manifest.peerDependencies?.["@earendil-works/pi-coding-agent"]).toBe("*");
+    expect(manifest.peerDependenciesMeta?.["@earendil-works/pi-ai"]).toEqual({ optional: true });
+    expect(manifest.peerDependenciesMeta?.["@earendil-works/pi-coding-agent"]).toEqual({
+      optional: true,
+    });
 
     // the bundle imports typebox externally instead of inlining it
     const bundle = readFileSync(join(pkgRoot, "dist", "pi-extension.js"), "utf8");
@@ -262,6 +270,22 @@ describe("engram-cli packaging (pi extension)", () => {
     writeFileSync(
       join(hostStub, "index.js"),
       "export const StringEnum = (values) => ({ enum: values });\n",
+    );
+
+    // typebox is host-provided too (docs/packages.md): with the optional peer
+    // left uninstalled, a stub stands in for the host mapping the same way.
+    // Schemas are only built, never inspected, so a call-tolerant Type covers
+    // registration.
+    const typeboxStub = join(installed, "node_modules", "typebox");
+    mkdirSync(typeboxStub, { recursive: true });
+    writeFileSync(
+      join(typeboxStub, "package.json"),
+      JSON.stringify({ name: "typebox", version: "0.0.0-stub", type: "module" }),
+    );
+    writeFileSync(
+      join(typeboxStub, "index.js"),
+      "const anySchema = () => ({});\n" +
+        "export const Type = new Proxy({}, { get: () => anySchema });\n",
     );
 
     // Import the packed pi-extension bundle exactly like pi loads it and drive
