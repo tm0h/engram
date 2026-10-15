@@ -152,8 +152,9 @@ describe("Docker E2E runner", () => {
     expect(e2e).toContain("confidence: high");
     expect(e2e).toContain('grep -F "confidence: high"');
 
-    expect(e2e).toContain('grep -F "engram hook claude-code resume"');
-    expect(e2e).toContain('grep -F "engram hook claude-code compact"');
+    expect(e2e).toContain("doc.hooks.SessionStart ?? []");
+    expect(e2e).toContain("group.matcher === source");
+    expect(e2e).toContain('"engram hook claude-code " + source');
     expect(e2e).toContain(
       'grep -F "engram hook claude-code startup" "$hook_home/claude-config/engram-managed.json"',
     );

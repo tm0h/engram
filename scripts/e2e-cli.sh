@@ -581,9 +581,21 @@ mkdir -p "$hook_home"
   fi
 
   engram install claude-code --yes | grep -F "Installed"
-  grep -F "engram hook claude-code startup" "$hook_home/claude-config/settings.json" >/dev/null
-  grep -F "engram hook claude-code resume" "$hook_home/claude-config/settings.json" >/dev/null
-  grep -F "engram hook claude-code compact" "$hook_home/claude-config/settings.json" >/dev/null
+  # Placement check (external review P2): each command must sit under
+  # hooks.SessionStart in its own matcher group (matcher == source), not
+  # anywhere in the document. Same pattern as the codex PostCompact check.
+  node -e '
+    const doc = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+    const groups = doc.hooks.SessionStart ?? [];
+    for (const source of ["startup", "resume", "compact"]) {
+      const hit = groups.some(
+        (group) =>
+          group.matcher === source &&
+          (group.hooks ?? []).some((hook) => hook.command === "engram hook claude-code " + source),
+      );
+      if (!hit) process.exit(1);
+    }
+  ' "$hook_home/claude-config/settings.json"
   # The ownership ledger lives in the wholly-owned sidecar and names the
   # installed commands; uninstall consumes it (R8).
   [[ -f "$hook_home/claude-config/engram-managed.json" ]] ||
