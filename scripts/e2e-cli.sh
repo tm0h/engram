@@ -139,6 +139,23 @@ engram search parseHTTPResponse --json |
 engram search 'title:alpha' --json --limit 1 --offset 0 |
   parse_json 'value.total === 2 && value.results.length === 1 && value.nextOffset === 1'
 
+# ENG-47: an entry whose only query match lives in its aliases surfaces, and
+# the explanation names the alias field. Fresh tokens keep the pinned totals
+# and rank identities above untouched.
+aliassearch_output=$(
+  engram add \
+    --title "Alias field fixture" \
+    --aliases "Mimsy borogove, slithy toves" \
+    "Alias matches surface through the fifth weighted field."
+)
+aliassearch_id=$(printf '%s\n' "$aliassearch_output" | entry_id)
+engram search mimsy --json --explain |
+  parse_json 'value.results[0]?.title === "Alias field fixture" && value.results[0].explanation.contributions.some((part) => part.field === "alias")'
+engram search mimsy | grep -F "Alias field fixture"
+engram search '"slithy toves"' --json |
+  parse_json 'value.results[0]?.title === "Alias field fixture"'
+engram remove --yes "$aliassearch_id"
+
 step "Call-form body search"
 # The call form is the fixture's only carrier of these tokens: the camel
 # pieces (ab, config, xy, foo) cannot match the document tokens abconfig and
@@ -172,6 +189,18 @@ check_json=$(engram check --json)
 printf '%s\n' "$check_json" |
   parse_json 'value.ok === true && value.scopes.includes("project")'
 
+# ENG-40 (R7): unknown top-level frontmatter keys survive CLI-mediated
+# writes. The key is planted, a retitling edit rewrites the file, and both
+# the new title and the planted key must be in the rewritten file.
+replacement_file=$(find .engram/engrams -type f -name "${replacement_id}-*.md" -print -quit)
+[[ -n "$replacement_file" ]] || fail "could not locate replacement fixture"
+sed -i '/^updated: /i confidence: high' "$replacement_file"
+engram edit "$replacement_id" --title "Current release database v2" >/dev/null
+renamed_file=$(find .engram/engrams -type f -name "${replacement_id}-*.md" -print -quit)
+[[ -n "$renamed_file" ]] || fail "retitle lost the replacement fixture"
+grep -F "confidence: high" "$renamed_file"
+grep -F "title: Current release database v2" "$renamed_file"
+
 step "Related entry links"
 related_output=$(
   engram add \
@@ -195,6 +224,61 @@ dangling_json="$run_root/dangling-check.json"
 engram check --json >"$dangling_json"
 parse_json 'value.ok === true && value.diagnostics.some((item) => item.code === "related_not_found" && item.severity === "warning")' <"$dangling_json"
 engram remove --yes "$related_id"
+
+step "Link graph read surface"
+graph_output=$(
+  engram add \
+    --title "Link graph source" \
+    --related "$decision_id" \
+    "This entry points at the release decision."
+)
+graph_id=$(printf '%s\n' "$graph_output" | entry_id)
+engram links "$graph_id" | grep -F "$decision_id"
+engram links "$decision_id" | grep -F "Incoming"
+engram links "$decision_id" | grep -F "$graph_id"
+
+# The links surface is a pure read: one scan per query, no writes, files
+# stay byte-identical across reads (ENG-45).
+links_before=$(find .engram/engrams -type f -name '*.md' -print0 | sort -z | xargs -0 sha256sum | sha256sum)
+engram links "$graph_id" >/dev/null
+engram links "$decision_id" >/dev/null
+links_after=$(find .engram/engrams -type f -name '*.md' -print0 | sort -z | xargs -0 sha256sum | sha256sum)
+[[ "$links_before" == "$links_after" ]] || fail "links read mutated the store"
+
+engram edit "$graph_id" --related 9999 >/dev/null
+engram links "$graph_id" | grep -F "9999 MISSING"
+
+# A target claimed by two files warns related_ambiguous, and the check
+# fails on the claimants' duplicate_id errors, never on the warning itself
+# (ENG-44). A missing or ambiguous target is still a successful read.
+amb_target_output=$(
+  engram add \
+    --title "Ambiguity target" \
+    "Ambiguity probe target body."
+)
+amb_id=$(printf '%s\n' "$amb_target_output" | entry_id)
+amb_source_output=$(
+  engram add \
+    --title "Ambiguity source" \
+    --related "$amb_id" \
+    "Points at the ambiguous target."
+)
+amb_source_id=$(printf '%s\n' "$amb_source_output" | entry_id)
+amb_file=$(find .engram/engrams -type f -name "${amb_id}-*.md" -print -quit)
+[[ -n "$amb_file" ]] || fail "could not locate ambiguity fixture"
+sed 's/^title: Ambiguity target$/title: Zzz claim copy/' \
+  "$amb_file" >".engram/engrams/${amb_id}-zzz-claim-copy.md"
+engram links "$amb_source_id" | grep -F "AMBIGUOUS (2 claimants)"
+if engram check --json >"$run_root/ambiguous-check.json"; then
+  fail "engram check accepted a duplicated claim pair"
+fi
+parse_json 'value.ok === false && value.diagnostics.some((item) => item.code === "related_ambiguous" && item.severity === "warning") && value.diagnostics.some((item) => item.code === "duplicate_id" && item.severity === "error")' <"$run_root/ambiguous-check.json"
+rm -f ".engram/engrams/${amb_id}-zzz-claim-copy.md"
+engram remove --yes "$amb_source_id"
+engram remove --yes "$amb_id"
+engram remove --yes "$graph_id"
+engram check --json |
+  parse_json 'value.ok === true && value.scopes.includes("project")'
 
 step "Lifecycle clearing and validation"
 lifecycle_output=$(
@@ -250,6 +334,57 @@ engram show "$expired_id" | grep -F "Expired release probe"
 engram review --json |
   parse_json 'value.findings.some((item) => item.reasons.includes("expired"))'
 
+step "Entry aliases"
+aliases_output=$(
+  engram add \
+    --title "Alias probe" \
+    --aliases "Release Radar, deploy notes" \
+    "Alias flags feed the normalized aliases list."
+)
+aliases_id=$(printf '%s\n' "$aliases_output" | entry_id)
+engram show "$aliases_id" | grep -F "aliases: release radar, deploy notes"
+engram edit "$aliases_id" --aliases "incident bridge" >/dev/null
+engram show "$aliases_id" | grep -F "aliases: incident bridge"
+if engram show "$aliases_id" | grep -q "release radar"; then
+  fail "--aliases replace left the old alias behind"
+fi
+engram edit "$aliases_id" "A body-only edit preserves the alias set." >/dev/null
+engram show "$aliases_id" | grep -F "aliases: incident bridge"
+engram edit "$aliases_id" --clear-aliases >/dev/null
+if engram show "$aliases_id" | grep -q '^  aliases:'; then
+  fail "--clear-aliases left an aliases line behind"
+fi
+engram remove --yes "$aliases_id"
+
+# Hand-written invalid aliases frontmatter is entry-preventing: check fails
+# with the stable code, the entry vanishes from the default list, and
+# removing the file restores a clean store (ENG-46).
+invalid_output=$(
+  engram add \
+    --title "Invalid alias probe" \
+    --aliases "temp alias" \
+    "This entry becomes unreadable on purpose."
+)
+invalid_id=$(printf '%s\n' "$invalid_output" | entry_id)
+invalid_file=$(find .engram/engrams -type f -name "${invalid_id}-*.md" -print -quit)
+[[ -n "$invalid_file" ]] || fail "could not locate alias fixture"
+sed -i -e 's/^aliases:$/aliases: not-a-list/' -e '/^  - temp alias$/d' \
+  "$invalid_file"
+if engram check >"$run_root/aliases-check.txt" 2>&1; then
+  fail "engram check accepted invalid alias frontmatter"
+fi
+grep -F "[aliases_invalid]" "$run_root/aliases-check.txt"
+if engram check --json >"$run_root/aliases-check.json"; then
+  fail "engram check json accepted invalid alias frontmatter"
+fi
+parse_json 'value.ok === false && value.diagnostics.some((item) => item.code === "aliases_invalid" && item.severity === "error")' <"$run_root/aliases-check.json"
+if engram list | grep -F "Invalid alias probe"; then
+  fail "an aliases_invalid entry appeared in the default list"
+fi
+rm -f "$invalid_file"
+engram check --json |
+  parse_json 'value.ok === true && value.scopes.includes("project")'
+
 step "Integrity failure diagnostics"
 malformed_path=".engram/engrams/9999-malformed.md"
 printf '%s\n' \
@@ -268,6 +403,55 @@ engram list >"$run_root/list.out" 2>"$run_root/list.err"
 grep -F "Use the release database" "$run_root/list.out"
 grep -F "Skipped 1 unreadable or invalid file" "$run_root/list.err"
 rm -f "$malformed_path"
+engram check --json |
+  parse_json 'value.ok === true && value.scopes.includes("project")'
+
+step "Entry schema version"
+# An unsupported integer version is warning-only: check stays green and a
+# CLI-mediated retitle preserves the version through the rewrite (ENG-41).
+future_output=$(
+  engram add \
+    --title "Future schema probe" \
+    "This entry carries an unsupported schema version."
+)
+future_id=$(printf '%s\n' "$future_output" | entry_id)
+future_file=$(find .engram/engrams -type f -name "${future_id}-*.md" -print -quit)
+[[ -n "$future_file" ]] || fail "could not locate schema fixture"
+sed -i '/^updated: /i schemaVersion: 2' "$future_file"
+engram check --json |
+  parse_json 'value.ok === true && value.diagnostics.some((item) => item.code === "schema_version_unsupported" && item.severity === "warning")'
+engram show "$future_id" | grep -F "Future schema probe"
+engram edit "$future_id" --title "Future schema probe, renamed" >/dev/null
+future_renamed_file=$(find .engram/engrams -type f -name "${future_id}-*.md" -print -quit)
+[[ -n "$future_renamed_file" ]] || fail "retitle lost the schema fixture"
+[[ $(grep -cF "schemaVersion: 2" "$future_renamed_file") == 1 ]] ||
+  fail "the rewrite did not preserve exactly one schemaVersion key"
+
+# A non-integer version is entry-preventing: check fails with the stable
+# code, the entry vanishes from the default list, and removing the file
+# restores a clean store.
+broken_output=$(
+  engram add \
+    --title "Broken schema probe" \
+    "This entry becomes unreadable on purpose."
+)
+broken_id=$(printf '%s\n' "$broken_output" | entry_id)
+broken_file=$(find .engram/engrams -type f -name "${broken_id}-*.md" -print -quit)
+[[ -n "$broken_file" ]] || fail "could not locate broken schema fixture"
+sed -i '/^updated: /i schemaVersion: not-a-number' "$broken_file"
+if engram check >"$run_root/schema-check.txt" 2>&1; then
+  fail "engram check accepted a non-integer schema version"
+fi
+grep -F "[schema_version_invalid]" "$run_root/schema-check.txt"
+if engram check --json >"$run_root/schema-check.json"; then
+  fail "engram check json accepted a non-integer schema version"
+fi
+parse_json 'value.ok === false && value.diagnostics.some((item) => item.code === "schema_version_invalid" && item.severity === "error")' <"$run_root/schema-check.json"
+if engram list | grep -F "Broken schema probe"; then
+  fail "a schema_version_invalid entry appeared in the default list"
+fi
+rm -f "$broken_file"
+engram remove --yes "$future_id"
 engram check --json |
   parse_json 'value.ok === true && value.scopes.includes("project")'
 
@@ -397,7 +581,26 @@ mkdir -p "$hook_home"
   fi
 
   engram install claude-code --yes | grep -F "Installed"
-  grep -F "engram hook claude-code startup" "$hook_home/claude-config/settings.json" >/dev/null
+  # Placement check (external review P2): each command must sit under
+  # hooks.SessionStart in its own matcher group (matcher == source), not
+  # anywhere in the document. Same pattern as the codex PostCompact check.
+  node -e '
+    const doc = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+    const groups = doc.hooks.SessionStart ?? [];
+    for (const source of ["startup", "resume", "compact"]) {
+      const hit = groups.some(
+        (group) =>
+          group.matcher === source &&
+          (group.hooks ?? []).some((hook) => hook.command === "engram hook claude-code " + source),
+      );
+      if (!hit) process.exit(1);
+    }
+  ' "$hook_home/claude-config/settings.json"
+  # The ownership ledger lives in the wholly-owned sidecar and names the
+  # installed commands; uninstall consumes it (R8).
+  [[ -f "$hook_home/claude-config/engram-managed.json" ]] ||
+    fail "claude-code install did not write the ownership sidecar"
+  grep -F "engram hook claude-code startup" "$hook_home/claude-config/engram-managed.json" >/dev/null
   engram install claude-code --yes |
     grep -F "Nothing to do: hooks for claude-code are already up to date."
 
@@ -444,10 +647,14 @@ mkdir -p "$hook_home"
   if grep -F "engram hook claude-code" "$hook_home/claude-config/settings.json" >/dev/null 2>&1; then
     fail "uninstall left engram-owned entries behind"
   fi
+  [[ ! -e "$hook_home/claude-config/engram-managed.json" ]] ||
+    fail "claude-code uninstall left the ownership sidecar behind"
 
   engram install codex --yes | grep -F "Installed"
   grep -F "engram hook codex startup" "$hook_home/codex-config/hooks.json" >/dev/null
   grep -F "engram hook codex compact" "$hook_home/codex-config/hooks.json" >/dev/null
+  [[ -f "$hook_home/codex-config/engram-managed.json" ]] ||
+    fail "codex install did not write the ownership sidecar"
   # Config-level check that the compact command lives under the PostCompact
   # event key, not just anywhere in the document.
   node -e '
@@ -463,6 +670,8 @@ mkdir -p "$hook_home"
   if grep -F "engram hook codex" "$hook_home/codex-config/hooks.json" >/dev/null 2>&1; then
     fail "codex uninstall left engram-owned entries behind"
   fi
+  [[ ! -e "$hook_home/codex-config/engram-managed.json" ]] ||
+    fail "codex uninstall left the ownership sidecar behind"
 )
 
 step "Removal and duplicate no-op"

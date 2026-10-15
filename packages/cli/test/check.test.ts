@@ -410,6 +410,10 @@ describe("engram check", () => {
           JSON.stringify({ version: 99, tracked: true, defaultType: "note" }),
         ),
     },
+    {
+      code: "aliases_invalid",
+      setup: (p) => seed(p, "0001-bad-aliases.md", fm({ aliases: "not-a-list" })),
+    },
   ];
 
   for (const { code, setup } of CASES) {
@@ -982,6 +986,74 @@ describe("engram check / entry schemaVersion (ENG-41)", () => {
     expect(o).toContain("warning [schema_version_unsupported]");
     expect(o).toContain("error [schema_version_invalid]");
     expect(info.message).toContain("1 problem found");
+  });
+});
+
+describe("engram check / aliases_invalid (ENG-46)", () => {
+  let origCwd = "";
+  let origHome: string | undefined;
+  let tmp = "";
+  let home = "";
+  let outLines: string[] = [];
+  let spies: Array<ReturnType<typeof vi.spyOn>> = [];
+
+  beforeEach(() => {
+    origCwd = process.cwd();
+    origHome = process.env.HOME;
+    tmp = mkProject();
+    home = mkHome();
+    process.chdir(tmp);
+    process.env.HOME = home;
+    outLines = [];
+    spies = [
+      vi.spyOn(console, "log").mockImplementation(((...args: unknown[]) => {
+        outLines.push(args.map(String).join(" "));
+        return undefined;
+      }) as typeof console.log),
+    ];
+  });
+  afterEach(() => {
+    for (const s of spies) s.mockRestore();
+    process.chdir(origCwd);
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const output = (): string => outLines.join("\n");
+
+  const runFail = (
+    eff: Effect.Effect<unknown, unknown, EngramStore | ConfigRepo | FileSystem>,
+  ): Promise<FailInfo> =>
+    Effect.runPromise(Effect.provide(Effect.flip(eff) as never, MainLive)) as Promise<FailInfo>;
+
+  it("json mode fails with the stable code and omits the entry", async () => {
+    seed(tmp, "0001-bad-aliases.md", fm({ aliases: "not-a-list", title: "Bad aliases" }));
+    const info = await runFail(checkCommand({ json: true }));
+    expect(info._tag).toBe("IntegrityCheckFailedError");
+    const doc = JSON.parse(output()) as {
+      ok: boolean;
+      filesChecked: number;
+      validEntries: number;
+      omittedFiles: number;
+      diagnostics: Array<Record<string, string>>;
+    };
+    expect(doc).toMatchObject({
+      ok: false,
+      filesChecked: 1,
+      validEntries: 0,
+      omittedFiles: 1,
+    });
+    expect(doc.diagnostics).toHaveLength(1);
+    expect(doc.diagnostics[0]).toMatchObject({
+      code: "aliases_invalid",
+      severity: "error",
+      scope: "project",
+      file: path.join(projectEngramsDir(tmp), "0001-bad-aliases.md"),
+    });
+    expect(typeof doc.diagnostics[0].message).toBe("string");
+    expect(typeof doc.diagnostics[0].hint).toBe("string");
   });
 });
 

@@ -113,6 +113,57 @@ describe("Docker E2E runner", () => {
     expect(e2e).toContain("Nothing to do: hooks");
   });
 
+  it("pins audit coverage for the post-0.5.0 link graph and alias surfaces", () => {
+    const e2e = readRepoFile("scripts/e2e-cli.sh");
+
+    for (const scenario of ["Link graph read surface", "Entry aliases"]) {
+      expect(e2e).toContain(`step "${scenario}"`);
+    }
+
+    expect(e2e).toContain('engram links "$graph_id"');
+    expect(e2e).toContain('grep -F "Incoming"');
+    expect(e2e).toContain('grep -F "9999 MISSING"');
+    expect(e2e).toContain('grep -F "AMBIGUOUS (2 claimants)"');
+    expect(e2e).toContain("links read mutated the store");
+    expect(e2e).toContain('item.code === "related_ambiguous"');
+    expect(e2e).toContain('item.code === "duplicate_id"');
+    expect(e2e).toContain('engram links "$amb_source_id"');
+    expect(e2e).toContain('--aliases "Release Radar, deploy notes"');
+    expect(e2e).toContain('grep -F "aliases: release radar, deploy notes"');
+    expect(e2e).toContain('--aliases "incident bridge"');
+    expect(e2e).toContain("--clear-aliases");
+    expect(e2e).toContain('grep -F "[aliases_invalid]"');
+    expect(e2e).toContain('item.code === "aliases_invalid"');
+    expect(e2e).toContain("engram search mimsy --json --explain");
+    expect(e2e).toContain('part.field === "alias"');
+    expect(e2e).toContain(`engram search '"slithy toves"' --json`);
+  });
+
+  it("pins audit coverage for the schema version, frontmatter survival, and hook sidecar surfaces", () => {
+    const e2e = readRepoFile("scripts/e2e-cli.sh");
+
+    expect(e2e).toContain(`step "Entry schema version"`);
+    expect(e2e).toContain('item.code === "schema_version_unsupported"');
+    expect(e2e).toContain('item.code === "schema_version_invalid"');
+    expect(e2e).toContain('grep -F "[schema_version_invalid]"');
+    expect(e2e).toContain("/^updated: /i schemaVersion: 2");
+    expect(e2e).toContain("did not preserve exactly one schemaVersion key");
+
+    expect(e2e).toContain("confidence: high");
+    expect(e2e).toContain('grep -F "confidence: high"');
+
+    expect(e2e).toContain("doc.hooks.SessionStart ?? []");
+    expect(e2e).toContain("group.matcher === source");
+    expect(e2e).toContain('"engram hook claude-code " + source');
+    expect(e2e).toContain(
+      'grep -F "engram hook claude-code startup" "$hook_home/claude-config/engram-managed.json"',
+    );
+    expect(e2e).toContain("claude-code install did not write the ownership sidecar");
+    expect(e2e).toContain("claude-code uninstall left the ownership sidecar behind");
+    expect(e2e).toContain("codex install did not write the ownership sidecar");
+    expect(e2e).toContain("codex uninstall left the ownership sidecar behind");
+  });
+
   it("exposes executable entry points through the workspace package", () => {
     const packageJson = JSON.parse(readRepoFile("package.json")) as {
       scripts: Record<string, string>;
