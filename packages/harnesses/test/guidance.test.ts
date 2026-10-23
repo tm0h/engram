@@ -192,11 +192,42 @@ describe("guidance / skills stay aligned", () => {
       expect(skill, `${name}: fail-open note`).toMatch(/fail open/i);
       expect(skill, `${name}: bounded output note`).toContain("8 KiB");
       expect(skill, `${name}: hook entry point`).toContain("engram hook");
-      // lane boundary: no ENG-37 target names presented as installable
-      expect(skill, `${name}: no ENG-37 targets`).not.toMatch(
-        /install (generic|cursor)\b|install claude(?!-code)/,
-      );
+      // all five install targets are documented (ENG-37 + ENG-58 lanes)
+      for (const target of ["generic", "cursor", "claude", "claude-code", "codex"] as const) {
+        expect(skill, `${name}: ${target} target documented`).toContain(`engram install ${target}`);
+      }
+      // the claude (project skill scaffold) vs claude-code (user-level hooks)
+      // distinction stays explicit
+      expect(skill, `${name}: claude distinction`).toMatch(/project skill scaffold/i);
+      expect(skill, `${name}: claude-code distinction`).toMatch(/user-level/);
     }
+  });
+});
+
+describe("guidance / claude scaffold variant (ENG-37)", () => {
+  const scaffoldSkill = fs.readFileSync(
+    path.join(repoRoot, "packages/harnesses/claude/skills/engram-scaffold/SKILL.md"),
+    "utf8",
+  );
+  const sessionFlow = scaffoldSkill.split("## Session flow")[1]?.split("## ")[0] ?? "";
+
+  it("keeps the manual session-start flow with engram context (SessionStart deferred)", () => {
+    expect(sessionFlow.length).toBeGreaterThan(0);
+    expect(sessionFlow).toMatch(/start of a session|session start/i);
+    expect(sessionFlow).toContain("engram context");
+    // no automatic-loading claim for this harness: the plugin-skill heritage
+    // wording states the harness does not inject it (yet)
+    expect(sessionFlow).toMatch(/does not inject it automatically|not inject/);
+  });
+
+  it("preamble points at the launcher fallback, not the plugin, and stays scaffold-worded", () => {
+    expect(scaffoldSkill).toContain("${CLAUDE_SKILL_DIR}/bin/engram");
+    expect(scaffoldSkill).toContain("engram-cli");
+    expect(scaffoldSkill).not.toContain("while this plugin is enabled");
+  });
+
+  it("keeps the authority and instruction-precedence caveat", () => {
+    expect(scaffoldSkill).toContain("system, user, and repository instructions");
   });
 });
 
