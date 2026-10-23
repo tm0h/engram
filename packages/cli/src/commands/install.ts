@@ -37,11 +37,14 @@ import {
 } from "@engram/harnesses/shared";
 import {
   CLAUDE_CODE_TARGET,
+  CLAUDE_TARGET,
   CODEX_TARGET,
   CURSOR_TARGET,
   GENERIC_TARGET,
   claudeCodeRoot,
   claudeCodeSpec,
+  claudeRoot,
+  claudeSpec,
   codexHooksFlagState,
   codexRoot,
   codexSpec,
@@ -92,14 +95,17 @@ type TargetModule =
       readonly root: (projectRoot: string) => string;
     };
 
-// claude joins here in ENG-37 turn 3; until then it falls to the
-// unknown-target error (which already enumerates all five names).
+// All five targets are wired; the unknown-target message stays the
+// complete five-name menu (SPEC deny-case).
 const targetFor = (target: string): TargetModule | null => {
   if (target === GENERIC_TARGET) {
     return { kind: "project", spec: genericSpec(), root: genericRoot };
   }
   if (target === CURSOR_TARGET) {
     return { kind: "project", spec: cursorSpec(), root: cursorRoot };
+  }
+  if (target === CLAUDE_TARGET) {
+    return { kind: "project", spec: claudeSpec(), root: claudeRoot };
   }
   if (target === CLAUDE_CODE_TARGET) {
     return { kind: "home", spec: claudeCodeSpec(), root: claudeCodeRoot };

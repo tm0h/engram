@@ -21,6 +21,7 @@ import {
   parseSidecarLedger,
   SIDECAR_FILENAME,
 } from "@engram/harnesses/installer";
+import { fileURLToPath } from "node:url";
 import type { AssetSpec } from "@engram/harnesses/shared";
 
 /* ------------------------------ helpers ------------------------------ */
@@ -98,8 +99,6 @@ describe("engram install command", () => {
     await expect(runInstall({ target: "nope" })).rejects.toThrow(
       /unknown install target "nope" \(expected: generic \| cursor \| claude \| claude-code \| codex\)/,
     );
-    // claude lands in ENG-37 turn 3 and stays unknown until then
-    await expect(runInstall({ target: "claude" })).rejects.toThrow(/unknown install target/);
   });
 
   it("status is read-only and reports state", async () => {
@@ -609,5 +608,98 @@ describe("engram install command", () => {
       runInstall({ target: "cursor", yes: true, root: proj, home: path.join(tmp, "home") }),
     ).rejects.toThrow(/--home[\s\S]*--root/);
     expect(fs.existsSync(path.join(proj, ".cursor"))).toBe(false);
+  });
+
+  /* ---------------------- claude: project-local (ENG-37) ---------------------- */
+
+  const claudeSkillFile = (proj: string): string =>
+    path.join(proj, ".claude", "skills", "engram", "SKILL.md");
+  const claudeLauncherFile = (proj: string): string =>
+    path.join(proj, ".claude", "skills", "engram", "bin", "engram");
+  /** Source-of-truth scaffold asset, read from its in-repo location. */
+  const repoScaffoldSkill = (): string =>
+    fs.readFileSync(
+      fileURLToPath(
+        new URL("../../harnesses/claude/skills/engram-scaffold/SKILL.md", import.meta.url),
+      ),
+      "utf8",
+    );
+
+  it("claude: dry-run plans, install --yes scaffolds the skill, status and re-run are read-only", async () => {
+    const proj = path.join(tmp, "proj");
+    fs.mkdirSync(proj, { recursive: true });
+
+    await runInstall({ target: "claude", dryRun: true, root: proj });
+    expect(output()).toContain(`Install plan for claude in ${proj}`);
+    expect(output()).toContain("create directory .claude/skills/engram");
+    expect(output()).toMatch(/write \.claude[/\\]skills[/\\]engram[/\\]SKILL\.md \(new file/);
+    expect(output()).toMatch(/write .*bin[/\\]engram \(new file/);
+    expect(output()).toContain("Dry run: no changes were written.");
+    expect(fs.existsSync(path.join(proj, ".claude"))).toBe(false);
+
+    await runInstall({ target: "claude", yes: true, root: proj });
+    expect(output()).toContain("Installed 2 change(s) for claude");
+    expect(output()).not.toMatch(/\bhooks\b/);
+    const skill = fs.readFileSync(claudeSkillFile(proj), "utf8");
+    const launcher = fs.readFileSync(claudeLauncherFile(proj), "utf8");
+    // frontmatter-first skill, shebang-first launcher, from the repo sources
+    expect(skill.startsWith("---\n")).toBe(true);
+    expect(skill).toContain("# Engram memory");
+    expect(launcher.startsWith("#!/bin/sh\n")).toBe(true);
+    expect(launcher).toMatch(/engram-cli@\d+\.\d+\.\d+/);
+    const frontmatter = skill.slice(0, skill.indexOf("---\n", 4) + 4);
+    expect(repoScaffoldSkill().startsWith(frontmatter)).toBe(true);
+
+    outLines = [];
+    await runInstall({ target: "claude", status: true, root: proj });
+    expect(output()).toContain("target: claude");
+    expect(output()).toContain(`root: ${proj}`);
+    expect(output()).toContain(".claude/skills/engram/SKILL.md: current");
+    expect(output()).toContain(".claude/skills/engram/bin/engram: current");
+    expect(fs.readFileSync(claudeSkillFile(proj), "utf8")).toBe(skill);
+
+    outLines = [];
+    await runInstall({ target: "claude", yes: true, root: proj });
+    expect(output()).toContain("(no changes needed)");
+    expect(output()).toContain("Nothing to do");
+    expect(fs.readFileSync(claudeLauncherFile(proj), "utf8")).toBe(launcher);
+  });
+
+  it("claude: repairs version-pin drift, preserves user skills, uninstalls owned-only", async () => {
+    const proj = path.join(tmp, "proj");
+    const userSkill = path.join(proj, ".claude", "skills", "my-skill", "SKILL.md");
+    const userContent = "---\nname: my-skill\ndescription: user skill\n---\n\nDo things.\n";
+    fs.mkdirSync(path.dirname(userSkill), { recursive: true });
+    fs.writeFileSync(userSkill, userContent);
+
+    await runInstall({ target: "claude", yes: true, root: proj });
+    const launcherBefore = fs.readFileSync(claudeLauncherFile(proj), "utf8");
+    expect(fs.readFileSync(userSkill, "utf8")).toBe(userContent);
+
+    // version-pin bump: an upgrade leaves the old pin; re-run repairs it
+    fs.writeFileSync(
+      claudeLauncherFile(proj),
+      launcherBefore.replace(/engram-cli@\d+\.\d+\.\d+/, "engram-cli@0.0.1"),
+    );
+    await runInstall({ target: "claude", yes: true, root: proj });
+    expect(fs.readFileSync(claudeLauncherFile(proj), "utf8")).toBe(launcherBefore);
+    expect(fs.readFileSync(userSkill, "utf8")).toBe(userContent);
+
+    outLines = [];
+    await runInstall({ target: "claude", yes: true, uninstall: true, root: proj });
+    expect(output()).toContain("Uninstalled 2 change(s) for claude");
+    expect(fs.existsSync(claudeSkillFile(proj))).toBe(false);
+    expect(fs.existsSync(claudeLauncherFile(proj))).toBe(false);
+    expect(fs.readFileSync(userSkill, "utf8")).toBe(userContent);
+    expect(noBackupFiles()).toBe(true);
+  });
+
+  it("claude: --home is a hard error naming --root", async () => {
+    const proj = path.join(tmp, "proj");
+    fs.mkdirSync(proj, { recursive: true });
+    await expect(
+      runInstall({ target: "claude", yes: true, root: proj, home: path.join(tmp, "home") }),
+    ).rejects.toThrow(/--home[\s\S]*--root/);
+    expect(fs.existsSync(path.join(proj, ".claude"))).toBe(false);
   });
 });

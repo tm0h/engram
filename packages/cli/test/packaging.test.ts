@@ -64,6 +64,11 @@ describe("engram-cli packaging (pi extension)", () => {
     expect(existsSync(join(pkgRoot, "dist", "pi-extension.js"))).toBe(true);
     expect(existsSync(join(pkgRoot, "dist", "index.js"))).toBe(true);
     expect(existsSync(join(pkgRoot, "skills", "engram", "SKILL.md"))).toBe(true);
+    // ENG-37: the claude scaffold assets ship in the payload
+    expect(existsSync(join(pkgRoot, "claude-scaffold", "bin", "engram"))).toBe(true);
+    expect(
+      existsSync(join(pkgRoot, "claude-scaffold", "skills", "engram-scaffold", "SKILL.md")),
+    ).toBe(true);
 
     // manifest declares the extension, skill, and gallery keyword
     const manifest = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"));
@@ -122,6 +127,11 @@ describe("engram-cli packaging (pi extension)", () => {
 
     run(["pack", "--dry-run", "--json"], pkgDir); // triggers prepack
     expect(existsSync(join(pkgDir, "skills", "engram", "SKILL.md"))).toBe(true);
+    // ENG-37: the claude scaffold variant and launcher are copied too
+    expect(existsSync(join(pkgDir, "claude-scaffold", "bin", "engram"))).toBe(true);
+    expect(
+      existsSync(join(pkgDir, "claude-scaffold", "skills", "engram-scaffold", "SKILL.md")),
+    ).toBe(true);
   });
 
   it("shipped CLI installs and runs ENG-58 hooks from a fresh tarball (ENG-58)", (ctx) => {
@@ -197,6 +207,60 @@ describe("engram-cli packaging (pi extension)", () => {
     } finally {
       rmSync(home, { recursive: true, force: true });
       rmSync(emptyProject, { recursive: true, force: true });
+    }
+  });
+
+  it("shipped CLI scaffolds the claude project skill from a fresh tarball (ENG-37)", (ctx) => {
+    if (!spawnOk) ctx.skip();
+
+    run(["--filter", "engram-cli", "build"], repoRoot);
+    const parsed = JSON.parse(run(["pack", "--json", "--pack-destination", tmp], pkgDir));
+    const filename = (Array.isArray(parsed) ? parsed[0].filename : parsed.filename) as string;
+    const tarball = join(tmp, basename(filename));
+
+    const installed = join(tmp, "eng37-install-check");
+    mkdirSync(installed, { recursive: true });
+    run(["install", "--ignore-scripts", tarball], installed);
+    const pkgRoot = join(installed, "node_modules", "engram-cli");
+    const bin = join(pkgRoot, "dist", "index.js");
+
+    const proj = mkdtempSync(join(tmpdir(), "engram-eng37-proj-"));
+    try {
+      const out = execFileSync(
+        process.execPath,
+        [bin, "install", "claude", "--yes", "--root", proj],
+        { cwd: pkgRoot, encoding: "utf8" },
+      );
+      expect(out).toContain("Installed 2 change(s) for claude");
+
+      // the scaffold resolves the payload assets: frontmatter-first skill,
+      // shebang-first launcher with the release pin, markers in between
+      const skill = readFileSync(join(proj, ".claude", "skills", "engram", "SKILL.md"), "utf8");
+      expect(skill.startsWith("---\n")).toBe(true);
+      expect(skill).toContain("description:");
+      expect(skill).toContain("<!-- BEGIN: engram-claude-skill -->");
+      const launcher = readFileSync(
+        join(proj, ".claude", "skills", "engram", "bin", "engram"),
+        "utf8",
+      );
+      expect(launcher.startsWith("#!/bin/sh\n")).toBe(true);
+      expect(launcher).toContain("# BEGIN: engram-claude-launcher");
+      expect(launcher).toMatch(/engram-cli@\d+\.\d+\.\d+/);
+
+      // repair after a simulated older release pin
+      writeFileSync(
+        join(proj, ".claude", "skills", "engram", "bin", "engram"),
+        launcher.replace(/engram-cli@\d+\.\d+\.\d+/, "engram-cli@0.0.1"),
+      );
+      execFileSync(process.execPath, [bin, "install", "claude", "--yes", "--root", proj], {
+        cwd: pkgRoot,
+        encoding: "utf8",
+      });
+      expect(readFileSync(join(proj, ".claude", "skills", "engram", "bin", "engram"), "utf8")).toBe(
+        launcher,
+      );
+    } finally {
+      rmSync(proj, { recursive: true, force: true });
     }
   });
 
