@@ -432,7 +432,7 @@ program
 program
   .command("install <target>")
   .description(
-    "Install engram integration assets for a coding agent host or project (generic | cursor | claude | claude-code | codex). Use --status or --dry-run for read-only views.",
+    "Install engram integration assets: project targets (generic | cursor | claude) via --root, user-level hosts (claude-code | codex) via --home. Use --status or --dry-run for read-only views.",
   )
   .option("--uninstall", "Remove only engram-owned content for the target.")
   .option("--status", "Show the current installation state. Never writes.")

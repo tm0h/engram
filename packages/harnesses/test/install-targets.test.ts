@@ -56,6 +56,14 @@ import {
   genericRoot,
   genericSpec,
 } from "../src/installer/generic.js";
+import {
+  CURSOR_RULES_PATH,
+  CURSOR_ASSET_ID,
+  CURSOR_BEGIN_MARKER,
+  CURSOR_END_MARKER,
+  cursorRoot,
+  cursorSpec,
+} from "../src/installer/cursor.js";
 import { ENGRAM_GUIDANCE_TEMPLATE } from "../src/installer/guidance-template.js";
 
 /* ------------------------------ helpers ------------------------------ */
@@ -926,6 +934,14 @@ describe("generic install target (ENG-37)", () => {
     ]);
     await run(applyPlan(tmp, plan));
     expect(readRoot("AGENTS.md")).toBe(foreign);
+
+    // turn-1 review note 4: foreign content BELOW the block survives too
+    const trailing = "\nTeam conventions live after the block.\n";
+    writeRoot("AGENTS.md", `${foreign}${block()}${trailing}`);
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("current"); // text assets ignore outside content
+    await run(applyPlan(tmp, planUninstall(scan)));
+    expect(readRoot("AGENTS.md")).toBe(`${foreign}${trailing}`);
   });
 
   it("duplicated markers are corrupt and install refuses them without force", async () => {
@@ -986,5 +1002,139 @@ describe("generic install target (ENG-37)", () => {
     // CLI-variant only: no harness tool names, no hook targets, no host names
     expect(template).not.toMatch(/engram_/);
     expect(template).not.toMatch(/engram hook|claude-code|codex|cursor|\bpi\b/);
+  });
+});
+
+/* --------------------- cursor target (ENG-37 turn 2) --------------------- */
+
+describe("cursor install target (ENG-37)", () => {
+  /** Managed .mdc content between the markers: frontmatter + template body.
+   * Rendered exactly as the core writes it: its managedLines normalization
+   * drops a trailing newline, so the template's last line precedes END. */
+  const managed = (): string =>
+    [
+      "---",
+      "description: Engram recorded project memory for this repository (how to read, search, and record it).",
+      "alwaysApply: true",
+      "---",
+      "",
+      ENGRAM_GUIDANCE_TEMPLATE,
+    ].join("\n");
+  /** Exact rendered file: markers wrap the whole file (begin is line 0). */
+  const file = (): string => `${CURSOR_BEGIN_MARKER}\n${managed()}\n${CURSOR_END_MARKER}\n`;
+
+  it("declares one valid wholly-owned file asset with frontmatter and the shared body", () => {
+    const spec = cursorSpec();
+    expect(spec.assets).toHaveLength(1);
+    const asset = spec.assets[0] as Extract<AssetSpec, { kind: "file" }>;
+    expect(asset.kind).toBe("file");
+    expect(asset.id).toBe(CURSOR_ASSET_ID);
+    expect(asset.id).toBe("engram-cursor-rules");
+    expect(asset.path).toBe(CURSOR_RULES_PATH);
+    expect(asset.path).toBe(".cursor/rules/engram.mdc");
+    expect(asset.path.includes("\\")).toBe(false);
+    expect(asset.markers).toBeDefined();
+    expect(asset.markers!.begin).toBe(CURSOR_BEGIN_MARKER);
+    expect(asset.markers!.end).toBe(CURSOR_END_MARKER);
+    expect(CURSOR_BEGIN_MARKER).toContain(CURSOR_ASSET_ID);
+    expect(CURSOR_END_MARKER).toContain(CURSOR_ASSET_ID);
+    expect(CURSOR_BEGIN_MARKER).not.toBe(CURSOR_END_MARKER);
+    expect(validateSpec(spec)).toBeNull();
+    // frontmatter carries the documented cursor keys; body is the shared template
+    expect(asset.content).toContain("alwaysApply: true");
+    expect(asset.content).toMatch(/^description: /m);
+    expect(asset.content).toContain(ENGRAM_GUIDANCE_TEMPLATE);
+    expect(cursorRoot("/some/project/")).toBe("/some/project");
+  });
+
+  it("fresh install creates .cursor/rules/ and the exact markered file, then is current", async () => {
+    const spec = cursorSpec();
+    let scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("absent");
+    const plan = planInstall(scan);
+    expect(plan.blocked).toHaveLength(0);
+    expect(plan.actions).toEqual([
+      { op: "mkdir", path: ".cursor/rules" },
+      { op: "write", path: ".cursor/rules/engram.mdc", before: null, after: file() },
+    ]);
+    await run(applyPlan(tmp, plan));
+    expect(readRoot(".cursor/rules/engram.mdc")).toBe(file());
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("current");
+    expect(planInstall(scan).actions).toHaveLength(0);
+  });
+
+  it("template drift is repaired in place; frontmatter and body are restored", async () => {
+    const spec = cursorSpec();
+    writeRoot(".cursor/rules/engram.mdc", file().replace("engram search", "engram SERACH"));
+
+    let scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("drift");
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(readRoot(".cursor/rules/engram.mdc")).toBe(file());
+
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("current");
+  });
+
+  it("a pre-existing foreign engram.mdc is blocked and never clobbered", async () => {
+    const foreignFile = "---\ndescription: my own engram notes\nalwaysApply: true\n---\n\nMine.\n";
+    const spec = cursorSpec();
+    writeRoot(".cursor/rules/engram.mdc", foreignFile);
+
+    const scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("blocked");
+    const plan = planInstall(scan);
+    expect(plan.actions).toHaveLength(0);
+    expect(plan.blocked).toEqual([
+      {
+        id: CURSOR_ASSET_ID,
+        status: "blocked",
+        reasons: ["unmanaged file exists at target path (use force to overwrite)"],
+      },
+    ]);
+    expect(readRoot(".cursor/rules/engram.mdc")).toBe(foreignFile);
+  });
+
+  it("hand-edits outside the managed block block uninstall, keeping the file", async () => {
+    const spec = cursorSpec();
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, spec)))));
+    const extra = `${file()}\nHand-added note.\n`;
+    fs.writeFileSync(path.join(tmp, ".cursor/rules/engram.mdc"), extra);
+
+    let scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("drift");
+    const plan = planUninstall(scan);
+    expect(plan.actions).toHaveLength(0);
+    expect(plan.blocked).toEqual([
+      {
+        id: CURSOR_ASSET_ID,
+        status: "drift",
+        reasons: ["managed file has extra unmanaged content (use force to remove)"],
+      },
+    ]);
+    expect(readRoot(".cursor/rules/engram.mdc")).toBe(extra);
+  });
+
+  it("uninstall removes only our file; user .mdc files in .cursor/rules/ survive", async () => {
+    const userRule = "---\ndescription: user rule\nglobs: *.ts\n---\n\nKeep types strict.\n";
+    writeRoot(".cursor/rules/my-rules.mdc", userRule);
+    const spec = cursorSpec();
+
+    // nothing of ours installed: uninstall leaves everything alone
+    let scan = await run(scanAssets(tmp, spec));
+    expect(planUninstall(scan).actions).toHaveLength(0);
+
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(readRoot(".cursor/rules/my-rules.mdc")).toBe(userRule);
+
+    scan = await run(scanAssets(tmp, spec));
+    const plan = planUninstall(scan);
+    expect(plan.actions).toEqual([
+      { op: "remove", path: ".cursor/rules/engram.mdc", before: file() },
+    ]);
+    await run(applyPlan(tmp, plan));
+    expect(fs.existsSync(path.join(tmp, ".cursor/rules/engram.mdc"))).toBe(false);
+    expect(readRoot(".cursor/rules/my-rules.mdc")).toBe(userRule);
   });
 });

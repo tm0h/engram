@@ -38,12 +38,15 @@ import {
 import {
   CLAUDE_CODE_TARGET,
   CODEX_TARGET,
+  CURSOR_TARGET,
   GENERIC_TARGET,
   claudeCodeRoot,
   claudeCodeSpec,
   codexHooksFlagState,
   codexRoot,
   codexSpec,
+  cursorRoot,
+  cursorSpec,
   genericRoot,
   genericSpec,
   parseSidecarLedger,
@@ -89,11 +92,14 @@ type TargetModule =
       readonly root: (projectRoot: string) => string;
     };
 
-// cursor and claude join here in ENG-37 turns 2-3; until then they fall to
-// the unknown-target error (which already enumerates all five names).
+// claude joins here in ENG-37 turn 3; until then it falls to the
+// unknown-target error (which already enumerates all five names).
 const targetFor = (target: string): TargetModule | null => {
   if (target === GENERIC_TARGET) {
     return { kind: "project", spec: genericSpec(), root: genericRoot };
+  }
+  if (target === CURSOR_TARGET) {
+    return { kind: "project", spec: cursorSpec(), root: cursorRoot };
   }
   if (target === CLAUDE_CODE_TARGET) {
     return { kind: "home", spec: claudeCodeSpec(), root: claudeCodeRoot };

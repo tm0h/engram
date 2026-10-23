@@ -13,6 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { installCommand } from "../src/commands/install.js";
 import {
+  CURSOR_BEGIN_MARKER,
   ENGRAM_GUIDANCE_TEMPLATE,
   GENERIC_BEGIN_MARKER,
   GENERIC_END_MARKER,
@@ -97,8 +98,7 @@ describe("engram install command", () => {
     await expect(runInstall({ target: "nope" })).rejects.toThrow(
       /unknown install target "nope" \(expected: generic \| cursor \| claude \| claude-code \| codex\)/,
     );
-    // cursor and claude land in ENG-37 turns 2-3 and stay unknown until then
-    await expect(runInstall({ target: "cursor" })).rejects.toThrow(/unknown install target/);
+    // claude lands in ENG-37 turn 3 and stays unknown until then
     await expect(runInstall({ target: "claude" })).rejects.toThrow(/unknown install target/);
   });
 
@@ -511,5 +511,96 @@ describe("engram install command", () => {
       /refusing to modify .* --yes/,
     );
     expect(fs.existsSync(path.join(proj, "AGENTS.md"))).toBe(false);
+  });
+
+  /* ---------------------- cursor: project-local (ENG-37) ---------------------- */
+
+  const cursorRule = (proj: string): string => path.join(proj, ".cursor", "rules", "engram.mdc");
+
+  it("cursor: dry-run plans, install --yes scaffolds .cursor/rules, status and re-run are read-only", async () => {
+    const proj = path.join(tmp, "proj");
+    fs.mkdirSync(proj, { recursive: true });
+
+    // dry-run: exact plan (directory + file), never writes
+    await runInstall({ target: "cursor", dryRun: true, root: proj });
+    expect(output()).toContain(`Install plan for cursor in ${proj}`);
+    expect(output()).toContain("create directory .cursor/rules");
+    expect(output()).toMatch(/write \.cursor[/\\]rules[/\\]engram\.mdc \(new file -> \d+ bytes\)/);
+    expect(output()).toContain("Dry run: no changes were written.");
+    expect(fs.existsSync(path.join(proj, ".cursor"))).toBe(false);
+
+    // install
+    await runInstall({ target: "cursor", yes: true, root: proj });
+    expect(output()).toContain("Installed 1 change(s) for cursor");
+    expect(output()).not.toMatch(/\bhooks\b/);
+    const installed = fs.readFileSync(cursorRule(proj), "utf8");
+    expect(installed).toContain(CURSOR_BEGIN_MARKER);
+    expect(installed).toContain("alwaysApply: true");
+    expect(installed).toContain(ENGRAM_GUIDANCE_TEMPLATE);
+
+    // status: read-only view
+    outLines = [];
+    await runInstall({ target: "cursor", status: true, root: proj });
+    expect(output()).toContain("target: cursor");
+    expect(output()).toContain(`root: ${proj}`);
+    expect(output()).toContain(".cursor/rules/engram.mdc: current");
+    expect(fs.readFileSync(cursorRule(proj), "utf8")).toBe(installed);
+
+    // idempotent re-run with --yes changes nothing
+    outLines = [];
+    await runInstall({ target: "cursor", yes: true, root: proj });
+    expect(output()).toContain("(no changes needed)");
+    expect(output()).toContain("Nothing to do");
+    expect(fs.readFileSync(cursorRule(proj), "utf8")).toBe(installed);
+  });
+
+  it("cursor: repairs template drift, preserves user .mdc files, uninstalls owned-only", async () => {
+    const proj = path.join(tmp, "proj");
+    const userRule = path.join(proj, ".cursor", "rules", "my-rules.mdc");
+    const userContent = "---\ndescription: user rule\nglobs: *.ts\n---\n\nKeep types strict.\n";
+    fs.mkdirSync(path.dirname(userRule), { recursive: true });
+    fs.writeFileSync(userRule, userContent);
+
+    await runInstall({ target: "cursor", yes: true, root: proj });
+    const installed = fs.readFileSync(cursorRule(proj), "utf8");
+    expect(fs.readFileSync(userRule, "utf8")).toBe(userContent);
+
+    // drift: a hand edit inside the managed block is repaired, user file kept
+    fs.writeFileSync(cursorRule(proj), installed.replace("engram search", "engram SERACH"));
+    await runInstall({ target: "cursor", yes: true, root: proj });
+    const repaired = fs.readFileSync(cursorRule(proj), "utf8");
+    expect(repaired).toContain("engram search");
+    expect(repaired).not.toContain("engram SERACH");
+    expect(fs.readFileSync(userRule, "utf8")).toBe(userContent);
+
+    // uninstall: our file removed, user file and directory survive
+    outLines = [];
+    await runInstall({ target: "cursor", yes: true, uninstall: true, root: proj });
+    expect(output()).toContain("Uninstalled 1 change(s) for cursor");
+    expect(fs.existsSync(cursorRule(proj))).toBe(false);
+    expect(fs.readFileSync(userRule, "utf8")).toBe(userContent);
+    expect(noBackupFiles()).toBe(true);
+  });
+
+  it("cursor: a pre-existing foreign engram.mdc is refused, not clobbered", async () => {
+    const proj = path.join(tmp, "proj");
+    const rulePath = cursorRule(proj);
+    fs.mkdirSync(path.dirname(rulePath), { recursive: true });
+    const foreignFile = "---\ndescription: my own engram notes\nalwaysApply: true\n---\n\nMine.\n";
+    fs.writeFileSync(rulePath, foreignFile);
+
+    await expect(runInstall({ target: "cursor", yes: true, root: proj })).rejects.toThrow(
+      /refusing to install.*blocked asset\(s\).*engram-cursor-rules/,
+    );
+    expect(fs.readFileSync(rulePath, "utf8")).toBe(foreignFile);
+  });
+
+  it("cursor: --home is a hard error naming --root", async () => {
+    const proj = path.join(tmp, "proj");
+    fs.mkdirSync(proj, { recursive: true });
+    await expect(
+      runInstall({ target: "cursor", yes: true, root: proj, home: path.join(tmp, "home") }),
+    ).rejects.toThrow(/--home[\s\S]*--root/);
+    expect(fs.existsSync(path.join(proj, ".cursor"))).toBe(false);
   });
 });
