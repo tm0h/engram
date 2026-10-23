@@ -48,6 +48,15 @@ import {
 import { claudeCodeSpec, claudeCodeRoot } from "../src/installer/claude-code.js";
 import { codexHooksFlagState, codexSpec, codexRoot } from "../src/installer/codex.js";
 import { parseSidecarLedger, SIDECAR_FILENAME } from "../src/installer/sidecar.js";
+import {
+  GENERIC_AGENTS_PATH,
+  GENERIC_ASSET_ID,
+  GENERIC_BEGIN_MARKER,
+  GENERIC_END_MARKER,
+  genericRoot,
+  genericSpec,
+} from "../src/installer/generic.js";
+import { ENGRAM_GUIDANCE_TEMPLATE } from "../src/installer/guidance-template.js";
 
 /* ------------------------------ helpers ------------------------------ */
 
@@ -825,5 +834,157 @@ describe("installer core / jsonEntries markerless mode", () => {
     const after = installedDoc() as any;
     expect(after.hooks.SessionStart).toBeUndefined(); // ours removed
     expect(after.hooks.SessionEnd).toHaveLength(1); // the copy is foreign
+  });
+});
+
+/* --------------------- generic target (ENG-37 turn 1) --------------------- */
+
+describe("generic install target (ENG-37)", () => {
+  /** Exact managed block the installer writes: markers, template, LF endings. */
+  const block = (): string =>
+    `${GENERIC_BEGIN_MARKER}\n${ENGRAM_GUIDANCE_TEMPLATE}\n${GENERIC_END_MARKER}\n`;
+
+  it("declares one valid text asset on AGENTS.md with id-bearing HTML-comment markers", () => {
+    const spec = genericSpec();
+    expect(spec.assets).toHaveLength(1);
+    const asset = spec.assets[0] as Extract<AssetSpec, { kind: "text" }>;
+    expect(asset.kind).toBe("text");
+    expect(asset.id).toBe(GENERIC_ASSET_ID);
+    expect(asset.id).toBe("engram-agents-instructions");
+    expect(asset.path).toBe(GENERIC_AGENTS_PATH);
+    expect(asset.path).toBe("AGENTS.md");
+    // POSIX-style relative path: the core rejects backslashes outright
+    expect(asset.path.includes("\\")).toBe(false);
+    expect(validateSpec(spec)).toBeNull();
+    expect(asset.beginMarker).toBe(GENERIC_BEGIN_MARKER);
+    expect(asset.endMarker).toBe(GENERIC_END_MARKER);
+    expect(GENERIC_BEGIN_MARKER).toContain(GENERIC_ASSET_ID);
+    expect(GENERIC_END_MARKER).toContain(GENERIC_ASSET_ID);
+    expect(GENERIC_BEGIN_MARKER).not.toBe(GENERIC_END_MARKER);
+    // project targets root at the project directory itself
+    expect(genericRoot("/some/project/")).toBe("/some/project");
+    expect(genericRoot("/some/project")).toBe("/some/project");
+  });
+
+  it("installs into a fresh root and reports current afterwards", async () => {
+    const spec = genericSpec();
+    let scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("absent");
+    const plan = planInstall(scan);
+    expect(plan.blocked).toHaveLength(0);
+    expect(plan.actions).toEqual([
+      { op: "write", path: "AGENTS.md", before: null, after: block() },
+    ]);
+    await run(applyPlan(tmp, plan));
+    expect(readRoot("AGENTS.md")).toBe(block());
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("current");
+    expect(planInstall(scan).actions).toHaveLength(0);
+  });
+
+  it("appends to foreign content byte-for-byte and re-runs stay idempotent", async () => {
+    const foreignTop = "# My project\n\nAgent notes live here.\n\n";
+    const foreignBottom = "## Build\n\npnpm test\n";
+    writeRoot("AGENTS.md", `${foreignTop}${foreignBottom}`);
+    const spec = genericSpec();
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, spec)))));
+    expect(readRoot("AGENTS.md")).toBe(`${foreignTop}${foreignBottom}${block()}`);
+
+    const scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("current");
+    expect(planInstall(scan).actions).toHaveLength(0);
+  });
+
+  it("drift repair rebuilds the managed block in place and keeps foreign content", async () => {
+    const foreign = "# My project\n";
+    const spec = genericSpec();
+    const agents = path.join(tmp, "AGENTS.md");
+    fs.writeFileSync(agents, `${foreign}${block()}`.replace("engram search", "engram SERACH"));
+
+    let scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("drift");
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(readRoot("AGENTS.md")).toBe(`${foreign}${block()}`);
+
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("current");
+  });
+
+  it("uninstall removes only the managed block; AGENTS.md always survives", async () => {
+    const foreign = "# My project\n";
+    const spec = genericSpec();
+    // nothing installed: uninstall is a no-op, the file is never touched
+    writeRoot("AGENTS.md", foreign);
+    let scan = await run(scanAssets(tmp, spec));
+    expect(planUninstall(scan).actions).toHaveLength(0);
+
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, spec)))));
+    scan = await run(scanAssets(tmp, spec));
+    const plan = planUninstall(scan);
+    expect(plan.actions).toEqual([
+      { op: "write", path: "AGENTS.md", before: `${foreign}${block()}`, after: foreign },
+    ]);
+    await run(applyPlan(tmp, plan));
+    expect(readRoot("AGENTS.md")).toBe(foreign);
+  });
+
+  it("duplicated markers are corrupt and install refuses them without force", async () => {
+    const spec = genericSpec();
+    writeRoot("AGENTS.md", `${block()}${block()}`);
+    const scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("corrupt");
+    const plan = planInstall(scan);
+    expect(plan.actions).toHaveLength(0);
+    expect(plan.blocked).toEqual([
+      { id: GENERIC_ASSET_ID, status: "corrupt", reasons: ["unbalanced or duplicated markers"] },
+    ]);
+  });
+
+  it("CRLF: markers still match, foreign bytes survive, managed block stays LF", async () => {
+    const foreignCrlf = "# Project\r\nWindows-edited notes.\r\n";
+    const spec = genericSpec();
+    writeRoot("AGENTS.md", foreignCrlf);
+
+    let scan = await run(scanAssets(tmp, spec));
+    // no markers yet: a text asset appends regardless of line endings
+    expect(scan.states[0]!.status).toBe("absent");
+    await run(applyPlan(tmp, planInstall(scan)));
+    const after = readRoot("AGENTS.md")!;
+    // foreign CRLF bytes intact, managed block written LF per core renderBlock
+    expect(after.startsWith(foreignCrlf)).toBe(true);
+    expect(after).toBe(`${foreignCrlf}${block()}`);
+
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("current");
+
+    await run(applyPlan(tmp, planUninstall(scan)));
+    expect(readRoot("AGENTS.md")).toBe(foreignCrlf);
+  });
+
+  it("shared guidance template is bounded and carries the required semantics", () => {
+    const template = ENGRAM_GUIDANCE_TEMPLATE;
+    expect(template.split("\n").length).toBeLessThanOrEqual(40);
+    // explicit manual session start; never claims automatic loading
+    expect(template).toContain("`engram context`");
+    expect(template).toMatch(/manual/i);
+    expect(template).not.toMatch(/automatic/i);
+    // search/show for specifics, add with --type decision
+    expect(template).toContain("`engram search");
+    expect(template).toContain("`engram show");
+    expect(template).toContain("`engram add`");
+    expect(template).toContain("--type decision");
+    // never hand-create engram files or guess ids
+    expect(template).toMatch(/never hand-create/i);
+    expect(template).toContain(".engram/engrams/");
+    expect(template).toMatch(/never guess/i);
+    // personal scope, brief do/do-not recording rules
+    expect(template).toContain("--scope personal");
+    expect(template).toMatch(/do record/i);
+    expect(template).toMatch(/do not record/i);
+    // precedence caveat, phrased like the in-repo precedents
+    expect(template).toContain("system, user, and repository instructions");
+    // CLI-variant only: no harness tool names, no hook targets, no host names
+    expect(template).not.toMatch(/engram_/);
+    expect(template).not.toMatch(/engram hook|claude-code|codex|cursor|\bpi\b/);
   });
 });
