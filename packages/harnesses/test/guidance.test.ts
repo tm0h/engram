@@ -200,13 +200,15 @@ describe("guidance / skills stay aligned", () => {
       // distinction stays explicit
       expect(skill, `${name}: claude distinction`).toMatch(/project skill scaffold/i);
       expect(skill, `${name}: claude-code distinction`).toMatch(/user-level/);
+      // the launcher fallback example is quoted (PR review R2)
+      expect(skill, `${name}: quoted fallback`).toContain('sh "${CLAUDE_SKILL_DIR}/bin/engram"');
     }
   });
 });
 
 describe("guidance / claude scaffold variant (ENG-37)", () => {
   const scaffoldSkill = fs.readFileSync(
-    path.join(repoRoot, "packages/harnesses/claude/skills/engram-scaffold/SKILL.md"),
+    path.join(repoRoot, "packages/harnesses/claude/scaffold/SKILL.md"),
     "utf8",
   );
   const sessionFlow = scaffoldSkill.split("## Session flow")[1]?.split("## ")[0] ?? "";
@@ -221,7 +223,8 @@ describe("guidance / claude scaffold variant (ENG-37)", () => {
   });
 
   it("preamble points at the launcher fallback, not the plugin, and stays scaffold-worded", () => {
-    expect(scaffoldSkill).toContain("${CLAUDE_SKILL_DIR}/bin/engram");
+    // the fallback is quoted: project paths may contain spaces (PR review R2)
+    expect(scaffoldSkill).toContain('sh "${CLAUDE_SKILL_DIR}/bin/engram"');
     expect(scaffoldSkill).toContain("engram-cli");
     expect(scaffoldSkill).not.toContain("while this plugin is enabled");
   });

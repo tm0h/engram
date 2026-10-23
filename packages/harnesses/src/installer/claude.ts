@@ -11,8 +11,9 @@
  *   launcher shipped as-is, release-time version pin included. The
  *   `#!/bin/sh` shebang is the declared header (always line 1);
  *   shell-comment markers wrap the body. It is invoked through an
- *   interpreter as `sh ${CLAUDE_SKILL_DIR}/bin/engram <args>`, so no
- *   exec-bit support exists or is needed.
+ *   interpreter as `sh "${CLAUDE_SKILL_DIR}/bin/engram" <args>` (quoted:
+ *   project paths may contain spaces), so no exec-bit support exists or
+ *   is needed.
  *
  * Markered ownership means release updates classify as drift and repair
  * through a plain previewed re-run instead of force-only overwrites.
@@ -46,11 +47,14 @@ export const CLAUDE_LAUNCHER_END_MARKER = "# END: engram-claude-launcher";
 
 /**
  * Scaffold-root layouts, checked in order while walking up from this
- * module: the repo checkout (`<pkg>/claude/...`) and the packaged CLI
- * payload (`<pkg>/claude-scaffold/...`, written by the prepack copy).
+ * module: the repo checkout (`<pkg>/claude/scaffold/SKILL.md` beside the
+ * plugin skill, outside its discoverable `skills/` dir) and the packaged
+ * CLI payload (`<pkg>/claude-scaffold/SKILL.md`, written by prepack).
  */
-const SCAFFOLD_DIRS = ["claude", "claude-scaffold"] as const;
-const SCAFFOLD_SKILL_RELPATH = "skills/engram-scaffold/SKILL.md";
+const SCAFFOLD_LAYOUTS = [
+  { dir: "claude", skill: "scaffold/SKILL.md" },
+  { dir: "claude-scaffold", skill: "SKILL.md" },
+] as const;
 const SCAFFOLD_LAUNCHER_RELPATH = "bin/engram";
 
 interface ScaffoldAssets {
@@ -58,18 +62,18 @@ interface ScaffoldAssets {
   readonly launcherSource: string;
 }
 
-const looksLikeScaffoldRoot = (root: string, dir: string): boolean =>
-  existsSync(join(root, dir, SCAFFOLD_LAUNCHER_RELPATH)) &&
-  existsSync(join(root, dir, SCAFFOLD_SKILL_RELPATH));
+const looksLikeScaffoldRoot = (root: string, layout: (typeof SCAFFOLD_LAYOUTS)[number]): boolean =>
+  existsSync(join(root, layout.dir, SCAFFOLD_LAUNCHER_RELPATH)) &&
+  existsSync(join(root, layout.dir, layout.skill));
 
 const findScaffoldAssets = (): ScaffoldAssets => {
   let dir = dirname(fileURLToPath(import.meta.url));
   for (let depth = 0; depth < 10; depth += 1) {
-    for (const sub of SCAFFOLD_DIRS) {
-      if (looksLikeScaffoldRoot(dir, sub)) {
+    for (const layout of SCAFFOLD_LAYOUTS) {
+      if (looksLikeScaffoldRoot(dir, layout)) {
         return {
-          skillSource: readFileSync(join(dir, sub, SCAFFOLD_SKILL_RELPATH), "utf8"),
-          launcherSource: readFileSync(join(dir, sub, SCAFFOLD_LAUNCHER_RELPATH), "utf8"),
+          skillSource: readFileSync(join(dir, layout.dir, layout.skill), "utf8"),
+          launcherSource: readFileSync(join(dir, layout.dir, SCAFFOLD_LAUNCHER_RELPATH), "utf8"),
         };
       }
     }
@@ -126,5 +130,9 @@ export const claudeSpec = (): InstallSpec => {
   return { assets: [skill, launcher] };
 };
 
-/** Project targets install into the project directory itself. */
-export const claudeRoot = (projectRoot: string): string => projectRoot.replace(/\/+$/, "");
+/** Project targets install into the project directory itself. Trailing
+ * separators are trimmed, but a separator-only root stays the root. */
+export const claudeRoot = (projectRoot: string): string => {
+  const trimmed = projectRoot.replace(/\/+$/, "");
+  return trimmed === "" ? "/" : trimmed;
+};

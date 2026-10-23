@@ -883,7 +883,10 @@ describe("generic install target (ENG-37)", () => {
     expect(GENERIC_BEGIN_MARKER).toContain(GENERIC_ASSET_ID);
     expect(GENERIC_END_MARKER).toContain(GENERIC_ASSET_ID);
     expect(GENERIC_BEGIN_MARKER).not.toBe(GENERIC_END_MARKER);
-    // project targets root at the project directory itself
+    // project targets root at the project directory itself; a
+    // trailing-separator-only root stays the root and never degenerates
+    expect(genericRoot("/")).toBe("/");
+    expect(genericRoot("///")).toBe("/");
     expect(genericRoot("/some/project/")).toBe("/some/project");
     expect(genericRoot("/some/project")).toBe("/some/project");
   });
@@ -1051,6 +1054,8 @@ describe("cursor install target (ENG-37)", () => {
     expect(CURSOR_END_MARKER).toContain(CURSOR_ASSET_ID);
     expect(CURSOR_BEGIN_MARKER).not.toBe(CURSOR_END_MARKER);
     expect(asset.content).toBe(ENGRAM_GUIDANCE_TEMPLATE);
+    expect(cursorRoot("/")).toBe("/");
+    expect(cursorRoot("///")).toBe("/");
     expect(cursorRoot("/some/project/")).toBe("/some/project");
   });
 
@@ -1166,10 +1171,7 @@ describe("cursor install target (ENG-37)", () => {
 describe("claude install target (ENG-37)", () => {
   /** Source-of-truth scaffold assets, read from their in-repo locations. */
   const repoSkill = (): string =>
-    fs.readFileSync(
-      fileURLToPath(new URL("../claude/skills/engram-scaffold/SKILL.md", import.meta.url)),
-      "utf8",
-    );
+    fs.readFileSync(fileURLToPath(new URL("../claude/scaffold/SKILL.md", import.meta.url)), "utf8");
   const repoLauncher = (): string =>
     fs.readFileSync(fileURLToPath(new URL("../claude/bin/engram", import.meta.url)), "utf8");
 
@@ -1220,6 +1222,8 @@ describe("claude install target (ENG-37)", () => {
     expect(CLAUDE_LAUNCHER_END_MARKER).toContain(CLAUDE_LAUNCHER_ASSET_ID);
 
     expect(validateSpec(spec)).toBeNull();
+    expect(claudeRoot("/")).toBe("/");
+    expect(claudeRoot("///")).toBe("/");
     expect(claudeRoot("/some/project/")).toBe("/some/project");
   });
 

@@ -66,9 +66,7 @@ describe("engram-cli packaging (pi extension)", () => {
     expect(existsSync(join(pkgRoot, "skills", "engram", "SKILL.md"))).toBe(true);
     // ENG-37: the claude scaffold assets ship in the payload
     expect(existsSync(join(pkgRoot, "claude-scaffold", "bin", "engram"))).toBe(true);
-    expect(
-      existsSync(join(pkgRoot, "claude-scaffold", "skills", "engram-scaffold", "SKILL.md")),
-    ).toBe(true);
+    expect(existsSync(join(pkgRoot, "claude-scaffold", "SKILL.md"))).toBe(true);
 
     // manifest declares the extension, skill, and gallery keyword
     const manifest = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"));
@@ -129,9 +127,7 @@ describe("engram-cli packaging (pi extension)", () => {
     expect(existsSync(join(pkgDir, "skills", "engram", "SKILL.md"))).toBe(true);
     // ENG-37: the claude scaffold variant and launcher are copied too
     expect(existsSync(join(pkgDir, "claude-scaffold", "bin", "engram"))).toBe(true);
-    expect(
-      existsSync(join(pkgDir, "claude-scaffold", "skills", "engram-scaffold", "SKILL.md")),
-    ).toBe(true);
+    expect(existsSync(join(pkgDir, "claude-scaffold", "SKILL.md"))).toBe(true);
   });
 
   it("shipped CLI installs and runs ENG-58 hooks from a fresh tarball (ENG-58)", (ctx) => {

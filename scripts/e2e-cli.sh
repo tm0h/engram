@@ -674,6 +674,80 @@ mkdir -p "$hook_home"
     fail "codex uninstall left the ownership sidecar behind"
 )
 
+step "Project install targets"
+# generic (ENG-37, R3): foreign AGENTS.md WITHOUT a trailing newline; the
+# managed block starts on its own line but stays unterminated, so uninstall
+# must restore the original file byte-exactly.
+printf '# My project\nagent notes without a trailing newline' > AGENTS.md
+agents_sha_before=$(sha256sum AGENTS.md | cut -d' ' -f1)
+engram install generic --dry-run | grep -F "Dry run: no changes were written."
+[[ "$(sha256sum AGENTS.md | cut -d' ' -f1)" == "$agents_sha_before" ]] ||
+  fail "dry-run modified AGENTS.md"
+engram install generic --yes | grep -F "Installed"
+grep -F "<!-- BEGIN: engram-agents-instructions -->" AGENTS.md >/dev/null
+engram install generic --status | grep -F "AGENTS.md: current"
+engram install generic --yes |
+  grep -F "Nothing to do: files for generic are already up to date."
+engram install generic --yes --uninstall | grep -F "Uninstalled"
+[[ "$(sha256sum AGENTS.md | cut -d' ' -f1)" == "$agents_sha_before" ]] ||
+  fail "generic uninstall did not restore AGENTS.md byte-exactly"
+
+# cursor (frontmatter-first): user rules survive install and uninstall.
+mkdir -p .cursor/rules
+printf -- '---\ndescription: user rule\nglobs: "*.ts"\n---\n\nKeep types strict.\n' \
+  > .cursor/rules/my-rule.mdc
+cursor_user_sha=$(sha256sum .cursor/rules/my-rule.mdc | cut -d' ' -f1)
+engram install cursor --yes | grep -F "Installed"
+[[ "$(head -n 1 .cursor/rules/engram.mdc)" == "---" ]] ||
+  fail "cursor rule is not frontmatter-first"
+grep -F "alwaysApply: true" .cursor/rules/engram.mdc >/dev/null
+grep -F 'engram search' .cursor/rules/engram.mdc >/dev/null
+[[ "$(sha256sum .cursor/rules/my-rule.mdc | cut -d' ' -f1)" == "$cursor_user_sha" ]] ||
+  fail "cursor install touched a user rule"
+engram install cursor --yes --uninstall | grep -F "Uninstalled"
+[[ ! -e .cursor/rules/engram.mdc ]] || fail "cursor uninstall left the managed rule"
+[[ "$(sha256sum .cursor/rules/my-rule.mdc | cut -d' ' -f1)" == "$cursor_user_sha" ]] ||
+  fail "cursor uninstall touched a user rule"
+
+# --root: the same read-only view against a second directory under run_root.
+root_view="$run_root/root-view"
+mkdir -p "$root_view"
+engram install cursor --status --root "$root_view" | grep -F "engram.mdc: absent"
+[[ -z "$(find "$root_view" -mindepth 1 -print -quit)" ]] ||
+  fail "status with --root wrote into the target directory"
+
+# claude (project skill scaffold): frontmatter-first skill, shebang-first
+# launcher. The container has the real engram on PATH, so the scaffolded
+# launcher must exec it and report the candidate version live.
+mkdir -p .claude/skills/my-skill
+printf -- '---\nname: my-skill\ndescription: user skill\n---\n\nDo things.\n' \
+  > .claude/skills/my-skill/SKILL.md
+engram install claude --yes | grep -F "Installed"
+[[ "$(head -n 1 .claude/skills/engram/SKILL.md)" == "---" ]] ||
+  fail "claude skill is not frontmatter-first"
+[[ "$(head -n 1 .claude/skills/engram/bin/engram)" == "#!/bin/sh" ]] ||
+  fail "claude launcher is not shebang-first"
+claude_version=$(PATH="$(dirname "$ENGRAM_E2E_BIN"):$PATH" \
+  sh .claude/skills/engram/bin/engram --version)
+[[ "$claude_version" == "$cli_version" ]] ||
+  fail "scaffolded launcher did not exec the real engram ($claude_version)"
+engram install claude --yes --uninstall | grep -F "Uninstalled"
+[[ ! -e .claude/skills/engram/SKILL.md ]] || fail "claude uninstall left the skill"
+[[ ! -e .claude/skills/engram/bin/engram ]] || fail "claude uninstall left the launcher"
+[[ -f .claude/skills/my-skill/SKILL.md ]] || fail "claude uninstall removed a user skill"
+
+# deny-cases: --home is a project-target error naming --root; unknown
+# targets enumerate exactly the five lanes.
+if engram install generic --home "$run_root/host-home" >/dev/null 2>&1; then
+  fail "--home with a project target must fail"
+fi
+engram install generic --home "$run_root/host-home" 2>&1 | grep -F -- "--root"
+if engram install nope >/dev/null 2>&1; then
+  fail "unknown install targets must fail"
+fi
+engram install nope 2>&1 |
+  grep -F 'generic | cursor | claude | claude-code | codex'
+
 step "Removal and duplicate no-op"
 engram dedupe --scope project | grep -F "No duplicate ids found"
 engram remove --yes "$replacement_id"

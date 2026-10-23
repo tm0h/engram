@@ -36,5 +36,9 @@ export const genericSpec = (): InstallSpec => {
   return { assets: [asset] };
 };
 
-/** Project targets install into the project directory itself. */
-export const genericRoot = (projectRoot: string): string => projectRoot.replace(/\/+$/, "");
+/** Project targets install into the project directory itself. Trailing
+ * separators are trimmed, but a separator-only root stays the root. */
+export const genericRoot = (projectRoot: string): string => {
+  const trimmed = projectRoot.replace(/\/+$/, "");
+  return trimmed === "" ? "/" : trimmed;
+};

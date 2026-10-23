@@ -512,6 +512,23 @@ describe("engram install command", () => {
     expect(fs.existsSync(path.join(proj, "AGENTS.md"))).toBe(false);
   });
 
+  it("generic: uninstall restores a no-trailing-newline AGENTS.md byte-exactly (R3)", async () => {
+    const proj = path.join(tmp, "proj");
+    fs.mkdirSync(proj, { recursive: true });
+    const agents = path.join(proj, "AGENTS.md");
+    fs.writeFileSync(agents, "# My project\nnotes without a trailing newline");
+    const before = fs.readFileSync(agents, "utf8");
+
+    await runInstall({ target: "generic", yes: true, root: proj });
+    const installed = fs.readFileSync(agents, "utf8");
+    // the block starts on its own line but is not newline-terminated
+    expect(installed.startsWith(`${before}\n`)).toBe(true);
+    expect(installed.endsWith(GENERIC_END_MARKER)).toBe(true);
+
+    await runInstall({ target: "generic", yes: true, uninstall: true, root: proj });
+    expect(fs.readFileSync(agents, "utf8")).toBe(before);
+  });
+
   /* ---------------------- cursor: project-local (ENG-37) ---------------------- */
 
   const cursorRule = (proj: string): string => path.join(proj, ".cursor", "rules", "engram.mdc");
@@ -619,9 +636,7 @@ describe("engram install command", () => {
   /** Source-of-truth scaffold asset, read from its in-repo location. */
   const repoScaffoldSkill = (): string =>
     fs.readFileSync(
-      fileURLToPath(
-        new URL("../../harnesses/claude/skills/engram-scaffold/SKILL.md", import.meta.url),
-      ),
+      fileURLToPath(new URL("../../harnesses/claude/scaffold/SKILL.md", import.meta.url)),
       "utf8",
     );
 

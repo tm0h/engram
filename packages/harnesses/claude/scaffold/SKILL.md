@@ -8,7 +8,7 @@ description: Record and recall durable memory for this codebase with the engram 
 This workspace has shared, git-native memory. Engrams are plain Markdown
 entries (decisions, facts, gotchas, conventions) recorded per project
 (committed under `.engram/`, team-wide) or personally (this machine only,
-`~/.engram`). The `engram` command is on your PATH because you installed `engram-cli`. If it is ever missing, run `sh ${CLAUDE_SKILL_DIR}/bin/engram <args>` instead of a bare `engram` command.
+`~/.engram`). The `engram` command is on your PATH because you installed `engram-cli`. If it is ever missing, run `sh "${CLAUDE_SKILL_DIR}/bin/engram" <args>` instead of a bare `engram` command.
 
 ## Session flow
 
@@ -188,7 +188,7 @@ Project targets (ENG-37):
   in `.cursor/rules/` stay untouched.
 - `engram install claude`: scaffolds the project skill at
   `.claude/skills/engram/` (a `SKILL.md` plus a `bin/engram` launcher
-  invoked as `sh ${CLAUDE_SKILL_DIR}/bin/engram <args>`). This is the
+  invoked as `sh "${CLAUDE_SKILL_DIR}/bin/engram" <args>`). This is the
   project skill scaffold, distinct from `claude-code`, which installs
   user-level hooks. User skills stay untouched.
 

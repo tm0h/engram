@@ -189,7 +189,7 @@ Project targets (ENG-37):
   in `.cursor/rules/` stay untouched.
 - `engram install claude`: scaffolds the project skill at
   `.claude/skills/engram/` (a `SKILL.md` plus a `bin/engram` launcher
-  invoked as `sh ${CLAUDE_SKILL_DIR}/bin/engram <args>`). This is the
+  invoked as `sh "${CLAUDE_SKILL_DIR}/bin/engram" <args>`). This is the
   project skill scaffold, distinct from `claude-code`, which installs
   user-level hooks. User skills stay untouched.
 
