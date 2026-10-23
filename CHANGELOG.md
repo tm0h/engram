@@ -41,13 +41,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alias-only match surfaces in results. Quoted multiword aliases match
   through the phrase bonus; ranking explanations expose `alias` field
   contributions. Entries without aliases keep identical scores and order.
-- **Claude Code and Codex lifecycle hooks ([#44]).** `engram install
-  claude-code` and `engram install codex` install user-level lifecycle hooks
-  (startup/resume/compact; SessionStart/PostCompact, minimum Codex 0.155.1).
-  Installation is idempotent, confirmed explicitly, with dry-run, status, and
-  an uninstall that removes only engram-owned entries tracked in
-  `engram-managed.json` sidecars. Existing user configuration and foreign
-  hooks survive unchanged. Hooks fail open with bounded output.
+- **Claude Code and Codex lifecycle hooks ([#44]).** The new
+  `engram install claude-code` and `engram install codex` commands install
+  user-level lifecycle hooks (startup/resume/compact;
+  SessionStart/PostCompact, minimum Codex 0.155.1). Installation is
+  idempotent, confirmed explicitly, with dry-run, status, and an uninstall
+  that removes only engram-owned entries tracked in `engram-managed.json`
+  sidecars. Existing user configuration and foreign hooks survive unchanged.
+  Hooks fail open with bounded output.
 
 ### Fixed
 
@@ -61,10 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hides the bare identifier. The ranker derives bare identifier components
   from call-form tokens at query time; on corpus 0.3.1 the affected case is
   restored to rank 1 with no regressions (MRR 0.9195 to 0.9296).
-- **Bounded show headers ([#46]).** `engram show` bounds oversized title,
-  tag, and related header fields with explicit truncation markers, keeping
-  the body reachable through the existing continuation offset. Full
-  untruncated values remain available in the result details.
+- **Bounded show headers ([#46]).** The Pi/OpenCode `engram_show` tool bounds
+  oversized title, tag, and related header fields with explicit truncation
+  markers, keeping the body reachable through the existing continuation
+  offset. Full untruncated values remain available in the result details.
 - **Pi typebox packaging ([#52]).** The Pi extension declares host-provided
   `typebox` as an optional peer dependency, removing the duplicate-module
   warning on every Pi session start.
