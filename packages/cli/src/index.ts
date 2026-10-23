@@ -432,13 +432,20 @@ program
 program
   .command("install <target>")
   .description(
-    "Install user-level lifecycle hooks for a coding agent host (claude-code | codex). Use --status or --dry-run for read-only views.",
+    "Install engram integration assets for a coding agent host or project (generic | cursor | claude | claude-code | codex). Use --status or --dry-run for read-only views.",
   )
-  .option("--uninstall", "Remove only engram-owned hook entries for the target.")
+  .option("--uninstall", "Remove only engram-owned content for the target.")
   .option("--status", "Show the current installation state. Never writes.")
   .option("--dry-run", "Print the exact planned changes. Never writes.")
   .option("--yes", "Skip the interactive confirmation (required for non-interactive use).")
-  .option("--home <dir>", "Override the user home directory (defaults to your OS home).")
+  .option(
+    "--home <dir>",
+    "Override the user home directory (user-level targets claude-code | codex only).",
+  )
+  .option(
+    "--root <dir>",
+    "Project directory for project targets (generic | cursor | claude; defaults to the current directory).",
+  )
   .action((target: string, opts: Record<string, string | boolean | undefined>) =>
     run(
       Install.installCommand({
@@ -448,6 +455,7 @@ program
         dryRun: Boolean(opts.dryRun),
         yes: Boolean(opts.yes),
         home: opts.home as string | undefined,
+        root: opts.root as string | undefined,
       }),
     ),
   );

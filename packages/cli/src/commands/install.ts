@@ -1,9 +1,9 @@
 /**
- * `engram install <target>` — manage user-level lifecycle hooks for the
- * claude-code and codex hosts (ENG-58), as data-driven specs over the
- * ENG-34 installer core (@engram/harnesses/shared installer).
+ * `engram install <target>` — manage engram integration assets for a host
+ * or project, as data-driven specs over the ENG-34 installer core
+ * (@engram/harnesses/shared installer).
  *
- * Leader rulings (handoffs/turn-1-eng58.md):
+ * Leader rulings (handoffs/turn-1-eng58.md, SPEC eng37-impl):
  * - A4: interactive confirmation by default; non-TTY without --yes refuses
  *   with a clear error; status and dry-run never write; idempotent re-runs
  *   still confirm unless --yes.
@@ -11,6 +11,11 @@
  * - A3: removal touches only entries carrying engram ownership markers.
  * - A5: installed hook entries invoke `engram` bare; PATH resolves at hook
  *   runtime, never an install-time absolute path.
+ * - ENG-37 roots: user-level targets (claude-code, codex) root under the
+ *   OS home (or --home); project-local targets (generic, cursor, claude)
+ *   root at the project directory itself (--root, default cwd). --home
+ *   with a project target is a hard error naming --root, and config-dir
+ *   env overrides (CODEX_HOME / CLAUDE_CONFIG_DIR) never apply to them.
  */
 import { Effect } from "effect";
 import { FileSystem } from "effect/FileSystem";
@@ -33,11 +38,14 @@ import {
 import {
   CLAUDE_CODE_TARGET,
   CODEX_TARGET,
+  GENERIC_TARGET,
   claudeCodeRoot,
   claudeCodeSpec,
   codexHooksFlagState,
   codexRoot,
   codexSpec,
+  genericRoot,
+  genericSpec,
   parseSidecarLedger,
   SIDECAR_FILENAME,
 } from "@engram/harnesses/installer";
@@ -50,21 +58,47 @@ export interface InstallOptions {
   readonly dryRun?: boolean;
   readonly yes?: boolean;
   /**
-   * Home override (tests and unusual setups). Precedence: --home wins over
-   * the target's config-dir env override (CODEX_HOME / CLAUDE_CONFIG_DIR),
-   * which wins over the OS home default.
+   * Home override for user-level targets (tests and unusual setups).
+   * Precedence: --home wins over the target's config-dir env override
+   * (CODEX_HOME / CLAUDE_CONFIG_DIR), which wins over the OS home default.
+   * Project targets reject it (hard error naming --root).
    */
   readonly home?: string;
+  /**
+   * Project directory for project-local targets (generic, cursor, claude).
+   * Defaults to the process cwd. Never combined with --home.
+   */
+  readonly root?: string;
 }
 
-interface TargetModule {
-  readonly spec: InstallSpec;
-  readonly root: (home: string) => string;
-}
+/** Project-local targets install inside a project directory (ENG-37). */
+const PROJECT_TARGETS = [GENERIC_TARGET, "cursor", "claude"] as const;
 
+/** The unknown-target message enumerates exactly these five (deny-case). */
+const TARGET_MENU = `${PROJECT_TARGETS.join(" | ")} | ${CLAUDE_CODE_TARGET} | ${CODEX_TARGET}`;
+
+type TargetModule =
+  | {
+      readonly kind: "home";
+      readonly spec: InstallSpec;
+      readonly root: (home: string) => string;
+    }
+  | {
+      readonly kind: "project";
+      readonly spec: InstallSpec;
+      readonly root: (projectRoot: string) => string;
+    };
+
+// cursor and claude join here in ENG-37 turns 2-3; until then they fall to
+// the unknown-target error (which already enumerates all five names).
 const targetFor = (target: string): TargetModule | null => {
-  if (target === CLAUDE_CODE_TARGET) return { spec: claudeCodeSpec(), root: claudeCodeRoot };
-  if (target === CODEX_TARGET) return { spec: codexSpec(), root: codexRoot };
+  if (target === GENERIC_TARGET) {
+    return { kind: "project", spec: genericSpec(), root: genericRoot };
+  }
+  if (target === CLAUDE_CODE_TARGET) {
+    return { kind: "home", spec: claudeCodeSpec(), root: claudeCodeRoot };
+  }
+  if (target === CODEX_TARGET) return { kind: "home", spec: codexSpec(), root: codexRoot };
   return null;
 };
 
@@ -171,33 +205,53 @@ export const installCommand = (opts: InstallOptions) =>
     const t = targetFor(opts.target);
     if (t === null) {
       return yield* Effect.fail(
-        new Error(
-          `unknown install target "${opts.target}" (expected: ${CLAUDE_CODE_TARGET} | ${CODEX_TARGET})`,
-        ),
+        new Error(`unknown install target "${opts.target}" (expected: ${TARGET_MENU})`),
       );
     }
     const fs = yield* FileSystem;
     const path = yield* Path;
-    // Review P1d: respect the hosts' documented config-dir overrides.
-    // --home wins (explicit test/power-user override); otherwise CODEX_HOME
-    // and CLAUDE_CONFIG_DIR point at the config directory itself; otherwise
-    // the OS home default applies.
-    const envDir =
-      opts.target === CODEX_TARGET
-        ? process.env.CODEX_HOME
-        : opts.target === CLAUDE_CODE_TARGET
-          ? process.env.CLAUDE_CONFIG_DIR
-          : undefined;
-    // CODEX_HOME and CLAUDE_CONFIG_DIR point at the config directory itself,
-    // so they replace the derived root instead of nesting under it.
-    const root =
-      opts.home !== undefined
-        ? t.root(opts.home)
-        : envDir !== undefined && envDir !== ""
-          ? envDir
-          : t.root(os.homedir());
+    // ENG-37 roots (SPEC decision 1): user-level targets keep the --home /
+    // env-override / OS-home precedence; project targets root at the project
+    // directory (--root, default cwd) and never consult --home or env dirs.
+    let root: string;
+    if (t.kind === "project") {
+      if (opts.home !== undefined) {
+        return yield* Effect.fail(
+          new Error(
+            `--home does not apply to project targets (${PROJECT_TARGETS.join(" | ")}): ` +
+              `they install files inside a project directory, not the user home. Use --root <dir> instead.`,
+          ),
+        );
+      }
+      root = opts.root !== undefined ? t.root(opts.root) : process.cwd();
+      // never create a project root out of a typo'd --root
+      if (!(yield* fs.exists(root))) {
+        return yield* Effect.fail(new Error(`project root does not exist: ${root}`));
+      }
+    } else {
+      // Review P1d: respect the hosts' documented config-dir overrides.
+      // --home wins (explicit test/power-user override); otherwise CODEX_HOME
+      // and CLAUDE_CONFIG_DIR point at the config directory itself; otherwise
+      // the OS home default applies.
+      const envDir =
+        opts.target === CODEX_TARGET
+          ? process.env.CODEX_HOME
+          : opts.target === CLAUDE_CODE_TARGET
+            ? process.env.CLAUDE_CONFIG_DIR
+            : undefined;
+      // CODEX_HOME and CLAUDE_CONFIG_DIR point at the config directory itself,
+      // so they replace the derived root instead of nesting under it.
+      root =
+        opts.home !== undefined
+          ? t.root(opts.home)
+          : envDir !== undefined && envDir !== ""
+            ? envDir
+            : t.root(os.homedir());
+    }
     const scan = yield* scanAssets(root, t.spec);
     const verb = opts.uninstall ? "Uninstall" : "Install";
+    // project targets manage files; user-level targets manage hooks
+    const noun = t.kind === "project" ? "files" : "hooks";
 
     // status is a strictly read-only view
     if (opts.status) {
@@ -273,7 +327,7 @@ export const installCommand = (opts: InstallOptions) =>
     if (plan.blocked.length > 0) {
       return yield* Effect.fail(
         new Error(
-          `refusing to ${verb.toLowerCase()} hooks for ${opts.target}: blocked asset(s): ` +
+          `refusing to ${verb.toLowerCase()} ${noun} for ${opts.target}: blocked asset(s): ` +
             plan.blocked
               .map((b) => `${b.id} (${b.status}): ${b.reasons.map(renderReason).join("; ")}`)
               .join("; "),
@@ -283,7 +337,7 @@ export const installCommand = (opts: InstallOptions) =>
 
     // A4: explicit confirmation before modifying user config, including
     // idempotent re-runs with no pending changes.
-    yield* out(`${verb} hooks for ${opts.target} in ${root}:`);
+    yield* out(`${verb} ${noun} for ${opts.target} in ${root}:`);
     if (actionLines.length === 0) yield* out("  (no changes needed)");
     for (const line of actionLines) yield* out(line);
     if (!opts.yes) {
@@ -307,13 +361,16 @@ export const installCommand = (opts: InstallOptions) =>
 
     if (plan.actions.length === 0) {
       yield* out(
-        `Nothing to do: hooks for ${opts.target} are already ${opts.uninstall ? "absent" : "up to date"}.`,
+        `Nothing to do: ${noun} for ${opts.target} are already ${opts.uninstall ? "absent" : "up to date"}.`,
       );
       return;
     }
     // A fresh host home may not contain the target directory yet; the core
     // stages writes inside the target directory, so it must exist first.
-    yield* fs.makeDirectory(root, { recursive: true });
+    // Project roots must already exist and are never created.
+    if (t.kind === "home") {
+      yield* fs.makeDirectory(root, { recursive: true });
+    }
     yield* applyPlan(root, plan);
     const changed = plan.actions.filter((a) => a.op !== "mkdir").length;
     yield* out(
