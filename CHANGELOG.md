@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.cursor/rules/engram.mdc` as an always-applied project rule, and
   `engram install claude` scaffolds the `.claude/skills/engram/` project
   skill (`SKILL.md` plus a `bin/engram` launcher invoked via
-  `sh ${CLAUDE_SKILL_DIR}/bin/engram`). All three are project targets
+  `sh "${CLAUDE_SKILL_DIR}/bin/engram"`). All three are project targets
   rooted at `--root <dir>` (default: the current directory) and never
   touch the OS home; `--home` with a project target is a hard error.
   Status, dry-run preview, confirmation, drift repair on re-run (release

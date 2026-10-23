@@ -106,6 +106,12 @@ describe("Docker E2E runner", () => {
     expect(e2e).toContain('--root "$root_view"');
     // R3 pinned at the e2e level: byte-exact uninstall of a no-NL AGENTS.md
     expect(e2e).toContain("sha256sum");
+    // deny-cases capture expected-failing output to files (pipefail-safe)
+    expect(e2e).toContain('"$run_root/deny-home.txt" 2>&1');
+    expect(e2e).toContain('grep -F -- "--root" "$run_root/deny-home.txt"');
+    expect(e2e).toContain(
+      "grep -F 'generic | cursor | claude | claude-code | codex' \"$run_root/deny-menu.txt\"",
+    );
   });
 
   it("pins audit coverage for the related, call-form, and hook install surfaces", () => {

@@ -737,16 +737,17 @@ engram install claude --yes --uninstall | grep -F "Uninstalled"
 [[ -f .claude/skills/my-skill/SKILL.md ]] || fail "claude uninstall removed a user skill"
 
 # deny-cases: --home is a project-target error naming --root; unknown
-# targets enumerate exactly the five lanes.
-if engram install generic --home "$run_root/host-home" >/dev/null 2>&1; then
+# targets enumerate exactly the five lanes. Expected-failing commands are
+# captured to files and the files grepped: under pipefail a plain pipeline
+# into a succeeding grep would abort the audit on the CLI's nonzero exit.
+if engram install generic --home "$run_root/host-home" >"$run_root/deny-home.txt" 2>&1; then
   fail "--home with a project target must fail"
 fi
-engram install generic --home "$run_root/host-home" 2>&1 | grep -F -- "--root"
-if engram install nope >/dev/null 2>&1; then
+grep -F -- "--root" "$run_root/deny-home.txt"
+if engram install nope >"$run_root/deny-menu.txt" 2>&1; then
   fail "unknown install targets must fail"
 fi
-engram install nope 2>&1 |
-  grep -F 'generic | cursor | claude | claude-code | codex'
+grep -F 'generic | cursor | claude | claude-code | codex' "$run_root/deny-menu.txt"
 
 step "Removal and duplicate no-op"
 engram dedupe --scope project | grep -F "No duplicate ids found"
