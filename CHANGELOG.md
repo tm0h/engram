@@ -5,6 +5,83 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Entry schemaVersion ([#40]).** Optional integer `schemaVersion` frontmatter
+  field. Absence decodes as version 1 on every read path; writers omit
+  version 1. Unsupported integers warn (`schema_version_unsupported`) but the
+  entry stays readable and keeps its version through rewrites; non-integer
+  values are entry-preventing errors (`schema_version_invalid`).
+- **Same-scope related links ([#42]).** Entries can carry an optional
+  `related` list of exact entry ids in the same scope. Links are directional
+  metadata: forward references and post-deletion dangles degrade to
+  `related_not_found` warnings that never fail `engram check` alone. Bad
+  shapes, invalid or prefixed ids, self-links, and in-list duplicates are
+  rejected at the write boundary. No code path writes a reciprocal key.
+  CLI `--related`/`--clear-related`, interactive editor, and Pi/OpenCode
+  add/edit surfaces.
+- **Link graph reads: `engram links <id>` ([#47], [#48], [#49]).** Relation
+  targets resolve through an exact-id claim map; a target claimed by multiple
+  files warns `related_ambiguous` with the claimant paths. The new
+  `engram links <id>` command and `/engram links` slash command show the
+  target's resolution state, outgoing relations in authored order with
+  `MISSING`/`AMBIGUOUS` markers, and incoming backlinks sorted by `created`
+  then id, paginated with a continuation footer. Backlinks are derived at
+  read time and never persisted.
+- **Entry aliases ([#50]).** Optional `aliases` give an entry the vocabulary
+  a searcher actually uses, including multiword phrases. One core normalizer
+  (trim, lowercase, dedupe) with documented caps: at most 20 aliases, 80
+  characters each. Invalid alias frontmatter is entry-preventing
+  (`aliases_invalid`). CLI `--aliases`/`--clear-aliases`, an editor line, and
+  Pi/OpenCode add/edit arrays.
+- **Aliases in lexical search ([#51]).** Aliases score as a fifth weighted
+  BM25 field (weights: tag 5, alias 4, title 3, type 2, body 1), so an
+  alias-only match surfaces in results. Quoted multiword aliases match
+  through the phrase bonus; ranking explanations expose `alias` field
+  contributions. Entries without aliases keep identical scores and order.
+- **Claude Code and Codex lifecycle hooks ([#44]).** `engram install
+  claude-code` and `engram install codex` install user-level lifecycle hooks
+  (startup/resume/compact; SessionStart/PostCompact, minimum Codex 0.155.1).
+  Installation is idempotent, confirmed explicitly, with dry-run, status, and
+  an uninstall that removes only engram-owned entries tracked in
+  `engram-managed.json` sidecars. Existing user configuration and foreign
+  hooks survive unchanged. Hooks fail open with bounded output.
+
+### Fixed
+
+- **Unknown frontmatter fields are preserved ([#39]).** Engram-mediated
+  rewrites (edit, retitle, supersession marking, dedupe renumbering) no
+  longer drop unknown top-level frontmatter keys. Values survive by value
+  under `JSON_SCHEMA`; modeled fields stay canonical and win over same-named
+  unknown keys.
+- **Call-form identifier ranking ([#43]).** Queries like
+  `exportStatic(outDir) behavior` no longer fuse into a single token that
+  hides the bare identifier. The ranker derives bare identifier components
+  from call-form tokens at query time; on corpus 0.3.1 the affected case is
+  restored to rank 1 with no regressions (MRR 0.9195 to 0.9296).
+- **Bounded show headers ([#46]).** `engram show` bounds oversized title,
+  tag, and related header fields with explicit truncation markers, keeping
+  the body reachable through the existing continuation offset. Full
+  untruncated values remain available in the result details.
+- **Pi typebox packaging ([#52]).** The Pi extension declares host-provided
+  `typebox` as an optional peer dependency, removing the duplicate-module
+  warning on every Pi session start.
+
+[#39]: https://github.com/tm0h/engram/pull/39
+[#40]: https://github.com/tm0h/engram/pull/40
+[#42]: https://github.com/tm0h/engram/pull/42
+[#43]: https://github.com/tm0h/engram/pull/43
+[#44]: https://github.com/tm0h/engram/pull/44
+[#46]: https://github.com/tm0h/engram/pull/46
+[#47]: https://github.com/tm0h/engram/pull/47
+[#48]: https://github.com/tm0h/engram/pull/48
+[#49]: https://github.com/tm0h/engram/pull/49
+[#50]: https://github.com/tm0h/engram/pull/50
+[#51]: https://github.com/tm0h/engram/pull/51
+[#52]: https://github.com/tm0h/engram/pull/52
+
 ## [0.5.0] - 2026-09-18
 
 ### Added
