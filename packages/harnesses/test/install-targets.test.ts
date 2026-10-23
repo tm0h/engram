@@ -65,6 +65,19 @@ import {
   cursorRoot,
   cursorSpec,
 } from "../src/installer/cursor.js";
+import {
+  CLAUDE_LAUNCHER_ASSET_ID,
+  CLAUDE_LAUNCHER_BEGIN_MARKER,
+  CLAUDE_LAUNCHER_END_MARKER,
+  CLAUDE_LAUNCHER_PATH,
+  CLAUDE_SKILL_ASSET_ID,
+  CLAUDE_SKILL_BEGIN_MARKER,
+  CLAUDE_SKILL_END_MARKER,
+  CLAUDE_SKILL_PATH,
+  claudeRoot,
+  claudeSpec,
+} from "../src/installer/claude.js";
+import { fileURLToPath } from "node:url";
 import { ENGRAM_GUIDANCE_TEMPLATE } from "../src/installer/guidance-template.js";
 
 /* ------------------------------ helpers ------------------------------ */
@@ -1145,5 +1158,178 @@ describe("cursor install target (ENG-37)", () => {
     await run(applyPlan(tmp, planUninstall(scan)));
     expect(fs.existsSync(path.join(tmp, ".cursor/rules/engram.mdc"))).toBe(false);
     expect(readRoot(".cursor/rules/my-rules.mdc")).toBe(userRule);
+  });
+});
+
+/* --------------------- claude target (ENG-37 turn 3) --------------------- */
+
+describe("claude install target (ENG-37)", () => {
+  /** Source-of-truth scaffold assets, read from their in-repo locations. */
+  const repoSkill = (): string =>
+    fs.readFileSync(
+      fileURLToPath(new URL("../claude/skills/engram-scaffold/SKILL.md", import.meta.url)),
+      "utf8",
+    );
+  const repoLauncher = (): string =>
+    fs.readFileSync(fileURLToPath(new URL("../claude/bin/engram", import.meta.url)), "utf8");
+
+  const splitFrontmatter = (src: string): { header: string; body: string } => {
+    const m = /^---\n[\s\S]*?\n---\n/.exec(src);
+    if (m === null) throw new Error("scaffold SKILL.md has no frontmatter");
+    return { header: m[0].replace(/\n$/, ""), body: src.slice(m[0].length) };
+  };
+
+  const skillFile = (): string => {
+    const { header, body } = splitFrontmatter(repoSkill());
+    return `${header}\n${CLAUDE_SKILL_BEGIN_MARKER}\n${body}${CLAUDE_SKILL_END_MARKER}\n`;
+  };
+  const launcherFile = (): string => {
+    const rest = repoLauncher().slice(repoLauncher().indexOf("\n") + 1);
+    return `#!/bin/sh\n${CLAUDE_LAUNCHER_BEGIN_MARKER}\n${rest}${CLAUDE_LAUNCHER_END_MARKER}\n`;
+  };
+
+  it("declares two valid markered assets sourced from the repo files, no hard-coded versions", () => {
+    const spec = claudeSpec();
+    expect(spec.assets).toHaveLength(2);
+    const skill = spec.assets[0] as Extract<AssetSpec, { kind: "file" }>;
+    const launcher = spec.assets[1] as Extract<AssetSpec, { kind: "file" }>;
+
+    expect(skill.kind).toBe("file");
+    expect(skill.id).toBe(CLAUDE_SKILL_ASSET_ID);
+    expect(skill.id).toBe("engram-claude-skill");
+    expect(skill.path).toBe(CLAUDE_SKILL_PATH);
+    expect(skill.path).toBe(".claude/skills/engram/SKILL.md");
+    expect(skill.path.includes("\\")).toBe(false);
+    // frontmatter-first: the declared header is the scaffold's YAML block
+    expect(skill.header).toBe(splitFrontmatter(repoSkill()).header);
+    expect(skill.header).toMatch(/^---\n/);
+    expect(skill.header).toMatch(/\n---$/);
+    expect(skill.content).toBe(splitFrontmatter(repoSkill()).body);
+    expect(CLAUDE_SKILL_BEGIN_MARKER).toContain(CLAUDE_SKILL_ASSET_ID);
+    expect(CLAUDE_SKILL_END_MARKER).toContain(CLAUDE_SKILL_ASSET_ID);
+
+    expect(launcher.id).toBe(CLAUDE_LAUNCHER_ASSET_ID);
+    expect(launcher.id).toBe("engram-claude-launcher");
+    expect(launcher.path).toBe(CLAUDE_LAUNCHER_PATH);
+    expect(launcher.path).toBe(".claude/skills/engram/bin/engram");
+    // shebang stays line 1; the body is the release-pinned launcher as-is
+    expect(launcher.header).toBe("#!/bin/sh");
+    expect(launcher.content).toBe(repoLauncher().slice(repoLauncher().indexOf("\n") + 1));
+    expect(launcher.content).toMatch(/engram-cli@\d+\.\d+\.\d+/);
+    expect(CLAUDE_LAUNCHER_BEGIN_MARKER).toContain(CLAUDE_LAUNCHER_ASSET_ID);
+    expect(CLAUDE_LAUNCHER_END_MARKER).toContain(CLAUDE_LAUNCHER_ASSET_ID);
+
+    expect(validateSpec(spec)).toBeNull();
+    expect(claudeRoot("/some/project/")).toBe("/some/project");
+  });
+
+  it("fresh install scaffolds .claude/skills/engram/ and reports current", async () => {
+    const spec = claudeSpec();
+    let scan = await run(scanAssets(tmp, spec));
+    expect(scan.states.map((s) => s.status)).toEqual(["absent", "absent"]);
+    const plan = planInstall(scan);
+    expect(plan.blocked).toHaveLength(0);
+    expect(plan.actions).toEqual([
+      { op: "mkdir", path: ".claude/skills/engram" },
+      { op: "mkdir", path: ".claude/skills/engram/bin" },
+      { op: "write", path: ".claude/skills/engram/SKILL.md", before: null, after: skillFile() },
+      {
+        op: "write",
+        path: ".claude/skills/engram/bin/engram",
+        before: null,
+        after: launcherFile(),
+      },
+    ]);
+    await run(applyPlan(tmp, plan));
+    expect(readRoot(".claude/skills/engram/SKILL.md")).toBe(skillFile());
+    expect(readRoot(".claude/skills/engram/bin/engram")).toBe(launcherFile());
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states.map((s) => s.status)).toEqual(["current", "current"]);
+    expect(planInstall(scan).actions).toHaveLength(0);
+  });
+
+  it("body, frontmatter, and version-pin drift are repaired to the repo files", async () => {
+    const spec = claudeSpec();
+    // version-pin bump scenario: an older release's pin inside the block
+    writeRoot(
+      ".claude/skills/engram/bin/engram",
+      launcherFile().replace(/engram-cli@\d+\.\d+\.\d+/, "engram-cli@0.0.1"),
+    );
+    writeRoot(
+      ".claude/skills/engram/SKILL.md",
+      skillFile().replace("engram search", "engram SERACH"),
+    );
+
+    let scan = await run(scanAssets(tmp, spec));
+    expect(scan.states.map((s) => s.status)).toEqual(["drift", "drift"]);
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(readRoot(".claude/skills/engram/SKILL.md")).toBe(skillFile());
+    expect(readRoot(".claude/skills/engram/bin/engram")).toBe(launcherFile());
+
+    // frontmatter edits above the markers repair away too
+    writeRoot(".claude/skills/engram/SKILL.md", skillFile().replace("engram CLI.", "tweaked."));
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("drift");
+    expect(scan.states[0]!.reasons).toContain("unmanaged content outside managed block");
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(readRoot(".claude/skills/engram/SKILL.md")).toBe(skillFile());
+
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states.map((s) => s.status)).toEqual(["current", "current"]);
+  });
+
+  it("a foreign SKILL.md is blocked and never clobbered", async () => {
+    const foreign = "---\nname: mine\ndescription: my own skill\n---\n\nMine.\n";
+    writeRoot(".claude/skills/engram/SKILL.md", foreign);
+    const spec = claudeSpec();
+
+    const scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("blocked");
+    expect(scan.states[1]!.status).toBe("absent");
+    const plan = planInstall(scan);
+    expect(plan.blocked.map((b) => b.id)).toEqual([CLAUDE_SKILL_ASSET_ID]);
+    // only the launcher side is planned; the foreign skill is never touched
+    expect(plan.actions.map((a) => a.path)).toEqual([
+      ".claude/skills/engram/bin",
+      ".claude/skills/engram/bin/engram",
+    ]);
+    await run(applyPlan(tmp, plan));
+    expect(readRoot(".claude/skills/engram/SKILL.md")).toBe(foreign);
+  });
+
+  it("uninstall removes exactly our two files; user skills survive untouched", async () => {
+    const userSkill = "---\nname: my-skill\ndescription: user skill\n---\n\nDo things.\n";
+    writeRoot(".claude/skills/other-skill/SKILL.md", userSkill);
+    const spec = claudeSpec();
+
+    // nothing installed: no-op
+    let scan = await run(scanAssets(tmp, spec));
+    expect(planUninstall(scan).actions).toHaveLength(0);
+
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(readRoot(".claude/skills/other-skill/SKILL.md")).toBe(userSkill);
+
+    scan = await run(scanAssets(tmp, spec));
+    const plan = planUninstall(scan);
+    expect(plan.actions).toEqual([
+      { op: "remove", path: ".claude/skills/engram/SKILL.md", before: skillFile() },
+      { op: "remove", path: ".claude/skills/engram/bin/engram", before: launcherFile() },
+    ]);
+    await run(applyPlan(tmp, plan));
+    expect(fs.existsSync(path.join(tmp, ".claude/skills/engram/SKILL.md"))).toBe(false);
+    expect(fs.existsSync(path.join(tmp, ".claude/skills/engram/bin/engram"))).toBe(false);
+    expect(readRoot(".claude/skills/other-skill/SKILL.md")).toBe(userSkill);
+
+    // trailing hand-edit on one file blocks it without force; the other removes
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, spec)))));
+    writeRoot(".claude/skills/engram/SKILL.md", `${skillFile()}\nextra\n`);
+    scan = await run(scanAssets(tmp, spec));
+    const blockedPlan = planUninstall(scan);
+    expect(blockedPlan.actions).toEqual([
+      { op: "remove", path: ".claude/skills/engram/bin/engram", before: launcherFile() },
+    ]);
+    expect(blockedPlan.blocked.map((b) => b.id)).toEqual([CLAUDE_SKILL_ASSET_ID]);
+    await run(applyPlan(tmp, planUninstall(scan, { force: true })));
+    expect(fs.existsSync(path.join(tmp, ".claude/skills/engram/SKILL.md"))).toBe(false);
   });
 });
