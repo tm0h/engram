@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Search abstains on near-match queries whose candidates cover almost
+  none of the query's informative mass (ENG-59).** A query-level policy on
+  the default BM25 search path (`searchEngrams`) returns no results,
+  exactly like a no-match query, when the query is a multi-word
+  natural-language query and the best-matching entry covers less than a
+  tenth of the query's idf-weighted informative mass. Queries with explicit
+  structure (phrases, prefix stems, field filters, `AND` groups) and
+  single-term queries never abstain; scores, ordering, and all other
+  surfaces are unchanged.
+
 ### Added
 
 - **Project-local install targets: `generic`, `cursor`, `claude` (ENG-37).**
