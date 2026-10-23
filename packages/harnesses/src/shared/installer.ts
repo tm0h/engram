@@ -855,13 +855,26 @@ const installActionFor = (spec: AssetSpec, current: string | null): string => {
       ...blockLines(m.begin, spec.content, m.end),
       ...lines.slice(ends[0] + 1),
     ];
-    const joined = rebuilt.join("\n");
-    return joined.endsWith("\n") ? joined : `${joined}\n`;
+    // SPEC 3a: a missing trailing newline is state, not damage. The rebuild
+    // keeps the file unterminated when it was, so uninstall (spliceOut)
+    // restores the original bytes exactly.
+    return rebuilt.join("\n");
   }
   // unbalanced markers reached only via force: content from the first
   // unmatched marker is presumed managed and replaced by a fresh block
   const range = forceClearRange(lines, m.begin, m.end);
-  if (range === null) return `${ensureNL(current)}${renderBlock(m.begin, spec.content, m.end)}`;
+  if (range === null) {
+    // text append. SPEC 3a: newline-terminated originals (LF or CRLF) keep
+    // today's rendering; a missing trailing newline is preserved by starting
+    // the block on its own line but leaving it unterminated, so uninstall
+    // restores the original bytes exactly. A fresh empty file renders as the
+    // plain newline-terminated block.
+    if (current === "") return renderBlock(m.begin, spec.content, m.end);
+    if (current.endsWith("\n")) {
+      return `${current}${renderBlock(m.begin, spec.content, m.end)}`;
+    }
+    return `${current}\n${renderBlock(m.begin, spec.content, m.end).replace(/\n$/, "")}`;
+  }
   return `${spliceOut(lines, range).replace(/\n$/, "")}\n${renderBlock(m.begin, spec.content, m.end)}`;
 };
 

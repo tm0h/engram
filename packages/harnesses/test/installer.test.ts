@@ -740,3 +740,117 @@ describe("installer / markered file header (ENG-37 exception)", () => {
     expect(planUninstall(scan).blocked).toHaveLength(1);
   });
 });
+
+/* -------------- text assets: trailing-newline preservation (3a) -------------- */
+
+describe("installer / text asset trailing-newline preservation (SPEC 3a)", () => {
+  let tmp = "";
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "engram-nonl-"));
+  });
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const write = (rel: string, content: string): void => {
+    const abs = path.join(tmp, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, content);
+  };
+  const read = (rel: string): string => fs.readFileSync(path.join(tmp, rel), "utf8");
+
+  const s = spec([textAsset()]);
+  const blockNoNl = (): string => block("managed line 1\nmanaged line 2").replace(/\n$/, "");
+
+  it("append to a file without a trailing newline: seam newline, unterminated block", async () => {
+    write("config/tool.conf", "foreign top");
+    let scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("absent");
+    const plan = planInstall(scan);
+    expect(plan.actions).toEqual([
+      { op: "mkdir", path: "config" },
+      {
+        op: "write",
+        path: "config/tool.conf",
+        before: "foreign top",
+        after: `foreign top\n${blockNoNl()}`,
+      },
+    ]);
+    await run(applyPlan(tmp, plan));
+    expect(read("config/tool.conf")).toBe(`foreign top\n${blockNoNl()}`);
+
+    scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("current");
+    expect(planInstall(scan).actions).toHaveLength(0);
+  });
+
+  it("no-NL round-trip: uninstall restores the original bytes exactly", async () => {
+    write("config/tool.conf", "foreign top");
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, s)))));
+    const plan = planUninstall(await run(scanAssets(tmp, s)));
+    expect(plan.actions).toEqual([
+      {
+        op: "write",
+        path: "config/tool.conf",
+        before: `foreign top\n${blockNoNl()}`,
+        after: "foreign top",
+      },
+    ]);
+    await run(applyPlan(tmp, plan));
+    expect(read("config/tool.conf")).toBe("foreign top");
+  });
+
+  it("drift repair keeps the missing terminator; uninstall still restores exactly", async () => {
+    write("config/tool.conf", `foreign top\n${blockNoNl().replace("managed line 1", "edited")}`);
+    let scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("drift");
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(read("config/tool.conf")).toBe(`foreign top\n${blockNoNl()}`);
+    scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("current");
+    await run(applyPlan(tmp, planUninstall(scan)));
+    expect(read("config/tool.conf")).toBe("foreign top");
+  });
+
+  it("NL-terminated, CRLF, and empty originals keep today's rendering", async () => {
+    // LF original: seam-free append, newline-terminated block
+    write("config/tool.conf", "foreign top\n");
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, s)))));
+    expect(read("config/tool.conf")).toBe(
+      `foreign top\n${block("managed line 1\nmanaged line 2")}`,
+    );
+    await run(applyPlan(tmp, planUninstall(await run(scanAssets(tmp, s)))));
+    expect(read("config/tool.conf")).toBe("foreign top\n");
+
+    // CRLF original: foreign bytes preserved, managed block written LF
+    write("config/tool.conf", "foreign\r\ntop\r\n");
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, s)))));
+    expect(read("config/tool.conf")).toBe(
+      `foreign\r\ntop\r\n${block("managed line 1\nmanaged line 2")}`,
+    );
+    await run(applyPlan(tmp, planUninstall(await run(scanAssets(tmp, s)))));
+    expect(read("config/tool.conf")).toBe("foreign\r\ntop\r\n");
+
+    // fresh absent file: block exactly (with trailing newline)
+    fs.rmSync(path.join(tmp, "config/tool.conf"));
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, s)))));
+    expect(read("config/tool.conf")).toBe(block("managed line 1\nmanaged line 2"));
+
+    // existing-but-empty file: block exactly, newline-terminated
+    fs.rmSync(path.join(tmp, "config/tool.conf"));
+    write("config/tool.conf", "");
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, s)))));
+    expect(read("config/tool.conf")).toBe(block("managed line 1\nmanaged line 2"));
+  });
+
+  it("foreign content a user appends after the block survives uninstall", async () => {
+    write("config/tool.conf", "foreign top");
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, s)))));
+    // the user adds their own newline and content after the unterminated block
+    fs.appendFileSync(path.join(tmp, "config/tool.conf"), "\nuser footer");
+    const scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("current"); // text assets ignore outside content
+    await run(applyPlan(tmp, planUninstall(scan)));
+    expect(read("config/tool.conf")).toBe("foreign top\nuser footer");
+  });
+});
