@@ -565,12 +565,19 @@ describe("engram install command", () => {
     const installed = fs.readFileSync(cursorRule(proj), "utf8");
     expect(fs.readFileSync(userRule, "utf8")).toBe(userContent);
 
-    // drift: a hand edit inside the managed block is repaired, user file kept
+    // drift: hand edits inside the block AND in the frontmatter header are
+    // repaired, user file kept
     fs.writeFileSync(cursorRule(proj), installed.replace("engram search", "engram SERACH"));
     await runInstall({ target: "cursor", yes: true, root: proj });
-    const repaired = fs.readFileSync(cursorRule(proj), "utf8");
+    let repaired = fs.readFileSync(cursorRule(proj), "utf8");
     expect(repaired).toContain("engram search");
     expect(repaired).not.toContain("engram SERACH");
+    expect(fs.readFileSync(userRule, "utf8")).toBe(userContent);
+
+    fs.writeFileSync(cursorRule(proj), repaired.replace("alwaysApply: true", "alwaysApply: false"));
+    await runInstall({ target: "cursor", yes: true, root: proj });
+    repaired = fs.readFileSync(cursorRule(proj), "utf8");
+    expect(repaired).toContain("alwaysApply: true");
     expect(fs.readFileSync(userRule, "utf8")).toBe(userContent);
 
     // uninstall: our file removed, user file and directory survive

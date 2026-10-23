@@ -57,6 +57,7 @@ import {
   genericSpec,
 } from "../src/installer/generic.js";
 import {
+  CURSOR_HEADER,
   CURSOR_RULES_PATH,
   CURSOR_ASSET_ID,
   CURSOR_BEGIN_MARKER,
@@ -1008,22 +1009,11 @@ describe("generic install target (ENG-37)", () => {
 /* --------------------- cursor target (ENG-37 turn 2) --------------------- */
 
 describe("cursor install target (ENG-37)", () => {
-  /** Managed .mdc content between the markers: frontmatter + template body.
-   * Rendered exactly as the core writes it: its managedLines normalization
-   * drops a trailing newline, so the template's last line precedes END. */
-  const managed = (): string =>
-    [
-      "---",
-      "description: Engram recorded project memory for this repository (how to read, search, and record it).",
-      "alwaysApply: true",
-      "---",
-      "",
-      ENGRAM_GUIDANCE_TEMPLATE,
-    ].join("\n");
-  /** Exact rendered file: markers wrap the whole file (begin is line 0). */
-  const file = (): string => `${CURSOR_BEGIN_MARKER}\n${managed()}\n${CURSOR_END_MARKER}\n`;
+  /** Exact rendered file: frontmatter header first, markers wrapping the body. */
+  const file = (): string =>
+    `${CURSOR_HEADER}\n${CURSOR_BEGIN_MARKER}\n${ENGRAM_GUIDANCE_TEMPLATE}\n${CURSOR_END_MARKER}\n`;
 
-  it("declares one valid wholly-owned file asset with frontmatter and the shared body", () => {
+  it("declares one valid wholly-owned file asset: frontmatter header, markered shared body", () => {
     const spec = cursorSpec();
     expect(spec.assets).toHaveLength(1);
     const asset = spec.assets[0] as Extract<AssetSpec, { kind: "file" }>;
@@ -1033,21 +1023,25 @@ describe("cursor install target (ENG-37)", () => {
     expect(asset.path).toBe(CURSOR_RULES_PATH);
     expect(asset.path).toBe(".cursor/rules/engram.mdc");
     expect(asset.path.includes("\\")).toBe(false);
-    expect(asset.markers).toBeDefined();
+    expect(validateSpec(spec)).toBeNull();
+    // frontmatter is the declared header: the file's first lines, documented
+    // and guaranteed-parsed cursor shape
+    expect(asset.header).toBe(CURSOR_HEADER);
+    expect(CURSOR_HEADER).toMatch(/^---\n/);
+    expect(CURSOR_HEADER).toMatch(/\n---$/);
+    expect(CURSOR_HEADER).toContain("alwaysApply: true");
+    expect(CURSOR_HEADER).toMatch(/^description: /m);
+    // markers wrap only the body; the body is the shared template verbatim
     expect(asset.markers!.begin).toBe(CURSOR_BEGIN_MARKER);
     expect(asset.markers!.end).toBe(CURSOR_END_MARKER);
     expect(CURSOR_BEGIN_MARKER).toContain(CURSOR_ASSET_ID);
     expect(CURSOR_END_MARKER).toContain(CURSOR_ASSET_ID);
     expect(CURSOR_BEGIN_MARKER).not.toBe(CURSOR_END_MARKER);
-    expect(validateSpec(spec)).toBeNull();
-    // frontmatter carries the documented cursor keys; body is the shared template
-    expect(asset.content).toContain("alwaysApply: true");
-    expect(asset.content).toMatch(/^description: /m);
-    expect(asset.content).toContain(ENGRAM_GUIDANCE_TEMPLATE);
+    expect(asset.content).toBe(ENGRAM_GUIDANCE_TEMPLATE);
     expect(cursorRoot("/some/project/")).toBe("/some/project");
   });
 
-  it("fresh install creates .cursor/rules/ and the exact markered file, then is current", async () => {
+  it("fresh install creates .cursor/rules/ and the exact frontmatter-first file", async () => {
     const spec = cursorSpec();
     let scan = await run(scanAssets(tmp, spec));
     expect(scan.states[0]!.status).toBe("absent");
@@ -1064,12 +1058,22 @@ describe("cursor install target (ENG-37)", () => {
     expect(planInstall(scan).actions).toHaveLength(0);
   });
 
-  it("template drift is repaired in place; frontmatter and body are restored", async () => {
+  it("body and frontmatter drift are repaired in place to the exact declared file", async () => {
     const spec = cursorSpec();
-    writeRoot(".cursor/rules/engram.mdc", file().replace("engram search", "engram SERACH"));
-
+    const agents = path.join(tmp, ".cursor/rules/engram.mdc");
+    fs.mkdirSync(path.dirname(agents), { recursive: true });
+    // body drift
+    fs.writeFileSync(agents, file().replace("engram search", "engram SERACH"));
     let scan = await run(scanAssets(tmp, spec));
     expect(scan.states[0]!.status).toBe("drift");
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(readRoot(".cursor/rules/engram.mdc")).toBe(file());
+
+    // frontmatter drift (hand edit above the markers) repairs away too
+    fs.writeFileSync(agents, file().replace("alwaysApply: true", "alwaysApply: false"));
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("drift");
+    expect(scan.states[0]!.reasons).toContain("unmanaged content outside managed block");
     await run(applyPlan(tmp, planInstall(scan)));
     expect(readRoot(".cursor/rules/engram.mdc")).toBe(file());
 
@@ -1096,7 +1100,7 @@ describe("cursor install target (ENG-37)", () => {
     expect(readRoot(".cursor/rules/engram.mdc")).toBe(foreignFile);
   });
 
-  it("hand-edits outside the managed block block uninstall, keeping the file", async () => {
+  it("uninstall removes exactly our file; trailing hand-edits block without force", async () => {
     const spec = cursorSpec();
     await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, spec)))));
     const extra = `${file()}\nHand-added note.\n`;
@@ -1114,14 +1118,23 @@ describe("cursor install target (ENG-37)", () => {
       },
     ]);
     expect(readRoot(".cursor/rules/engram.mdc")).toBe(extra);
+
+    // exact file: uninstall removes it wholly
+    fs.writeFileSync(path.join(tmp, ".cursor/rules/engram.mdc"), file());
+    scan = await run(scanAssets(tmp, spec));
+    const clean = planUninstall(scan);
+    expect(clean.actions).toEqual([
+      { op: "remove", path: ".cursor/rules/engram.mdc", before: file() },
+    ]);
+    await run(applyPlan(tmp, clean));
+    expect(fs.existsSync(path.join(tmp, ".cursor/rules/engram.mdc"))).toBe(false);
   });
 
-  it("uninstall removes only our file; user .mdc files in .cursor/rules/ survive", async () => {
+  it("uninstall leaves user .mdc files in .cursor/rules/ untouched", async () => {
     const userRule = "---\ndescription: user rule\nglobs: *.ts\n---\n\nKeep types strict.\n";
     writeRoot(".cursor/rules/my-rules.mdc", userRule);
     const spec = cursorSpec();
 
-    // nothing of ours installed: uninstall leaves everything alone
     let scan = await run(scanAssets(tmp, spec));
     expect(planUninstall(scan).actions).toHaveLength(0);
 
@@ -1129,11 +1142,7 @@ describe("cursor install target (ENG-37)", () => {
     expect(readRoot(".cursor/rules/my-rules.mdc")).toBe(userRule);
 
     scan = await run(scanAssets(tmp, spec));
-    const plan = planUninstall(scan);
-    expect(plan.actions).toEqual([
-      { op: "remove", path: ".cursor/rules/engram.mdc", before: file() },
-    ]);
-    await run(applyPlan(tmp, plan));
+    await run(applyPlan(tmp, planUninstall(scan)));
     expect(fs.existsSync(path.join(tmp, ".cursor/rules/engram.mdc"))).toBe(false);
     expect(readRoot(".cursor/rules/my-rules.mdc")).toBe(userRule);
   });
