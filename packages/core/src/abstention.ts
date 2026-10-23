@@ -34,11 +34,16 @@
  *
  *   Parameters (calibrated on the corpus, see the wu1 handoffs):
  *   - coverageThreshold T = 0.1: the only corpus miss this policy flips
- *     (case-abstention-11) has bestCoverage 0.0923; the nearest allow-
- *     control above the boundary (case-superseded-11) has 0.1134. T sits
- *     inside the open interval (0.0923, 0.1134) with margin on both sides.
- *   - idfExponent p = 2: p = 1 makes the boundary non-separable (the
- *     allow-control floor 0.1392 falls below the miss at 0.1512).
+ *     (case-abstention-11) has bestCoverage 0.0985; the nearest allow-
+ *     control above the boundary (case-superseded-11) has 0.1174. T sits
+ *     inside the open interval (0.0985, 0.1174) with margins 0.0015
+ *     deny-side and 0.0174 control-side; the control floor is a single
+ *     case (thin, per the SPEC) and is re-verified in the wu1 calibration
+ *     table at every turn.
+ *   - idfExponent p = 2: p = 1 makes the boundary non-separable (the miss
+ *     rises to 0.1578 while the p = 1 allow-control floor falls to
+ *     0.1351 at case-paraphrase-30, so the p = 1 decision set at T = 0.1
+ *     is empty).
  *   - minInformative = 2: single-term queries never abstain (ENG-59
  *     constraint: single-token behavior is unchanged).
  *
@@ -68,7 +73,7 @@ export interface AbstentionParams {
 }
 
 /** Calibrated defaults (wu1 handoffs, ENG-59): T = 0.1 inside the open
- * interval (0.0923, 0.1134); p = 2 (p = 1 does not separate); queries with
+ * interval (0.0985, 0.1174); p = 2 (p = 1 does not separate); queries with
  * fewer than 2 alternatives are never eligible. */
 export const DEFAULT_ABSTENTION_PARAMS: AbstentionParams = {
   coverageThreshold: 0.1,
