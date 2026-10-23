@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Project-local install targets: `generic`, `cursor`, `claude` (ENG-37).**
+  `engram install generic` maintains a managed engram section in the
+  project's `AGENTS.md`, `engram install cursor` scaffolds
+  `.cursor/rules/engram.mdc` as an always-applied project rule, and
+  `engram install claude` scaffolds the `.claude/skills/engram/` project
+  skill (`SKILL.md` plus a `bin/engram` launcher invoked via
+  `sh "${CLAUDE_SKILL_DIR}/bin/engram"`). All three are project targets
+  rooted at `--root <dir>` (default: the current directory) and never
+  touch the OS home; `--home` with a project target is a hard error.
+  Status, dry-run preview, confirmation, drift repair on re-run (release
+  updates to the scaffolded files classify as drift, not force-only
+  overwrites), and owned-only uninstall over the ENG-34 installer core.
+  The packaged CLI ships the scaffold assets. User content beside the
+  managed files is preserved byte-for-byte, and unknown-target errors
+  enumerate exactly `generic | cursor | claude | claude-code | codex`.
+
 ## [0.6.0] - 2026-10-23
 
 ### Added

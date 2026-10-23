@@ -553,3 +553,304 @@ describe("installer / scan and apply", () => {
     void renames;
   });
 });
+
+/* ------------------- markered file assets: header (ENG-37) ------------------- */
+
+describe("installer / markered file header (ENG-37 exception)", () => {
+  const HEADER = "---\ndescription: engram rules\nalwaysApply: true\n---";
+
+  let tmp = "";
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "engram-header-"));
+  });
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const write = (rel: string, content: string): void => {
+    const abs = path.join(tmp, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, content);
+  };
+  const read = (rel: string): string => fs.readFileSync(path.join(tmp, rel), "utf8");
+
+  const headeredAsset = (over: Partial<Extract<AssetSpec, { kind: "file" }>> = {}): AssetSpec =>
+    fileAsset({
+      id: "test-file",
+      path: "rules/engram.mdc",
+      content: "guidance body line",
+      markers: { begin: BEGIN_FILE, end: END_FILE },
+      header: HEADER,
+      ...over,
+    });
+
+  const headeredFile = (): string => `${HEADER}\n${fileBlock("guidance body line")}`;
+
+  it("validates headers: non-empty, marker-free, and only on markered file assets", () => {
+    expect(validateSpec(spec([headeredAsset()]))).toBeNull();
+    // header without markers has no defined semantics
+    expect(validateSpec(spec([headeredAsset({ markers: undefined })]))?.code).toBe("invalid_spec");
+    expect(validateSpec(spec([headeredAsset({ header: "   \n  " })]))?.code).toBe("invalid_spec");
+    // a marker line inside the declared header can never match exactly
+    expect(validateSpec(spec([headeredAsset({ header: `${HEADER}\n${BEGIN_FILE}` })]))?.code).toBe(
+      "invalid_spec",
+    );
+    expect(validateSpec(spec([headeredAsset({ header: `${BEGIN_FILE}\n${HEADER}` })]))?.code).toBe(
+      "invalid_spec",
+    );
+  });
+
+  it("fresh install writes header + block and then reports current", async () => {
+    const s = spec([headeredAsset()]);
+    let scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("absent");
+    const plan = planInstall(scan);
+    expect(plan.actions).toEqual([
+      { op: "mkdir", path: "rules" },
+      { op: "write", path: "rules/engram.mdc", before: null, after: headeredFile() },
+    ]);
+    await run(applyPlan(tmp, plan));
+    expect(read("rules/engram.mdc")).toBe(headeredFile());
+    scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("current");
+    expect(planInstall(scan).actions).toHaveLength(0);
+  });
+
+  it("foreign header edits are drift and a plain repair rewrites header + block", async () => {
+    const s = spec([headeredAsset()]);
+    const tamperedHeader = headeredFile().replace("alwaysApply: true", "alwaysApply: false");
+    write("rules/engram.mdc", tamperedHeader);
+
+    let scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("drift");
+    expect(scan.states[0]!.reasons).toContain("unmanaged content outside managed block");
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(read("rules/engram.mdc")).toBe(headeredFile());
+
+    // inner and header drift at once reports both reasons
+    write(
+      "rules/engram.mdc",
+      headeredFile()
+        .replace("guidance body line", "edited")
+        .replace("description: engram rules", "description: mine"),
+    );
+    scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("drift");
+    expect(scan.states[0]!.reasons).toEqual([
+      "managed content differs from spec",
+      "unmanaged content outside managed block",
+    ]);
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(read("rules/engram.mdc")).toBe(headeredFile());
+  });
+
+  it("a foreign file without markers stays blocked: no silent clobber without force", async () => {
+    const s = spec([headeredAsset()]);
+    const foreignFile = "---\ndescription: user rules\nalwaysApply: true\n---\n\nMine.\n";
+    write("rules/engram.mdc", foreignFile);
+
+    let scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("blocked");
+    let plan = planInstall(scan);
+    expect(plan.actions).toHaveLength(0);
+    expect(plan.blocked).toHaveLength(1);
+    await run(applyPlan(tmp, plan)); // refused plan is a no-op
+    expect(read("rules/engram.mdc")).toBe(foreignFile);
+
+    // force is the only path over foreign content, and it lands on header+block
+    plan = planInstall(scan, { force: true });
+    await run(applyPlan(tmp, plan));
+    expect(read("rules/engram.mdc")).toBe(headeredFile());
+  });
+
+  it("uninstall removes exactly header + block; extra content blocks without force", async () => {
+    const s = spec([headeredAsset()]);
+    // nothing managed installed: header-only and block-only files are no-ops
+    write("rules/engram.mdc", HEADER);
+    let scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("blocked"); // no markers: foreign file
+    expect(planUninstall(scan).actions).toHaveLength(0);
+
+    const blockOnly = fileBlock("guidance body line");
+    write("rules/engram.mdc", blockOnly);
+    scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("drift"); // managed block missing its header
+    expect(scan.states[0]!.reasons).toEqual(["unmanaged content outside managed block"]);
+    expect(planUninstall(scan).actions).toHaveLength(0);
+
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, s)))));
+    scan = await run(scanAssets(tmp, s));
+    let plan = planUninstall(scan);
+    expect(plan.actions).toEqual([
+      { op: "remove", path: "rules/engram.mdc", before: headeredFile() },
+    ]);
+    await run(applyPlan(tmp, plan));
+    expect(fs.existsSync(path.join(tmp, "rules/engram.mdc"))).toBe(false);
+
+    // trailing unmanaged content: uninstall refuses and keeps the file
+    const withExtra = `${headeredFile()}\nhand-added note\n`;
+    write("rules/engram.mdc", withExtra);
+    scan = await run(scanAssets(tmp, s));
+    plan = planUninstall(scan);
+    expect(plan.actions).toHaveLength(0);
+    expect(plan.blocked).toEqual([
+      {
+        id: "test-file",
+        status: "drift",
+        reasons: ["managed file has extra unmanaged content (use force to remove)"],
+      },
+    ]);
+    expect(read("rules/engram.mdc")).toBe(withExtra);
+    plan = planUninstall(scan, { force: true });
+    await run(applyPlan(tmp, plan));
+    expect(fs.existsSync(path.join(tmp, "rules/engram.mdc"))).toBe(false);
+  });
+
+  it("CRLF header lines classify drift once and repair to the declared LF header", async () => {
+    const s = spec([headeredAsset()]);
+    const crlf = `---\r\ndescription: engram rules\r\nalwaysApply: true\r\n---\n${fileBlock("guidance body line")}`;
+    write("rules/engram.mdc", crlf);
+
+    let scan = await run(scanAssets(tmp, s));
+    // markers still match (trim), but header comparison is exact
+    expect(scan.states[0]!.status).toBe("drift");
+    expect(scan.states[0]!.reasons).toEqual(["unmanaged content outside managed block"]);
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(read("rules/engram.mdc")).toBe(headeredFile());
+
+    scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("current");
+  });
+
+  it("non-headered markered files keep their exact prior semantics", async () => {
+    const s = spec([fileAsset({ markers: { begin: BEGIN_FILE, end: END_FILE } })]);
+    let scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("absent");
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(read("assets/skill.md")).toBe(fileBlock("# Owned file"));
+    scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("current");
+    expect(planInstall(scan).actions).toHaveLength(0);
+    // trailing unmanaged content is drift; uninstall refuses it without force
+    const withExtra = `${fileBlock("# Owned file")}extra\n`;
+    fs.writeFileSync(path.join(tmp, "assets/skill.md"), withExtra);
+    scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("drift");
+    expect(planUninstall(scan).actions).toHaveLength(0);
+    expect(planUninstall(scan).blocked).toHaveLength(1);
+  });
+});
+
+/* -------------- text assets: trailing-newline preservation (3a) -------------- */
+
+describe("installer / text asset trailing-newline preservation (SPEC 3a)", () => {
+  let tmp = "";
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "engram-nonl-"));
+  });
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const write = (rel: string, content: string): void => {
+    const abs = path.join(tmp, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, content);
+  };
+  const read = (rel: string): string => fs.readFileSync(path.join(tmp, rel), "utf8");
+
+  const s = spec([textAsset()]);
+  const blockNoNl = (): string => block("managed line 1\nmanaged line 2").replace(/\n$/, "");
+
+  it("append to a file without a trailing newline: seam newline, unterminated block", async () => {
+    write("config/tool.conf", "foreign top");
+    let scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("absent");
+    const plan = planInstall(scan);
+    expect(plan.actions).toEqual([
+      { op: "mkdir", path: "config" },
+      {
+        op: "write",
+        path: "config/tool.conf",
+        before: "foreign top",
+        after: `foreign top\n${blockNoNl()}`,
+      },
+    ]);
+    await run(applyPlan(tmp, plan));
+    expect(read("config/tool.conf")).toBe(`foreign top\n${blockNoNl()}`);
+
+    scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("current");
+    expect(planInstall(scan).actions).toHaveLength(0);
+  });
+
+  it("no-NL round-trip: uninstall restores the original bytes exactly", async () => {
+    write("config/tool.conf", "foreign top");
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, s)))));
+    const plan = planUninstall(await run(scanAssets(tmp, s)));
+    expect(plan.actions).toEqual([
+      {
+        op: "write",
+        path: "config/tool.conf",
+        before: `foreign top\n${blockNoNl()}`,
+        after: "foreign top",
+      },
+    ]);
+    await run(applyPlan(tmp, plan));
+    expect(read("config/tool.conf")).toBe("foreign top");
+  });
+
+  it("drift repair keeps the missing terminator; uninstall still restores exactly", async () => {
+    write("config/tool.conf", `foreign top\n${blockNoNl().replace("managed line 1", "edited")}`);
+    let scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("drift");
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(read("config/tool.conf")).toBe(`foreign top\n${blockNoNl()}`);
+    scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("current");
+    await run(applyPlan(tmp, planUninstall(scan)));
+    expect(read("config/tool.conf")).toBe("foreign top");
+  });
+
+  it("NL-terminated, CRLF, and empty originals keep today's rendering", async () => {
+    // LF original: seam-free append, newline-terminated block
+    write("config/tool.conf", "foreign top\n");
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, s)))));
+    expect(read("config/tool.conf")).toBe(
+      `foreign top\n${block("managed line 1\nmanaged line 2")}`,
+    );
+    await run(applyPlan(tmp, planUninstall(await run(scanAssets(tmp, s)))));
+    expect(read("config/tool.conf")).toBe("foreign top\n");
+
+    // CRLF original: foreign bytes preserved, managed block written LF
+    write("config/tool.conf", "foreign\r\ntop\r\n");
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, s)))));
+    expect(read("config/tool.conf")).toBe(
+      `foreign\r\ntop\r\n${block("managed line 1\nmanaged line 2")}`,
+    );
+    await run(applyPlan(tmp, planUninstall(await run(scanAssets(tmp, s)))));
+    expect(read("config/tool.conf")).toBe("foreign\r\ntop\r\n");
+
+    // fresh absent file: block exactly (with trailing newline)
+    fs.rmSync(path.join(tmp, "config/tool.conf"));
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, s)))));
+    expect(read("config/tool.conf")).toBe(block("managed line 1\nmanaged line 2"));
+
+    // existing-but-empty file: block exactly, newline-terminated
+    fs.rmSync(path.join(tmp, "config/tool.conf"));
+    write("config/tool.conf", "");
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, s)))));
+    expect(read("config/tool.conf")).toBe(block("managed line 1\nmanaged line 2"));
+  });
+
+  it("foreign content a user appends after the block survives uninstall", async () => {
+    write("config/tool.conf", "foreign top");
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, s)))));
+    // the user adds their own newline and content after the unterminated block
+    fs.appendFileSync(path.join(tmp, "config/tool.conf"), "\nuser footer");
+    const scan = await run(scanAssets(tmp, s));
+    expect(scan.states[0]!.status).toBe("current"); // text assets ignore outside content
+    await run(applyPlan(tmp, planUninstall(scan)));
+    expect(read("config/tool.conf")).toBe("foreign top\nuser footer");
+  });
+});

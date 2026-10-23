@@ -29,7 +29,8 @@
   },
   "files": [
     "dist",
-    "skills"
+    "skills",
+    "claude-scaffold"
   ],
   "type": "module",
   "main": "dist/index.js",
@@ -39,7 +40,7 @@
   },
   "scripts": {
     "build": "vp pack",
-    "prepack": "node -e \"const fs=require('fs');fs.cpSync('../harnesses/src/pi/skills','skills',{recursive:true});fs.cpSync('../../README.md','README.md')\"",
+    "prepack": "node -e \"const fs=require('fs');fs.cpSync('../harnesses/src/pi/skills','skills',{recursive:true});fs.mkdirSync('claude-scaffold/bin',{recursive:true});fs.cpSync('../harnesses/claude/scaffold/SKILL.md','claude-scaffold/SKILL.md');fs.cpSync('../harnesses/claude/bin/engram','claude-scaffold/bin/engram');fs.cpSync('../../README.md','README.md')\"",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
   },

@@ -48,6 +48,37 @@ import {
 import { claudeCodeSpec, claudeCodeRoot } from "../src/installer/claude-code.js";
 import { codexHooksFlagState, codexSpec, codexRoot } from "../src/installer/codex.js";
 import { parseSidecarLedger, SIDECAR_FILENAME } from "../src/installer/sidecar.js";
+import {
+  GENERIC_AGENTS_PATH,
+  GENERIC_ASSET_ID,
+  GENERIC_BEGIN_MARKER,
+  GENERIC_END_MARKER,
+  genericRoot,
+  genericSpec,
+} from "../src/installer/generic.js";
+import {
+  CURSOR_HEADER,
+  CURSOR_RULES_PATH,
+  CURSOR_ASSET_ID,
+  CURSOR_BEGIN_MARKER,
+  CURSOR_END_MARKER,
+  cursorRoot,
+  cursorSpec,
+} from "../src/installer/cursor.js";
+import {
+  CLAUDE_LAUNCHER_ASSET_ID,
+  CLAUDE_LAUNCHER_BEGIN_MARKER,
+  CLAUDE_LAUNCHER_END_MARKER,
+  CLAUDE_LAUNCHER_PATH,
+  CLAUDE_SKILL_ASSET_ID,
+  CLAUDE_SKILL_BEGIN_MARKER,
+  CLAUDE_SKILL_END_MARKER,
+  CLAUDE_SKILL_PATH,
+  claudeRoot,
+  claudeSpec,
+} from "../src/installer/claude.js";
+import { fileURLToPath } from "node:url";
+import { ENGRAM_GUIDANCE_TEMPLATE } from "../src/installer/guidance-template.js";
 
 /* ------------------------------ helpers ------------------------------ */
 
@@ -825,5 +856,484 @@ describe("installer core / jsonEntries markerless mode", () => {
     const after = installedDoc() as any;
     expect(after.hooks.SessionStart).toBeUndefined(); // ours removed
     expect(after.hooks.SessionEnd).toHaveLength(1); // the copy is foreign
+  });
+});
+
+/* --------------------- generic target (ENG-37 turn 1) --------------------- */
+
+describe("generic install target (ENG-37)", () => {
+  /** Exact managed block the installer writes: markers, template, LF endings. */
+  const block = (): string =>
+    `${GENERIC_BEGIN_MARKER}\n${ENGRAM_GUIDANCE_TEMPLATE}\n${GENERIC_END_MARKER}\n`;
+
+  it("declares one valid text asset on AGENTS.md with id-bearing HTML-comment markers", () => {
+    const spec = genericSpec();
+    expect(spec.assets).toHaveLength(1);
+    const asset = spec.assets[0] as Extract<AssetSpec, { kind: "text" }>;
+    expect(asset.kind).toBe("text");
+    expect(asset.id).toBe(GENERIC_ASSET_ID);
+    expect(asset.id).toBe("engram-agents-instructions");
+    expect(asset.path).toBe(GENERIC_AGENTS_PATH);
+    expect(asset.path).toBe("AGENTS.md");
+    // POSIX-style relative path: the core rejects backslashes outright
+    expect(asset.path.includes("\\")).toBe(false);
+    expect(validateSpec(spec)).toBeNull();
+    expect(asset.beginMarker).toBe(GENERIC_BEGIN_MARKER);
+    expect(asset.endMarker).toBe(GENERIC_END_MARKER);
+    expect(GENERIC_BEGIN_MARKER).toContain(GENERIC_ASSET_ID);
+    expect(GENERIC_END_MARKER).toContain(GENERIC_ASSET_ID);
+    expect(GENERIC_BEGIN_MARKER).not.toBe(GENERIC_END_MARKER);
+    // project targets root at the project directory itself; a
+    // trailing-separator-only root stays the root and never degenerates
+    expect(genericRoot("/")).toBe("/");
+    expect(genericRoot("///")).toBe("/");
+    expect(genericRoot("/some/project/")).toBe("/some/project");
+    expect(genericRoot("/some/project")).toBe("/some/project");
+  });
+
+  it("installs into a fresh root and reports current afterwards", async () => {
+    const spec = genericSpec();
+    let scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("absent");
+    const plan = planInstall(scan);
+    expect(plan.blocked).toHaveLength(0);
+    expect(plan.actions).toEqual([
+      { op: "write", path: "AGENTS.md", before: null, after: block() },
+    ]);
+    await run(applyPlan(tmp, plan));
+    expect(readRoot("AGENTS.md")).toBe(block());
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("current");
+    expect(planInstall(scan).actions).toHaveLength(0);
+  });
+
+  it("appends to foreign content byte-for-byte and re-runs stay idempotent", async () => {
+    const foreignTop = "# My project\n\nAgent notes live here.\n\n";
+    const foreignBottom = "## Build\n\npnpm test\n";
+    writeRoot("AGENTS.md", `${foreignTop}${foreignBottom}`);
+    const spec = genericSpec();
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, spec)))));
+    expect(readRoot("AGENTS.md")).toBe(`${foreignTop}${foreignBottom}${block()}`);
+
+    const scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("current");
+    expect(planInstall(scan).actions).toHaveLength(0);
+  });
+
+  it("drift repair rebuilds the managed block in place and keeps foreign content", async () => {
+    const foreign = "# My project\n";
+    const spec = genericSpec();
+    const agents = path.join(tmp, "AGENTS.md");
+    fs.writeFileSync(agents, `${foreign}${block()}`.replace("engram search", "engram SERACH"));
+
+    let scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("drift");
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(readRoot("AGENTS.md")).toBe(`${foreign}${block()}`);
+
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("current");
+  });
+
+  it("uninstall removes only the managed block; AGENTS.md always survives", async () => {
+    const foreign = "# My project\n";
+    const spec = genericSpec();
+    // nothing installed: uninstall is a no-op, the file is never touched
+    writeRoot("AGENTS.md", foreign);
+    let scan = await run(scanAssets(tmp, spec));
+    expect(planUninstall(scan).actions).toHaveLength(0);
+
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, spec)))));
+    scan = await run(scanAssets(tmp, spec));
+    const plan = planUninstall(scan);
+    expect(plan.actions).toEqual([
+      { op: "write", path: "AGENTS.md", before: `${foreign}${block()}`, after: foreign },
+    ]);
+    await run(applyPlan(tmp, plan));
+    expect(readRoot("AGENTS.md")).toBe(foreign);
+
+    // turn-1 review note 4: foreign content BELOW the block survives too
+    const trailing = "\nTeam conventions live after the block.\n";
+    writeRoot("AGENTS.md", `${foreign}${block()}${trailing}`);
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("current"); // text assets ignore outside content
+    await run(applyPlan(tmp, planUninstall(scan)));
+    expect(readRoot("AGENTS.md")).toBe(`${foreign}${trailing}`);
+  });
+
+  it("duplicated markers are corrupt and install refuses them without force", async () => {
+    const spec = genericSpec();
+    writeRoot("AGENTS.md", `${block()}${block()}`);
+    const scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("corrupt");
+    const plan = planInstall(scan);
+    expect(plan.actions).toHaveLength(0);
+    expect(plan.blocked).toEqual([
+      { id: GENERIC_ASSET_ID, status: "corrupt", reasons: ["unbalanced or duplicated markers"] },
+    ]);
+  });
+
+  it("CRLF: markers still match, foreign bytes survive, managed block stays LF", async () => {
+    const foreignCrlf = "# Project\r\nWindows-edited notes.\r\n";
+    const spec = genericSpec();
+    writeRoot("AGENTS.md", foreignCrlf);
+
+    let scan = await run(scanAssets(tmp, spec));
+    // no markers yet: a text asset appends regardless of line endings
+    expect(scan.states[0]!.status).toBe("absent");
+    await run(applyPlan(tmp, planInstall(scan)));
+    const after = readRoot("AGENTS.md")!;
+    // foreign CRLF bytes intact, managed block written LF per core renderBlock
+    expect(after.startsWith(foreignCrlf)).toBe(true);
+    expect(after).toBe(`${foreignCrlf}${block()}`);
+
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("current");
+
+    await run(applyPlan(tmp, planUninstall(scan)));
+    expect(readRoot("AGENTS.md")).toBe(foreignCrlf);
+  });
+
+  it("shared guidance template is bounded and carries the required semantics", () => {
+    const template = ENGRAM_GUIDANCE_TEMPLATE;
+    expect(template.split("\n").length).toBeLessThanOrEqual(40);
+    // explicit manual session start; never claims automatic loading
+    expect(template).toContain("`engram context`");
+    expect(template).toMatch(/manual/i);
+    expect(template).not.toMatch(/automatic/i);
+    // search/show for specifics, add with --type decision
+    expect(template).toContain("`engram search");
+    expect(template).toContain("`engram show");
+    expect(template).toContain("`engram add`");
+    expect(template).toContain("--type decision");
+    // never hand-create engram files or guess ids
+    expect(template).toMatch(/never hand-create/i);
+    expect(template).toContain(".engram/engrams/");
+    expect(template).toMatch(/never guess/i);
+    // personal scope, brief do/do-not recording rules
+    expect(template).toContain("--scope personal");
+    expect(template).toMatch(/do record/i);
+    expect(template).toMatch(/do not record/i);
+    // precedence caveat, phrased like the in-repo precedents
+    expect(template).toContain("system, user, and repository instructions");
+    // CLI-variant only: no harness tool names, no hook targets, no host names
+    expect(template).not.toMatch(/engram_/);
+    expect(template).not.toMatch(/engram hook|claude-code|codex|cursor|\bpi\b/);
+  });
+});
+
+/* --------------------- cursor target (ENG-37 turn 2) --------------------- */
+
+describe("cursor install target (ENG-37)", () => {
+  /** Exact rendered file: frontmatter header first, markers wrapping the body. */
+  const file = (): string =>
+    `${CURSOR_HEADER}\n${CURSOR_BEGIN_MARKER}\n${ENGRAM_GUIDANCE_TEMPLATE}\n${CURSOR_END_MARKER}\n`;
+
+  it("declares one valid wholly-owned file asset: frontmatter header, markered shared body", () => {
+    const spec = cursorSpec();
+    expect(spec.assets).toHaveLength(1);
+    const asset = spec.assets[0] as Extract<AssetSpec, { kind: "file" }>;
+    expect(asset.kind).toBe("file");
+    expect(asset.id).toBe(CURSOR_ASSET_ID);
+    expect(asset.id).toBe("engram-cursor-rules");
+    expect(asset.path).toBe(CURSOR_RULES_PATH);
+    expect(asset.path).toBe(".cursor/rules/engram.mdc");
+    expect(asset.path.includes("\\")).toBe(false);
+    expect(validateSpec(spec)).toBeNull();
+    // frontmatter is the declared header: the file's first lines, documented
+    // and guaranteed-parsed cursor shape
+    expect(asset.header).toBe(CURSOR_HEADER);
+    expect(CURSOR_HEADER).toMatch(/^---\n/);
+    expect(CURSOR_HEADER).toMatch(/\n---$/);
+    expect(CURSOR_HEADER).toContain("alwaysApply: true");
+    expect(CURSOR_HEADER).toMatch(/^description: /m);
+    // markers wrap only the body; the body is the shared template verbatim
+    expect(asset.markers!.begin).toBe(CURSOR_BEGIN_MARKER);
+    expect(asset.markers!.end).toBe(CURSOR_END_MARKER);
+    expect(CURSOR_BEGIN_MARKER).toContain(CURSOR_ASSET_ID);
+    expect(CURSOR_END_MARKER).toContain(CURSOR_ASSET_ID);
+    expect(CURSOR_BEGIN_MARKER).not.toBe(CURSOR_END_MARKER);
+    expect(asset.content).toBe(ENGRAM_GUIDANCE_TEMPLATE);
+    expect(cursorRoot("/")).toBe("/");
+    expect(cursorRoot("///")).toBe("/");
+    expect(cursorRoot("/some/project/")).toBe("/some/project");
+  });
+
+  it("fresh install creates .cursor/rules/ and the exact frontmatter-first file", async () => {
+    const spec = cursorSpec();
+    let scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("absent");
+    const plan = planInstall(scan);
+    expect(plan.blocked).toHaveLength(0);
+    expect(plan.actions).toEqual([
+      { op: "mkdir", path: ".cursor/rules" },
+      { op: "write", path: ".cursor/rules/engram.mdc", before: null, after: file() },
+    ]);
+    await run(applyPlan(tmp, plan));
+    expect(readRoot(".cursor/rules/engram.mdc")).toBe(file());
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("current");
+    expect(planInstall(scan).actions).toHaveLength(0);
+  });
+
+  it("body and frontmatter drift are repaired in place to the exact declared file", async () => {
+    const spec = cursorSpec();
+    const agents = path.join(tmp, ".cursor/rules/engram.mdc");
+    fs.mkdirSync(path.dirname(agents), { recursive: true });
+    // body drift
+    fs.writeFileSync(agents, file().replace("engram search", "engram SERACH"));
+    let scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("drift");
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(readRoot(".cursor/rules/engram.mdc")).toBe(file());
+
+    // frontmatter drift (hand edit above the markers) repairs away too
+    fs.writeFileSync(agents, file().replace("alwaysApply: true", "alwaysApply: false"));
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("drift");
+    expect(scan.states[0]!.reasons).toContain("unmanaged content outside managed block");
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(readRoot(".cursor/rules/engram.mdc")).toBe(file());
+
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("current");
+  });
+
+  it("a pre-existing foreign engram.mdc is blocked and never clobbered", async () => {
+    const foreignFile = "---\ndescription: my own engram notes\nalwaysApply: true\n---\n\nMine.\n";
+    const spec = cursorSpec();
+    writeRoot(".cursor/rules/engram.mdc", foreignFile);
+
+    const scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("blocked");
+    const plan = planInstall(scan);
+    expect(plan.actions).toHaveLength(0);
+    expect(plan.blocked).toEqual([
+      {
+        id: CURSOR_ASSET_ID,
+        status: "blocked",
+        reasons: ["unmanaged file exists at target path (use force to overwrite)"],
+      },
+    ]);
+    expect(readRoot(".cursor/rules/engram.mdc")).toBe(foreignFile);
+  });
+
+  it("uninstall removes exactly our file; trailing hand-edits block without force", async () => {
+    const spec = cursorSpec();
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, spec)))));
+    const extra = `${file()}\nHand-added note.\n`;
+    fs.writeFileSync(path.join(tmp, ".cursor/rules/engram.mdc"), extra);
+
+    let scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("drift");
+    const plan = planUninstall(scan);
+    expect(plan.actions).toHaveLength(0);
+    expect(plan.blocked).toEqual([
+      {
+        id: CURSOR_ASSET_ID,
+        status: "drift",
+        reasons: ["managed file has extra unmanaged content (use force to remove)"],
+      },
+    ]);
+    expect(readRoot(".cursor/rules/engram.mdc")).toBe(extra);
+
+    // exact file: uninstall removes it wholly
+    fs.writeFileSync(path.join(tmp, ".cursor/rules/engram.mdc"), file());
+    scan = await run(scanAssets(tmp, spec));
+    const clean = planUninstall(scan);
+    expect(clean.actions).toEqual([
+      { op: "remove", path: ".cursor/rules/engram.mdc", before: file() },
+    ]);
+    await run(applyPlan(tmp, clean));
+    expect(fs.existsSync(path.join(tmp, ".cursor/rules/engram.mdc"))).toBe(false);
+  });
+
+  it("uninstall leaves user .mdc files in .cursor/rules/ untouched", async () => {
+    const userRule = "---\ndescription: user rule\nglobs: *.ts\n---\n\nKeep types strict.\n";
+    writeRoot(".cursor/rules/my-rules.mdc", userRule);
+    const spec = cursorSpec();
+
+    let scan = await run(scanAssets(tmp, spec));
+    expect(planUninstall(scan).actions).toHaveLength(0);
+
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(readRoot(".cursor/rules/my-rules.mdc")).toBe(userRule);
+
+    scan = await run(scanAssets(tmp, spec));
+    await run(applyPlan(tmp, planUninstall(scan)));
+    expect(fs.existsSync(path.join(tmp, ".cursor/rules/engram.mdc"))).toBe(false);
+    expect(readRoot(".cursor/rules/my-rules.mdc")).toBe(userRule);
+  });
+});
+
+/* --------------------- claude target (ENG-37 turn 3) --------------------- */
+
+describe("claude install target (ENG-37)", () => {
+  /** Source-of-truth scaffold assets, read from their in-repo locations. */
+  const repoSkill = (): string =>
+    fs.readFileSync(fileURLToPath(new URL("../claude/scaffold/SKILL.md", import.meta.url)), "utf8");
+  const repoLauncher = (): string =>
+    fs.readFileSync(fileURLToPath(new URL("../claude/bin/engram", import.meta.url)), "utf8");
+
+  const splitFrontmatter = (src: string): { header: string; body: string } => {
+    const m = /^---\n[\s\S]*?\n---\n/.exec(src);
+    if (m === null) throw new Error("scaffold SKILL.md has no frontmatter");
+    return { header: m[0].replace(/\n$/, ""), body: src.slice(m[0].length) };
+  };
+
+  const skillFile = (): string => {
+    const { header, body } = splitFrontmatter(repoSkill());
+    return `${header}\n${CLAUDE_SKILL_BEGIN_MARKER}\n${body}${CLAUDE_SKILL_END_MARKER}\n`;
+  };
+  const launcherFile = (): string => {
+    const rest = repoLauncher().slice(repoLauncher().indexOf("\n") + 1);
+    return `#!/bin/sh\n${CLAUDE_LAUNCHER_BEGIN_MARKER}\n${rest}${CLAUDE_LAUNCHER_END_MARKER}\n`;
+  };
+
+  it("declares two valid markered assets sourced from the repo files, no hard-coded versions", () => {
+    const spec = claudeSpec();
+    expect(spec.assets).toHaveLength(2);
+    const skill = spec.assets[0] as Extract<AssetSpec, { kind: "file" }>;
+    const launcher = spec.assets[1] as Extract<AssetSpec, { kind: "file" }>;
+
+    expect(skill.kind).toBe("file");
+    expect(skill.id).toBe(CLAUDE_SKILL_ASSET_ID);
+    expect(skill.id).toBe("engram-claude-skill");
+    expect(skill.path).toBe(CLAUDE_SKILL_PATH);
+    expect(skill.path).toBe(".claude/skills/engram/SKILL.md");
+    expect(skill.path.includes("\\")).toBe(false);
+    // frontmatter-first: the declared header is the scaffold's YAML block
+    expect(skill.header).toBe(splitFrontmatter(repoSkill()).header);
+    expect(skill.header).toMatch(/^---\n/);
+    expect(skill.header).toMatch(/\n---$/);
+    expect(skill.content).toBe(splitFrontmatter(repoSkill()).body);
+    expect(CLAUDE_SKILL_BEGIN_MARKER).toContain(CLAUDE_SKILL_ASSET_ID);
+    expect(CLAUDE_SKILL_END_MARKER).toContain(CLAUDE_SKILL_ASSET_ID);
+
+    expect(launcher.id).toBe(CLAUDE_LAUNCHER_ASSET_ID);
+    expect(launcher.id).toBe("engram-claude-launcher");
+    expect(launcher.path).toBe(CLAUDE_LAUNCHER_PATH);
+    expect(launcher.path).toBe(".claude/skills/engram/bin/engram");
+    // shebang stays line 1; the body is the release-pinned launcher as-is
+    expect(launcher.header).toBe("#!/bin/sh");
+    expect(launcher.content).toBe(repoLauncher().slice(repoLauncher().indexOf("\n") + 1));
+    expect(launcher.content).toMatch(/engram-cli@\d+\.\d+\.\d+/);
+    expect(CLAUDE_LAUNCHER_BEGIN_MARKER).toContain(CLAUDE_LAUNCHER_ASSET_ID);
+    expect(CLAUDE_LAUNCHER_END_MARKER).toContain(CLAUDE_LAUNCHER_ASSET_ID);
+
+    expect(validateSpec(spec)).toBeNull();
+    expect(claudeRoot("/")).toBe("/");
+    expect(claudeRoot("///")).toBe("/");
+    expect(claudeRoot("/some/project/")).toBe("/some/project");
+  });
+
+  it("fresh install scaffolds .claude/skills/engram/ and reports current", async () => {
+    const spec = claudeSpec();
+    let scan = await run(scanAssets(tmp, spec));
+    expect(scan.states.map((s) => s.status)).toEqual(["absent", "absent"]);
+    const plan = planInstall(scan);
+    expect(plan.blocked).toHaveLength(0);
+    expect(plan.actions).toEqual([
+      { op: "mkdir", path: ".claude/skills/engram" },
+      { op: "mkdir", path: ".claude/skills/engram/bin" },
+      { op: "write", path: ".claude/skills/engram/SKILL.md", before: null, after: skillFile() },
+      {
+        op: "write",
+        path: ".claude/skills/engram/bin/engram",
+        before: null,
+        after: launcherFile(),
+      },
+    ]);
+    await run(applyPlan(tmp, plan));
+    expect(readRoot(".claude/skills/engram/SKILL.md")).toBe(skillFile());
+    expect(readRoot(".claude/skills/engram/bin/engram")).toBe(launcherFile());
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states.map((s) => s.status)).toEqual(["current", "current"]);
+    expect(planInstall(scan).actions).toHaveLength(0);
+  });
+
+  it("body, frontmatter, and version-pin drift are repaired to the repo files", async () => {
+    const spec = claudeSpec();
+    // version-pin bump scenario: an older release's pin inside the block
+    writeRoot(
+      ".claude/skills/engram/bin/engram",
+      launcherFile().replace(/engram-cli@\d+\.\d+\.\d+/, "engram-cli@0.0.1"),
+    );
+    writeRoot(
+      ".claude/skills/engram/SKILL.md",
+      skillFile().replace("engram search", "engram SERACH"),
+    );
+
+    let scan = await run(scanAssets(tmp, spec));
+    expect(scan.states.map((s) => s.status)).toEqual(["drift", "drift"]);
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(readRoot(".claude/skills/engram/SKILL.md")).toBe(skillFile());
+    expect(readRoot(".claude/skills/engram/bin/engram")).toBe(launcherFile());
+
+    // frontmatter edits above the markers repair away too
+    writeRoot(".claude/skills/engram/SKILL.md", skillFile().replace("engram CLI.", "tweaked."));
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("drift");
+    expect(scan.states[0]!.reasons).toContain("unmanaged content outside managed block");
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(readRoot(".claude/skills/engram/SKILL.md")).toBe(skillFile());
+
+    scan = await run(scanAssets(tmp, spec));
+    expect(scan.states.map((s) => s.status)).toEqual(["current", "current"]);
+  });
+
+  it("a foreign SKILL.md is blocked and never clobbered", async () => {
+    const foreign = "---\nname: mine\ndescription: my own skill\n---\n\nMine.\n";
+    writeRoot(".claude/skills/engram/SKILL.md", foreign);
+    const spec = claudeSpec();
+
+    const scan = await run(scanAssets(tmp, spec));
+    expect(scan.states[0]!.status).toBe("blocked");
+    expect(scan.states[1]!.status).toBe("absent");
+    const plan = planInstall(scan);
+    expect(plan.blocked.map((b) => b.id)).toEqual([CLAUDE_SKILL_ASSET_ID]);
+    // only the launcher side is planned; the foreign skill is never touched
+    expect(plan.actions.map((a) => a.path)).toEqual([
+      ".claude/skills/engram/bin",
+      ".claude/skills/engram/bin/engram",
+    ]);
+    await run(applyPlan(tmp, plan));
+    expect(readRoot(".claude/skills/engram/SKILL.md")).toBe(foreign);
+  });
+
+  it("uninstall removes exactly our two files; user skills survive untouched", async () => {
+    const userSkill = "---\nname: my-skill\ndescription: user skill\n---\n\nDo things.\n";
+    writeRoot(".claude/skills/other-skill/SKILL.md", userSkill);
+    const spec = claudeSpec();
+
+    // nothing installed: no-op
+    let scan = await run(scanAssets(tmp, spec));
+    expect(planUninstall(scan).actions).toHaveLength(0);
+
+    await run(applyPlan(tmp, planInstall(scan)));
+    expect(readRoot(".claude/skills/other-skill/SKILL.md")).toBe(userSkill);
+
+    scan = await run(scanAssets(tmp, spec));
+    const plan = planUninstall(scan);
+    expect(plan.actions).toEqual([
+      { op: "remove", path: ".claude/skills/engram/SKILL.md", before: skillFile() },
+      { op: "remove", path: ".claude/skills/engram/bin/engram", before: launcherFile() },
+    ]);
+    await run(applyPlan(tmp, plan));
+    expect(fs.existsSync(path.join(tmp, ".claude/skills/engram/SKILL.md"))).toBe(false);
+    expect(fs.existsSync(path.join(tmp, ".claude/skills/engram/bin/engram"))).toBe(false);
+    expect(readRoot(".claude/skills/other-skill/SKILL.md")).toBe(userSkill);
+
+    // trailing hand-edit on one file blocks it without force; the other removes
+    await run(applyPlan(tmp, planInstall(await run(scanAssets(tmp, spec)))));
+    writeRoot(".claude/skills/engram/SKILL.md", `${skillFile()}\nextra\n`);
+    scan = await run(scanAssets(tmp, spec));
+    const blockedPlan = planUninstall(scan);
+    expect(blockedPlan.actions).toEqual([
+      { op: "remove", path: ".claude/skills/engram/bin/engram", before: launcherFile() },
+    ]);
+    expect(blockedPlan.blocked.map((b) => b.id)).toEqual([CLAUDE_SKILL_ASSET_ID]);
+    await run(applyPlan(tmp, planUninstall(scan, { force: true })));
+    expect(fs.existsSync(path.join(tmp, ".claude/skills/engram/SKILL.md"))).toBe(false);
   });
 });

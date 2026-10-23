@@ -140,8 +140,16 @@ so agents there should not duplicate the startup call.
   session-start context loading. See [OpenCode plugin](#opencode-plugin).
 - **Claude Code**: `/plugin marketplace add tm0h/engram`, then
   `/plugin install engram@engram` (brings the skill and an `engram`
-  launcher). Or simply drop the snippet above into `CLAUDE.md`.
-- **Cursor**: `.cursor/rules`.
+  launcher). Or simply drop the snippet above into `CLAUDE.md`. Without the
+  plugin, `engram install claude` scaffolds the project skill at
+  `.claude/skills/engram/` (project skill scaffold; distinct from
+  `engram install claude-code`, which sets up user-level hooks).
+- **Cursor**: `engram install cursor` scaffolds `.cursor/rules/engram.mdc`
+  as an always-applied project rule (`.cursor/rules` is picked up by
+  Cursor; user `.mdc` files stay untouched).
+- **Generic (AGENTS.md)**: `engram install generic` maintains a managed
+  engram section in the project's `AGENTS.md`; foreign content is
+  preserved and `--uninstall` removes only the managed block.
 - **Any other harness or bot**: if it can't run a CLI, it can still **read
   files**. Point it at `.engram/engrams/*.md` (or `.engram/README.md`),
   which is self-describing.

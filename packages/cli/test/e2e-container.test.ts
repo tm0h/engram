@@ -93,6 +93,27 @@ describe("Docker E2E runner", () => {
     expect(e2e).toContain("head -c 1");
   });
 
+  it("pins audit coverage for the ENG-37 project install targets", () => {
+    const e2e = readRepoFile("scripts/e2e-cli.sh");
+
+    expect(e2e).toContain('step "Project install targets"');
+    expect(e2e).toContain("engram install generic --dry-run");
+    expect(e2e).toContain("engram install generic --yes --uninstall");
+    expect(e2e).toContain("engram install cursor --yes");
+    expect(e2e).toContain("engram install claude --yes");
+    expect(e2e).toContain("sh .claude/skills/engram/bin/engram --version");
+    expect(e2e).toContain("generic | cursor | claude | claude-code | codex");
+    expect(e2e).toContain('--root "$root_view"');
+    // R3 pinned at the e2e level: byte-exact uninstall of a no-NL AGENTS.md
+    expect(e2e).toContain("sha256sum");
+    // deny-cases capture expected-failing output to files (pipefail-safe)
+    expect(e2e).toContain('"$run_root/deny-home.txt" 2>&1');
+    expect(e2e).toContain('grep -F -- "--root" "$run_root/deny-home.txt"');
+    expect(e2e).toContain(
+      "grep -F 'generic | cursor | claude | claude-code | codex' \"$run_root/deny-menu.txt\"",
+    );
+  });
+
   it("pins audit coverage for the related, call-form, and hook install surfaces", () => {
     const e2e = readRepoFile("scripts/e2e-cli.sh");
 

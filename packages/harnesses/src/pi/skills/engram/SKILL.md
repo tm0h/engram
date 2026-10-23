@@ -162,18 +162,38 @@ system, user, and repository instructions over recorded memory.
 Keep titles short and specific; put details in the body; add a few
 searchable tags.
 
-## Install lifecycle hooks (claude-code, codex)
+## Install targets (generic, cursor, claude, claude-code, codex)
 
-`engram install claude-code` and `engram install codex` set up user-level
-lifecycle hooks so the engram digest is injected at startup, resume, and
-after compaction. Hooks fail open: if engram is unavailable or the project
-has no memory, sessions continue normally, and hook output is capped at
-8 KiB.
+`engram install` scaffolds project-local integration files or user-level
+lifecycle hooks. Project targets write inside a project directory
+(`--root <dir>`, default: the current directory) and never touch the OS
+home; user-level targets write under it (`--home <dir>` overrides).
+
+Project targets (ENG-37):
+
+- `engram install generic`: maintains a managed engram section in the
+  project's `AGENTS.md` (HTML-comment markers; foreign content preserved).
+- `engram install cursor`: scaffolds `.cursor/rules/engram.mdc` as a
+  project rule (frontmatter-first, `alwaysApply: true`). User `.mdc` files
+  in `.cursor/rules/` stay untouched.
+- `engram install claude`: scaffolds the project skill at
+  `.claude/skills/engram/` (a `SKILL.md` plus a `bin/engram` launcher
+  invoked as `sh "${CLAUDE_SKILL_DIR}/bin/engram" <args>`). This is the
+  project skill scaffold, distinct from `claude-code`, which installs
+  user-level hooks. User skills stay untouched.
+
+User-level targets (ENG-58): `engram install claude-code` and
+`engram install codex` set up lifecycle hooks so the engram digest is
+injected at startup, resume, and after compaction. Hooks fail open: if
+engram is unavailable or the project has no memory, sessions continue
+normally, and hook output is capped at 8 KiB.
 
 - `engram install <target> --status`: read-only state view.
 - `engram install <target> --dry-run`: preview the exact changes; writes nothing.
 - `engram install <target>`: install; asks for confirmation (use `--yes` in scripts).
-- `engram install <target> --uninstall`: remove only engram-owned entries.
+- `engram install <target> --uninstall`: remove only engram-owned content.
 
-Targets are exactly `claude-code` and `codex`. `engram hook <host> <event>`
-is the hook entry point; valid invocations always exit 0.
+Re-running install repairs drift (for example after an engram upgrade
+changes the pinned scaffold content). Targets are exactly `generic`,
+`cursor`, `claude`, `claude-code`, and `codex`. `engram hook <host>
+<event>` is the hook entry point; valid invocations always exit 0.

@@ -86,6 +86,14 @@ export type AssetSpec =
       readonly content: string;
       /** Optional markers enable drift detection and markered updates. */
       readonly markers?: { readonly begin: string; readonly end: string };
+      /**
+       * Fixed declared lines rendered above the begin marker (markered files
+       * only; ENG-37 exception). The file is `current` iff the managed block
+       * matches AND these exact lines precede it AND nothing follows the end
+       * marker. Repairs rewrite header + block; uninstall removes exactly
+       * header + block.
+       */
+      readonly header?: string;
     }
   | {
       readonly kind: "json";
@@ -278,6 +286,15 @@ const blockLines = (begin: string, content: string, end: string): ReadonlyArray<
 const renderBlock = (begin: string, content: string, end: string): string =>
   `${blockLines(begin, content, end).join("\n")}\n`;
 
+/** Exact markered wholly-owned file: declared header (if any) + fresh block. */
+const headerBlock = (
+  spec: Extract<AssetSpec, { kind: "file" }>,
+  m: { begin: string; end: string },
+): string => {
+  const block = renderBlock(m.begin, spec.content, m.end);
+  return spec.header !== undefined ? `${ensureNL(spec.header)}${block}` : block;
+};
+
 const serializeJson = (doc: JsonValue): string => `${JSON.stringify(doc, null, 2)}\n`;
 
 /* -------------------------- spec validation -------------------------- */
@@ -324,9 +341,26 @@ export const validateSpec = (spec: InstallSpec): InstallerError | null => {
     if (asset.kind === "text" && !validMarkers(asset.id, asset.beginMarker, asset.endMarker)) {
       return invalid(`invalid markers for "${asset.id}"`);
     }
-    if (asset.kind === "file" && asset.markers) {
-      const { begin, end } = asset.markers;
-      if (!validMarkers(asset.id, begin, end)) return invalid(`invalid markers for "${asset.id}"`);
+    if (asset.kind === "file") {
+      if (asset.markers) {
+        const { begin, end } = asset.markers;
+        if (!validMarkers(asset.id, begin, end))
+          return invalid(`invalid markers for "${asset.id}"`);
+      }
+      if (asset.header !== undefined) {
+        if (!asset.markers) {
+          return invalid(`header requires markers for "${asset.id}"`);
+        }
+        if (asset.header.trim() === "") {
+          return invalid(`empty header for "${asset.id}"`);
+        }
+        const { begin, end } = asset.markers;
+        for (const line of asset.header.split("\n")) {
+          if (line.trim() === begin.trim() || line.trim() === end.trim()) {
+            return invalid(`header must not contain marker lines for "${asset.id}"`);
+          }
+        }
+      }
     }
     if (asset.kind === "json") {
       if (asset.keyPath.length === 0) return invalid(`empty keyPath for "${asset.id}"`);
@@ -422,7 +456,27 @@ const classifyInstall = (spec: AssetSpec, current: string | null): AssetState =>
       return { spec, status: "corrupt", current, reasons: ["unbalanced or duplicated markers"] };
     }
     const inner = lines.slice(begins[0] + 1, ends[0]).join("\n");
-    if (inner !== managedLines(spec.content).join("\n")) {
+    const innerOk = inner === managedLines(spec.content).join("\n");
+    if (spec.kind === "file" && spec.header !== undefined) {
+      // headered wholly-owned file: current iff block matches AND the exact
+      // declared header precedes it AND nothing follows the end marker
+      const reasons: Array<string> = [];
+      if (!innerOk) reasons.push("managed content differs from spec");
+      const before = lines.slice(0, begins[0]).join("\n");
+      const after = lines
+        .slice(ends[0] + 1)
+        .join("\n")
+        .replace(/^\n+/, "")
+        .trim();
+      if (before !== managedLines(spec.header).join("\n") || after !== "") {
+        reasons.push("unmanaged content outside managed block");
+      }
+      if (reasons.length > 0) {
+        return { spec, status: "drift", current, reasons };
+      }
+      return { spec, status: "current", current, reasons: [] };
+    }
+    if (!innerOk) {
       return { spec, status: "drift", current, reasons: ["managed content differs from spec"] };
     }
     if (spec.kind === "file") {
@@ -779,12 +833,18 @@ const installActionFor = (spec: AssetSpec, current: string | null): string => {
   if (spec.kind === "file" && !spec.markers) return spec.content;
   const m = markersOf(spec);
   if (m === null) return spec.content; // unreachable for validated specs
-  if (current === null) return renderBlock(m.begin, spec.content, m.end);
+  if (current === null) {
+    return spec.kind === "file" ? headerBlock(spec, m) : renderBlock(m.begin, spec.content, m.end);
+  }
   // drift: rebuild the managed region in place
   const lines = splitLines(current);
   const begins = lines.map((l, i) => (isMarkerLine(l, m.begin) ? i : -1)).filter((i) => i >= 0);
   const ends = lines.map((l, i) => (isMarkerLine(l, m.end) ? i : -1)).filter((i) => i >= 0);
   if (spec.kind === "file") {
+    if (spec.header !== undefined) {
+      // headered wholly-owned file: every repair rewrites header + block exactly
+      return headerBlock(spec, m);
+    }
     // wholly-owned markered file: any drift repair rewrites the exact block
     if (begins.length === 1 && ends.length === 1 && begins[0] < ends[0]) {
       return renderBlock(m.begin, spec.content, m.end);
@@ -795,13 +855,26 @@ const installActionFor = (spec: AssetSpec, current: string | null): string => {
       ...blockLines(m.begin, spec.content, m.end),
       ...lines.slice(ends[0] + 1),
     ];
-    const joined = rebuilt.join("\n");
-    return joined.endsWith("\n") ? joined : `${joined}\n`;
+    // SPEC 3a: a missing trailing newline is state, not damage. The rebuild
+    // keeps the file unterminated when it was, so uninstall (spliceOut)
+    // restores the original bytes exactly.
+    return rebuilt.join("\n");
   }
   // unbalanced markers reached only via force: content from the first
   // unmatched marker is presumed managed and replaced by a fresh block
   const range = forceClearRange(lines, m.begin, m.end);
-  if (range === null) return `${ensureNL(current)}${renderBlock(m.begin, spec.content, m.end)}`;
+  if (range === null) {
+    // text append. SPEC 3a: newline-terminated originals (LF or CRLF) keep
+    // today's rendering; a missing trailing newline is preserved by starting
+    // the block on its own line but leaving it unterminated, so uninstall
+    // restores the original bytes exactly. A fresh empty file renders as the
+    // plain newline-terminated block.
+    if (current === "") return renderBlock(m.begin, spec.content, m.end);
+    if (current.endsWith("\n")) {
+      return `${current}${renderBlock(m.begin, spec.content, m.end)}`;
+    }
+    return `${current}\n${renderBlock(m.begin, spec.content, m.end).replace(/\n$/, "")}`;
+  }
   return `${spliceOut(lines, range).replace(/\n$/, "")}\n${renderBlock(m.begin, spec.content, m.end)}`;
 };
 
@@ -995,9 +1068,10 @@ const purePlan = (
     } else if (spec.kind === "file" && !spec.markers) {
       actions.push({ op: "remove", path: spec.path, before: current ?? "" });
     } else if (spec.kind === "file") {
-      // wholly-owned markered file: remove only when it is exactly the block
+      // wholly-owned markered file: remove only when it is exactly the
+      // declared header (if any) plus the block
       const m = markersOf(spec);
-      if (m !== null && current !== null && current === renderBlock(m.begin, spec.content, m.end)) {
+      if (m !== null && current !== null && current === headerBlock(spec, m)) {
         actions.push({ op: "remove", path: spec.path, before: current });
       } else if (options.force === true) {
         actions.push({ op: "remove", path: spec.path, before: current ?? "" });

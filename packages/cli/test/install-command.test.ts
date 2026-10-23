@@ -12,7 +12,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { installCommand } from "../src/commands/install.js";
-import { claudeCodeSpec, parseSidecarLedger, SIDECAR_FILENAME } from "@engram/harnesses/installer";
+import {
+  CURSOR_BEGIN_MARKER,
+  ENGRAM_GUIDANCE_TEMPLATE,
+  GENERIC_BEGIN_MARKER,
+  GENERIC_END_MARKER,
+  claudeCodeSpec,
+  parseSidecarLedger,
+  SIDECAR_FILENAME,
+} from "@engram/harnesses/installer";
+import { fileURLToPath } from "node:url";
 import type { AssetSpec } from "@engram/harnesses/shared";
 
 /* ------------------------------ helpers ------------------------------ */
@@ -86,10 +95,10 @@ describe("engram install command", () => {
     return !walk(tmp).some((f) => /\.engram-tmp$|\.bak$|~$/.test(f));
   };
 
-  it("refuses unknown targets, including other lanes' target names (ENG-68)", async () => {
-    await expect(runInstall({ target: "generic" })).rejects.toThrow(/unknown install target/);
-    await expect(runInstall({ target: "cursor" })).rejects.toThrow(/unknown install target/);
-    await expect(runInstall({ target: "claude" })).rejects.toThrow(/unknown install target/);
+  it("refuses unknown targets, enumerating exactly the five lanes (ENG-68)", async () => {
+    await expect(runInstall({ target: "nope" })).rejects.toThrow(
+      /unknown install target "nope" \(expected: generic \| cursor \| claude \| claude-code \| codex\)/,
+    );
   });
 
   it("status is read-only and reports state", async () => {
@@ -360,5 +369,352 @@ describe("engram install command", () => {
     );
     expect(fs.existsSync(path.join(homeDir, ".codex", SIDECAR_FILENAME))).toBe(false);
     expect(noBackupFiles()).toBe(true);
+  });
+
+  /* ------------------- generic: project-local (ENG-37) ------------------- */
+
+  it("generic: dry-run plans, install --yes writes AGENTS.md, status and re-run are read-only", async () => {
+    const proj = path.join(tmp, "proj");
+    fs.mkdirSync(proj, { recursive: true });
+    const agents = path.join(proj, "AGENTS.md");
+
+    // dry-run: exact plan, never writes
+    await runInstall({ target: "generic", dryRun: true, root: proj });
+    expect(output()).toContain(`Install plan for generic in ${proj}`);
+    expect(output()).toMatch(/write AGENTS\.md \(new file -> \d+ bytes\)/);
+    expect(output()).toContain("Dry run: no changes were written.");
+    expect(fs.existsSync(agents)).toBe(false);
+
+    // install
+    await runInstall({ target: "generic", yes: true, root: proj });
+    expect(output()).toContain("Installed 1 change(s) for generic");
+    // project targets manage files, never hooks
+    expect(output()).not.toMatch(/\bhooks\b/);
+    const installed = fs.readFileSync(agents, "utf8");
+    expect(installed).toContain(GENERIC_BEGIN_MARKER);
+    expect(installed).toContain(GENERIC_END_MARKER);
+    expect(installed).toContain(ENGRAM_GUIDANCE_TEMPLATE);
+
+    // status: read-only view
+    outLines = [];
+    await runInstall({ target: "generic", status: true, root: proj });
+    expect(output()).toContain("target: generic");
+    expect(output()).toContain(`root: ${proj}`);
+    expect(output()).toContain("AGENTS.md: current");
+    expect(fs.readFileSync(agents, "utf8")).toBe(installed);
+
+    // idempotent re-run with --yes changes nothing
+    outLines = [];
+    await runInstall({ target: "generic", yes: true, root: proj });
+    expect(output()).toContain("(no changes needed)");
+    expect(output()).toContain("Nothing to do");
+    expect(fs.readFileSync(agents, "utf8")).toBe(installed);
+  });
+
+  it("generic: preserves foreign AGENTS.md content, repairs drift, uninstalls owned-only", async () => {
+    const proj = path.join(tmp, "proj");
+    fs.mkdirSync(proj, { recursive: true });
+    const agents = path.join(proj, "AGENTS.md");
+    const foreign = "# My project\n\nCustom agent notes.\n";
+    fs.writeFileSync(agents, foreign);
+
+    await runInstall({ target: "generic", yes: true, root: proj });
+    const installed = fs.readFileSync(agents, "utf8");
+    expect(installed.startsWith(foreign)).toBe(true);
+
+    // drift: a hand edit inside the managed block is repaired, foreign kept
+    fs.writeFileSync(agents, installed.replace("engram search", "engram SERACH"));
+    await runInstall({ target: "generic", yes: true, root: proj });
+    const repaired = fs.readFileSync(agents, "utf8");
+    expect(repaired.startsWith(foreign)).toBe(true);
+    expect(repaired).toContain("engram search");
+    expect(repaired).not.toContain("engram SERACH");
+
+    // uninstall: managed block removed, foreign content and the file survive
+    outLines = [];
+    await runInstall({ target: "generic", yes: true, uninstall: true, root: proj });
+    expect(output()).toContain("Uninstalled 1 change(s) for generic");
+    expect(fs.readFileSync(agents, "utf8")).toBe(foreign);
+    expect(noBackupFiles()).toBe(true);
+  });
+
+  it("generic: defaults to the process cwd as root", async () => {
+    const proj = path.join(tmp, "proj");
+    fs.mkdirSync(proj, { recursive: true });
+    const prevCwd = process.cwd();
+    // the repo itself may carry an AGENTS.md in the test cwd: it must stay
+    // byte-identical (the install targets the project dir, not the old cwd)
+    const cwdAgents = path.join(prevCwd, "AGENTS.md");
+    const before = fs.existsSync(cwdAgents) ? fs.readFileSync(cwdAgents, "utf8") : null;
+    process.chdir(proj);
+    try {
+      await runInstall({ target: "generic", yes: true });
+      expect(fs.existsSync(path.join(proj, "AGENTS.md"))).toBe(true);
+      expect(fs.existsSync(cwdAgents) ? fs.readFileSync(cwdAgents, "utf8") : null).toBe(before);
+    } finally {
+      process.chdir(prevCwd);
+    }
+  });
+
+  it("generic: --home is a hard error naming --root, for installs and status alike", async () => {
+    const proj = path.join(tmp, "proj");
+    fs.mkdirSync(proj, { recursive: true });
+    await expect(
+      runInstall({ target: "generic", yes: true, root: proj, home: path.join(tmp, "home") }),
+    ).rejects.toThrow(/--home[\s\S]*--root/);
+    await expect(
+      runInstall({ target: "generic", status: true, root: proj, home: path.join(tmp, "home") }),
+    ).rejects.toThrow(/--home[\s\S]*--root/);
+    expect(fs.existsSync(path.join(proj, "AGENTS.md"))).toBe(false);
+  });
+
+  it("generic: a nonexistent --root fails instead of being created", async () => {
+    await expect(
+      runInstall({ target: "generic", yes: true, root: path.join(tmp, "missing") }),
+    ).rejects.toThrow(/project root does not exist/);
+  });
+
+  it("generic: never reads or writes the OS home or other targets' config dirs", async () => {
+    const guards = {
+      HOME: path.join(tmp, "home-guard"),
+      CODEX_HOME: path.join(tmp, "codex-guard"),
+      CLAUDE_CONFIG_DIR: path.join(tmp, "claude-guard"),
+    };
+    const prev = {
+      HOME: process.env.HOME,
+      CODEX_HOME: process.env.CODEX_HOME,
+      CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR,
+    };
+    for (const dir of Object.values(guards)) fs.mkdirSync(dir, { recursive: true });
+    const proj = path.join(tmp, "proj");
+    fs.mkdirSync(proj, { recursive: true });
+    try {
+      Object.assign(process.env, guards);
+      await runInstall({ target: "generic", yes: true, root: proj });
+      expect(fs.existsSync(path.join(proj, "AGENTS.md"))).toBe(true);
+      for (const dir of Object.values(guards)) {
+        expect(fs.readdirSync(dir)).toEqual([]);
+      }
+    } finally {
+      for (const [key, value] of Object.entries(prev)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
+  it("generic: non-TTY without --yes refuses and writes nothing (A4)", async () => {
+    const proj = path.join(tmp, "proj");
+    fs.mkdirSync(proj, { recursive: true });
+    await expect(runInstall({ target: "generic", root: proj })).rejects.toThrow(
+      /refusing to modify .* --yes/,
+    );
+    expect(fs.existsSync(path.join(proj, "AGENTS.md"))).toBe(false);
+  });
+
+  it("generic: uninstall restores a no-trailing-newline AGENTS.md byte-exactly (R3)", async () => {
+    const proj = path.join(tmp, "proj");
+    fs.mkdirSync(proj, { recursive: true });
+    const agents = path.join(proj, "AGENTS.md");
+    fs.writeFileSync(agents, "# My project\nnotes without a trailing newline");
+    const before = fs.readFileSync(agents, "utf8");
+
+    await runInstall({ target: "generic", yes: true, root: proj });
+    const installed = fs.readFileSync(agents, "utf8");
+    // the block starts on its own line but is not newline-terminated
+    expect(installed.startsWith(`${before}\n`)).toBe(true);
+    expect(installed.endsWith(GENERIC_END_MARKER)).toBe(true);
+
+    await runInstall({ target: "generic", yes: true, uninstall: true, root: proj });
+    expect(fs.readFileSync(agents, "utf8")).toBe(before);
+  });
+
+  /* ---------------------- cursor: project-local (ENG-37) ---------------------- */
+
+  const cursorRule = (proj: string): string => path.join(proj, ".cursor", "rules", "engram.mdc");
+
+  it("cursor: dry-run plans, install --yes scaffolds .cursor/rules, status and re-run are read-only", async () => {
+    const proj = path.join(tmp, "proj");
+    fs.mkdirSync(proj, { recursive: true });
+
+    // dry-run: exact plan (directory + file), never writes
+    await runInstall({ target: "cursor", dryRun: true, root: proj });
+    expect(output()).toContain(`Install plan for cursor in ${proj}`);
+    expect(output()).toContain("create directory .cursor/rules");
+    expect(output()).toMatch(/write \.cursor[/\\]rules[/\\]engram\.mdc \(new file -> \d+ bytes\)/);
+    expect(output()).toContain("Dry run: no changes were written.");
+    expect(fs.existsSync(path.join(proj, ".cursor"))).toBe(false);
+
+    // install
+    await runInstall({ target: "cursor", yes: true, root: proj });
+    expect(output()).toContain("Installed 1 change(s) for cursor");
+    expect(output()).not.toMatch(/\bhooks\b/);
+    const installed = fs.readFileSync(cursorRule(proj), "utf8");
+    expect(installed).toContain(CURSOR_BEGIN_MARKER);
+    expect(installed).toContain("alwaysApply: true");
+    expect(installed).toContain(ENGRAM_GUIDANCE_TEMPLATE);
+
+    // status: read-only view
+    outLines = [];
+    await runInstall({ target: "cursor", status: true, root: proj });
+    expect(output()).toContain("target: cursor");
+    expect(output()).toContain(`root: ${proj}`);
+    expect(output()).toContain(".cursor/rules/engram.mdc: current");
+    expect(fs.readFileSync(cursorRule(proj), "utf8")).toBe(installed);
+
+    // idempotent re-run with --yes changes nothing
+    outLines = [];
+    await runInstall({ target: "cursor", yes: true, root: proj });
+    expect(output()).toContain("(no changes needed)");
+    expect(output()).toContain("Nothing to do");
+    expect(fs.readFileSync(cursorRule(proj), "utf8")).toBe(installed);
+  });
+
+  it("cursor: repairs template drift, preserves user .mdc files, uninstalls owned-only", async () => {
+    const proj = path.join(tmp, "proj");
+    const userRule = path.join(proj, ".cursor", "rules", "my-rules.mdc");
+    const userContent = "---\ndescription: user rule\nglobs: *.ts\n---\n\nKeep types strict.\n";
+    fs.mkdirSync(path.dirname(userRule), { recursive: true });
+    fs.writeFileSync(userRule, userContent);
+
+    await runInstall({ target: "cursor", yes: true, root: proj });
+    const installed = fs.readFileSync(cursorRule(proj), "utf8");
+    expect(fs.readFileSync(userRule, "utf8")).toBe(userContent);
+
+    // drift: hand edits inside the block AND in the frontmatter header are
+    // repaired, user file kept
+    fs.writeFileSync(cursorRule(proj), installed.replace("engram search", "engram SERACH"));
+    await runInstall({ target: "cursor", yes: true, root: proj });
+    let repaired = fs.readFileSync(cursorRule(proj), "utf8");
+    expect(repaired).toContain("engram search");
+    expect(repaired).not.toContain("engram SERACH");
+    expect(fs.readFileSync(userRule, "utf8")).toBe(userContent);
+
+    fs.writeFileSync(cursorRule(proj), repaired.replace("alwaysApply: true", "alwaysApply: false"));
+    await runInstall({ target: "cursor", yes: true, root: proj });
+    repaired = fs.readFileSync(cursorRule(proj), "utf8");
+    expect(repaired).toContain("alwaysApply: true");
+    expect(fs.readFileSync(userRule, "utf8")).toBe(userContent);
+
+    // uninstall: our file removed, user file and directory survive
+    outLines = [];
+    await runInstall({ target: "cursor", yes: true, uninstall: true, root: proj });
+    expect(output()).toContain("Uninstalled 1 change(s) for cursor");
+    expect(fs.existsSync(cursorRule(proj))).toBe(false);
+    expect(fs.readFileSync(userRule, "utf8")).toBe(userContent);
+    expect(noBackupFiles()).toBe(true);
+  });
+
+  it("cursor: a pre-existing foreign engram.mdc is refused, not clobbered", async () => {
+    const proj = path.join(tmp, "proj");
+    const rulePath = cursorRule(proj);
+    fs.mkdirSync(path.dirname(rulePath), { recursive: true });
+    const foreignFile = "---\ndescription: my own engram notes\nalwaysApply: true\n---\n\nMine.\n";
+    fs.writeFileSync(rulePath, foreignFile);
+
+    await expect(runInstall({ target: "cursor", yes: true, root: proj })).rejects.toThrow(
+      /refusing to install.*blocked asset\(s\).*engram-cursor-rules/,
+    );
+    expect(fs.readFileSync(rulePath, "utf8")).toBe(foreignFile);
+  });
+
+  it("cursor: --home is a hard error naming --root", async () => {
+    const proj = path.join(tmp, "proj");
+    fs.mkdirSync(proj, { recursive: true });
+    await expect(
+      runInstall({ target: "cursor", yes: true, root: proj, home: path.join(tmp, "home") }),
+    ).rejects.toThrow(/--home[\s\S]*--root/);
+    expect(fs.existsSync(path.join(proj, ".cursor"))).toBe(false);
+  });
+
+  /* ---------------------- claude: project-local (ENG-37) ---------------------- */
+
+  const claudeSkillFile = (proj: string): string =>
+    path.join(proj, ".claude", "skills", "engram", "SKILL.md");
+  const claudeLauncherFile = (proj: string): string =>
+    path.join(proj, ".claude", "skills", "engram", "bin", "engram");
+  /** Source-of-truth scaffold asset, read from its in-repo location. */
+  const repoScaffoldSkill = (): string =>
+    fs.readFileSync(
+      fileURLToPath(new URL("../../harnesses/claude/scaffold/SKILL.md", import.meta.url)),
+      "utf8",
+    );
+
+  it("claude: dry-run plans, install --yes scaffolds the skill, status and re-run are read-only", async () => {
+    const proj = path.join(tmp, "proj");
+    fs.mkdirSync(proj, { recursive: true });
+
+    await runInstall({ target: "claude", dryRun: true, root: proj });
+    expect(output()).toContain(`Install plan for claude in ${proj}`);
+    expect(output()).toContain("create directory .claude/skills/engram");
+    expect(output()).toMatch(/write \.claude[/\\]skills[/\\]engram[/\\]SKILL\.md \(new file/);
+    expect(output()).toMatch(/write .*bin[/\\]engram \(new file/);
+    expect(output()).toContain("Dry run: no changes were written.");
+    expect(fs.existsSync(path.join(proj, ".claude"))).toBe(false);
+
+    await runInstall({ target: "claude", yes: true, root: proj });
+    expect(output()).toContain("Installed 2 change(s) for claude");
+    expect(output()).not.toMatch(/\bhooks\b/);
+    const skill = fs.readFileSync(claudeSkillFile(proj), "utf8");
+    const launcher = fs.readFileSync(claudeLauncherFile(proj), "utf8");
+    // frontmatter-first skill, shebang-first launcher, from the repo sources
+    expect(skill.startsWith("---\n")).toBe(true);
+    expect(skill).toContain("# Engram memory");
+    expect(launcher.startsWith("#!/bin/sh\n")).toBe(true);
+    expect(launcher).toMatch(/engram-cli@\d+\.\d+\.\d+/);
+    const frontmatter = skill.slice(0, skill.indexOf("---\n", 4) + 4);
+    expect(repoScaffoldSkill().startsWith(frontmatter)).toBe(true);
+
+    outLines = [];
+    await runInstall({ target: "claude", status: true, root: proj });
+    expect(output()).toContain("target: claude");
+    expect(output()).toContain(`root: ${proj}`);
+    expect(output()).toContain(".claude/skills/engram/SKILL.md: current");
+    expect(output()).toContain(".claude/skills/engram/bin/engram: current");
+    expect(fs.readFileSync(claudeSkillFile(proj), "utf8")).toBe(skill);
+
+    outLines = [];
+    await runInstall({ target: "claude", yes: true, root: proj });
+    expect(output()).toContain("(no changes needed)");
+    expect(output()).toContain("Nothing to do");
+    expect(fs.readFileSync(claudeLauncherFile(proj), "utf8")).toBe(launcher);
+  });
+
+  it("claude: repairs version-pin drift, preserves user skills, uninstalls owned-only", async () => {
+    const proj = path.join(tmp, "proj");
+    const userSkill = path.join(proj, ".claude", "skills", "my-skill", "SKILL.md");
+    const userContent = "---\nname: my-skill\ndescription: user skill\n---\n\nDo things.\n";
+    fs.mkdirSync(path.dirname(userSkill), { recursive: true });
+    fs.writeFileSync(userSkill, userContent);
+
+    await runInstall({ target: "claude", yes: true, root: proj });
+    const launcherBefore = fs.readFileSync(claudeLauncherFile(proj), "utf8");
+    expect(fs.readFileSync(userSkill, "utf8")).toBe(userContent);
+
+    // version-pin bump: an upgrade leaves the old pin; re-run repairs it
+    fs.writeFileSync(
+      claudeLauncherFile(proj),
+      launcherBefore.replace(/engram-cli@\d+\.\d+\.\d+/, "engram-cli@0.0.1"),
+    );
+    await runInstall({ target: "claude", yes: true, root: proj });
+    expect(fs.readFileSync(claudeLauncherFile(proj), "utf8")).toBe(launcherBefore);
+    expect(fs.readFileSync(userSkill, "utf8")).toBe(userContent);
+
+    outLines = [];
+    await runInstall({ target: "claude", yes: true, uninstall: true, root: proj });
+    expect(output()).toContain("Uninstalled 2 change(s) for claude");
+    expect(fs.existsSync(claudeSkillFile(proj))).toBe(false);
+    expect(fs.existsSync(claudeLauncherFile(proj))).toBe(false);
+    expect(fs.readFileSync(userSkill, "utf8")).toBe(userContent);
+    expect(noBackupFiles()).toBe(true);
+  });
+
+  it("claude: --home is a hard error naming --root", async () => {
+    const proj = path.join(tmp, "proj");
+    fs.mkdirSync(proj, { recursive: true });
+    await expect(
+      runInstall({ target: "claude", yes: true, root: proj, home: path.join(tmp, "home") }),
+    ).rejects.toThrow(/--home[\s\S]*--root/);
+    expect(fs.existsSync(path.join(proj, ".claude"))).toBe(false);
   });
 });
