@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-23
+
 ### Added
 
 - **Entry schemaVersion ([#40]).** Optional integer `schemaVersion` frontmatter
@@ -82,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#50]: https://github.com/tm0h/engram/pull/50
 [#51]: https://github.com/tm0h/engram/pull/51
 [#52]: https://github.com/tm0h/engram/pull/52
+[0.6.0]: https://github.com/tm0h/engram/releases/tag/v0.6.0
 
 ## [0.5.0] - 2026-09-18
 
