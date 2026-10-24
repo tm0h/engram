@@ -13,6 +13,7 @@ export * from "./config.js";
 export * from "./store.js";
 export * from "./frontmatter.js";
 export * from "./search.js";
+export * from "./abstention.js";
 export * from "./secrets.js";
 export * from "./search-output.js";
 export * from "./scope.js";

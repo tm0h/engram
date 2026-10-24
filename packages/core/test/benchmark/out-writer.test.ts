@@ -231,13 +231,18 @@ describe("--out CLI argument validation (ENG-76 criterion 4, F3)", () => {
 });
 
 describe("full-regeneration identity (ENG-76 criterion 2b)", () => {
-  it("regenerating over the checked-in baseline is byte-identical except generatedAtUtc", () => {
-    const file = target("regen.json");
-    fs.copyFileSync(baselinePath, file);
-    const text = writeBenchmarkJson(runRepoBenchmark(), file);
+  it("regenerating the live benchmark is byte-identical except generatedAtUtc", () => {
+    // ENG-59 (wu1 SPEC Amendment 2): the wired abstention policy changes the
+    // live metrics, so byte identity against the checked-in baseline's
+    // METRICS is the baseline-gate test's job (A1: exactly one surfaced P4
+    // improvement). What stays pinned here is the writer's determinism: two
+    // regenerations of the same repo state are byte-identical apart from
+    // the generation timestamp.
+    const textA = writeBenchmarkJson(runRepoBenchmark(), target("regen-1.json"));
+    const textB = writeBenchmarkJson(runRepoBenchmark(), target("regen-2.json"));
     const normalize = (s: string): string =>
       s.replace(/"generatedAtUtc": "[^"]*"/, '"generatedAtUtc": "X"');
-    expect(normalize(text)).toBe(normalize(fs.readFileSync(baselinePath, "utf8")));
+    expect(normalize(textA)).toBe(normalize(textB));
   }, 240_000);
 });
 

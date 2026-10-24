@@ -80,9 +80,18 @@ describe("projection pins on real data (gate-8 A2/A3)", () => {
     expect(verdict.outcomeRegressions).toEqual([]);
     expect(verdict.unchangedCaseChanges).toEqual([]);
     expect(verdict.unattributedAggregateDrift).toEqual([]);
-    expect(verdict.improvements).toEqual([]);
+    // ENG-59 (wu1 SPEC Amendment 2): the wired abstention policy flips
+    // exactly case-abstention-11 from measured miss to correct abstention.
+    // That is the only permitted delta against the checked-in baseline;
+    // P1/P2-empty and the single surfaced P4 improvement are pinned by the
+    // baseline-gate test, and mirrored here so this pin stays exact.
+    expect(verdict.improvements.map((entry) => entry.caseId)).toEqual(["case-abstention-11"]);
+    for (const entry of verdict.improvements) {
+      expect(entry.after.passed).toBe(true);
+      expect(entry.after.returned).toBe(0);
+    }
     expect(verdict.baselineInternalProblems).toEqual([]);
-    expect(verdict.stillMissingLimitations).toEqual([...baseline.measuredMisses].sort());
+    expect(verdict.stillMissingLimitations).toEqual(["case-abstention-12", "case-abstention-14"]);
   });
 });
 

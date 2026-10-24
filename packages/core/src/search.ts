@@ -18,6 +18,7 @@ import { effectiveStatus } from "./domain.js";
 import { normalizeText, tokenizeQuery } from "./tokenize.js";
 import { parseQuery } from "./query.js";
 import { rankEntries } from "./rank.js";
+import { abstainPolicy, abstentionEligible } from "./abstention.js";
 
 export interface SearchResult {
   readonly engram: Engram;
@@ -82,7 +83,13 @@ function recencyResults(candidates: ReadonlyArray<Engram>, explain: boolean): Se
  *
  * ENG-18 query syntax: `"exact phrase"` (contiguous boost), `stem*` (bounded
  * prefix, stem >= 2 chars), `tag:`/`title:`/`type:`/`body:` field filters
- * (hard requirements), and `AND` groups (default remains OR, decision D2). */
+ * (hard requirements), and `AND` groups (default remains OR, decision D2).
+ *
+ * ENG-59 abstention: natural-language multi-word queries whose best entry
+ * covers almost none of the query's informative mass return no results
+ * (indistinguishable from a no-match query); structured queries (phrases,
+ * prefixes, field filters, AND) and single-term queries never abstain. See
+ * `./abstention.js`. */
 export function searchEngrams(
   list: ReadonlyArray<Engram>,
   query: string | undefined,
@@ -94,8 +101,24 @@ export function searchEngrams(
   let results: SearchResult[];
   if (parsed === undefined || parsed.alternatives.length === 0) {
     results = recencyResults(candidates, options.explain === true);
-  } else {
+  } else if (!abstentionEligible(parsed)) {
+    // ENG-59: queries the policy would never judge (structured shapes,
+    // too few alternatives) rank with the caller's explain setting; no
+    // contributions are collected for them.
     results = rankEntries(candidates, parsed, { explain: options.explain === true });
+  } else {
+    // ENG-59: eligible queries rank with contributions collected so the
+    // abstention policy can attribute coverage. They never affect scores
+    // (the sum is the exact left-to-right sum of the same point values
+    // either way); the public explanation surface is unchanged because
+    // explanations are stripped again unless they were asked for.
+    results = rankEntries(candidates, parsed, { explain: true });
+    if (results.length > 0 && abstainPolicy(candidates, parsed, results)) {
+      results = [];
+    }
+    if (options.explain !== true) {
+      results = results.map(({ engram, score }) => ({ engram, score }));
+    }
   }
   return typeof limit === "number" ? results.slice(0, limit) : results;
 }
