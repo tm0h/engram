@@ -18,7 +18,7 @@ import { effectiveStatus } from "./domain.js";
 import { normalizeText, tokenizeQuery } from "./tokenize.js";
 import { parseQuery } from "./query.js";
 import { rankEntries } from "./rank.js";
-import { abstainPolicy } from "./abstention.js";
+import { abstainPolicy, abstentionEligible } from "./abstention.js";
 
 export interface SearchResult {
   readonly engram: Engram;
@@ -101,12 +101,17 @@ export function searchEngrams(
   let results: SearchResult[];
   if (parsed === undefined || parsed.alternatives.length === 0) {
     results = recencyResults(candidates, options.explain === true);
+  } else if (!abstentionEligible(parsed)) {
+    // ENG-59: queries the policy would never judge (structured shapes,
+    // too few alternatives) rank with the caller's explain setting; no
+    // contributions are collected for them.
+    results = rankEntries(candidates, parsed, { explain: options.explain === true });
   } else {
-    // ENG-59: contributions are always collected so the abstention policy
-    // can attribute coverage. They never affect scores (the sum is the
-    // exact left-to-right sum of the same point values either way); the
-    // public explanation surface is unchanged because explanations are
-    // stripped again unless they were asked for.
+    // ENG-59: eligible queries rank with contributions collected so the
+    // abstention policy can attribute coverage. They never affect scores
+    // (the sum is the exact left-to-right sum of the same point values
+    // either way); the public explanation surface is unchanged because
+    // explanations are stripped again unless they were asked for.
     results = rankEntries(candidates, parsed, { explain: true });
     if (results.length > 0 && abstainPolicy(candidates, parsed, results)) {
       results = [];

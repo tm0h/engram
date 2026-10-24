@@ -53,6 +53,14 @@
  * single-term eligibility cannot by itself defeat abstention for a query it
  * does not substantively cover.
  *
+ * Evidence requirement: coverage attribution reads the results' score
+ * contributions, so callers must pass explained results (the output of
+ * `searchEngrams(..., { explain: true })`). A result without an
+ * explanation carries no coverage evidence; the decision is then
+ * "ineligible" (never abstain) rather than zero-coverage, because the
+ * dangerous failure direction is a false abstention. The wired path
+ * always satisfies this (it ranks with explain internally).
+ *
  * Pure and deterministic: the decision is a function of (candidates, parsed
  * query, ranked results) alone; no clock, randomness, or global state.
  */
@@ -163,20 +171,42 @@ function alternativeTokens(
 
 /** Outcome of one policy evaluation, exposed for calibration and tests. */
 export interface AbstentionDecision {
-  /** The ranking was non-empty and passed the structure and
-   * minInformative gates (the only rows where coverage is judged). */
+  /** The ranking was non-empty, passed the structure and minInformative
+   * gates, and carried complete contribution evidence (the only rows
+   * where coverage is judged). */
   readonly eligible: boolean;
   /** Number of plain word term alternatives (informative units). */
   readonly informativeAlternatives: number;
   /** Best idf-exponent-weighted coverage over the ranking; null when the
-   * ranking is empty. */
+   * policy did not judge the ranking (empty ranking, gate, or missing
+   * evidence). */
   readonly bestCoverage: number | null;
   /** Final decision: abstain the entire ranking. */
   readonly abstain: boolean;
 }
 
+/** The structure-and-count gate of the abstention policy, computable from
+ * the parsed query alone: every alternative must be a single plain word
+ * term (no phrase, prefix, field scope, or AND) and there must be at least
+ * `minInformative` of them. Callers can use this to skip abstention work
+ * (including contribution collection) for queries the policy would never
+ * judge. It is exactly the pre-ranking half of `evaluateAbstention`'s
+ * eligibility gate; result-side conditions (non-empty ranking, explained
+ * evidence) are the caller's or the evaluation's to apply. */
+export function abstentionEligible(
+  parsed: ParsedQuery,
+  params: AbstentionParams = DEFAULT_ABSTENTION_PARAMS,
+): boolean {
+  const alternatives = parsed.alternatives;
+  return alternatives.length >= params.minInformative && alternatives.every(isPlainWordAlternative);
+}
+
 /** Evaluate the abstention policy for one query and its ranking. Pure:
- * same inputs always yield the same decision. */
+ * same inputs always yield the same decision.
+ *
+ * Results must be explained (see the module docblock): a ranking whose
+ * results lack contribution evidence is reported as ineligible (never
+ * abstain) instead of judged on absent evidence. */
 export function evaluateAbstention(
   candidates: ReadonlyArray<Engram>,
   parsed: ParsedQuery,
@@ -193,9 +223,15 @@ export function evaluateAbstention(
       abstain: false,
     };
   }
-  const eligible =
-    informativeAlternatives === alternatives.length && alternatives.length >= params.minInformative;
-  if (!eligible) {
+  if (!abstentionEligible(parsed, params)) {
+    return { eligible: false, informativeAlternatives, bestCoverage: null, abstain: false };
+  }
+  // Evidence guard: coverage attribution reads score contributions. A
+  // result without an explanation makes the ranking unjudgeable, and
+  // judging it anyway would count zero coverage for the unexplained rows
+  // (a false abstention on fully matched results). Never abstain on
+  // insufficient evidence; report the decision as ineligible.
+  if (results.some((result) => result.explanation === undefined)) {
     return { eligible: false, informativeAlternatives, bestCoverage: null, abstain: false };
   }
 

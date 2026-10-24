@@ -76,6 +76,29 @@ describe("searchEngrams abstention (ENG-59)", () => {
     expect(sum).toBeCloseTo(r[0]?.score ?? 0, 10);
   });
 
+  it("passes explanations through for ineligible query shapes when asked", () => {
+    // Single-term, AND, and phrase shapes are ineligible for abstention;
+    // they must still explain when the caller asks (Greptile finding 1).
+    for (const query of ["bravo", "bravo AND here", '"bravo charlie" echo']) {
+      const r = searchEngrams(answeringList, query, undefined, { explain: true });
+      expect(r.length).toBeGreaterThan(0);
+      for (const row of r) {
+        expect(row.explanation?.mode).toBe("relevance");
+        expect(row.explanation?.contributions.length ?? 0).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("collects no explanations for ineligible shapes by default", () => {
+    for (const query of ["bravo", "bravo AND here", '"bravo charlie" echo']) {
+      const r = searchEngrams(answeringList, query);
+      expect(r.length).toBeGreaterThan(0);
+      for (const row of r) {
+        expect("explanation" in (row as object)).toBe(false);
+      }
+    }
+  });
+
   it("never abstains single-term queries with a match", () => {
     const r = searchEngrams(list, "bravo");
     expect(r.map((x) => x.engram.id)).toEqual(["m1", "m2"]);

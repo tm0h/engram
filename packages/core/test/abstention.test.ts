@@ -2,6 +2,7 @@ import { describe, it, expect } from "vite-plus/test";
 import {
   DEFAULT_ABSTENTION_PARAMS,
   abstainPolicy,
+  abstentionEligible,
   evaluateAbstention,
   separatorPieces,
 } from "../src/abstention.js";
@@ -269,6 +270,52 @@ describe("abstention policy", () => {
     const decision = evaluateAbstention(list, parsed, results);
     expect(decision.eligible).toBe(true);
     expect(decision.abstain).toBe(false);
+  });
+
+  it("reports ineligible instead of zero-coverage when evidence is missing", () => {
+    // Greptile finding 2: a near-match shape that WOULD abstain with
+    // explained results must NOT abstain when the caller passes ordinary
+    // unexplained output; missing evidence is never zero coverage.
+    const parsed = parseQuery(nearMatchQuery);
+    const unexplained = [{ engram: nearMatchList[0] as Engram, score: 17 }];
+    const d = evaluateAbstention(nearMatchList, parsed, unexplained);
+    expect(d.eligible).toBe(false);
+    expect(d.bestCoverage).toBe(null);
+    expect(d.abstain).toBe(false);
+    expect(abstainPolicy(nearMatchList, parsed, unexplained)).toBe(false);
+    // Partial evidence is also insufficient: one unexplained row makes the
+    // whole ranking unjudgeable (best-coverage max could be wrong).
+    const partial = [
+      {
+        engram: nearMatchList[0] as Engram,
+        score: 1,
+        explanation: {
+          mode: "relevance" as const,
+          contributions: [{ field: "tag" as const, token: "bravo", score: 1 }],
+        },
+      },
+      { engram: nearMatchList[1] as Engram, score: 1 },
+    ];
+    expect(evaluateAbstention(nearMatchList, parsed, partial).abstain).toBe(false);
+  });
+
+  it("exposes the pre-ranking eligibility gate", () => {
+    // Eligible: plain multi-word natural-language shape.
+    expect(abstentionEligible(parseQuery(nearMatchQuery))).toBe(true);
+    // Ineligible: single term, AND group, phrase, prefix, field scope.
+    expect(abstentionEligible(parseQuery("bravo"))).toBe(false);
+    expect(abstentionEligible(parseQuery("alpha AND bravo"))).toBe(false);
+    expect(abstentionEligible(parseQuery('"alpha bravo" charlie'))).toBe(false);
+    expect(abstentionEligible(parseQuery("brav* alpha"))).toBe(false);
+    expect(abstentionEligible(parseQuery("title:alpha bravo"))).toBe(false);
+    // minInformative is part of the gate.
+    expect(
+      abstentionEligible(parseQuery("alpha bravo"), {
+        coverageThreshold: 0.1,
+        idfExponent: 2,
+        minInformative: 3,
+      }),
+    ).toBe(false);
   });
 
   it("is deterministic and pure: same inputs, same decision, inputs untouched", () => {
