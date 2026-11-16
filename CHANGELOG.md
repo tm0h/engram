@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Automatic startup context now selects pinned memories, important decisions and
+  critical preferences within a configurable 4,800-character budget. All harness
+  startup paths share the policy, with explicit legacy selection and eligibility
+  opt-ins for path-specific and inactive entries.
+
 ### Added
 
 - Lifecycle-aware search ranking: author importance, path applicability and bounded

@@ -563,3 +563,40 @@ representatives and bodies up to 16 KiB/titles up to 1 KiB; larger entries are
 never classified using a truncated prefix. `--explain` contributions still sum
 to the final score. Recency-only listing and the legacy benchmark ranker are
 unchanged. Pagination runs after this ranking.
+
+### Curated automatic startup context
+
+Pi, OpenCode, Claude Code and Codex startup/resume/compaction context uses a
+curated bootstrap by default. It selects active pinned memories, decisions with
+`importance` at least 3, and critical preferences with `importance` at least 4.
+Path-specific entries (`appliesTo`) are excluded unless explicitly enabled.
+Pinned entries come first, then importance descending; project scope and id break
+ties. Selection does not depend on file scan order or age. Ordinary notes and
+unrated decisions remain available through manual context/search/show.
+
+The default budget is 4,800 characters (roughly 1,200 tokens, not an exact token
+count), including the wrapper, headers and footer. Whole sanitized digest lines
+are packed within both the character budget and the 8 KiB hook byte ceiling;
+no bodies are injected. Existing per-line sanitization, fail-open behavior and
+hook timeouts remain in place. Structured operation diagnostics expose selected
+ids/scopes/reasons, exclusion counts, and budget/entry-limit omissions outside
+injected text.
+
+Global settings:
+
+| Key                          | Default   | Meaning                                      |
+| ---------------------------- | --------- | -------------------------------------------- |
+| `autoContext`                | `on`      | Enable automatic context                     |
+| `autoContextScope`           | `project` | `project`, `personal`, or `both`             |
+| `autoContextLimit`           | `25`      | Entry ceiling, 1–100                         |
+| `autoContextSelection`       | `curated` | `curated` or legacy decision/pin grouping    |
+| `autoContextMaxChars`        | `4800`    | Entire payload budget, 2048–8192 characters  |
+| `autoContextIncludeScoped`   | `off`     | Explicitly allow path-specific entries       |
+| `autoContextIncludeInactive` | `off`     | Explicitly allow historical/inactive entries |
+
+Use `engram config set autoContextMaxChars 6000` to change the budget, or
+`engram config set autoContextSelection legacy` for the former selection order.
+Existing enable/scope/limit values are retained without rewriting configuration
+files; missing new settings use the defaults above. Both selection modes obey
+the eligibility toggles and output caps. Manual `engram context` and search
+pagination are unchanged. Exact token accounting is a separate capability.

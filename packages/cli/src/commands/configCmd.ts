@@ -11,7 +11,11 @@ import {
   ENGRAM_TYPES,
   AUTO_CONTEXT_SCOPES,
 } from "@engram/core";
-import { DEFAULT_AUTO_CONTEXT_LIMIT, DEFAULT_AUTO_CONTEXT_SCOPE } from "@engram/core";
+import {
+  DEFAULT_AUTO_CONTEXT_LIMIT,
+  DEFAULT_AUTO_CONTEXT_SCOPE,
+  DEFAULT_AUTO_CONTEXT_MAX_CHARS,
+} from "@engram/core";
 import { DEFAULT_PERSONAL_SECRET_SCAN, DEFAULT_SECRET_SCAN, SECRET_POLICIES } from "@engram/core";
 import type { AutoContextScope, EngramType, SecretPolicy } from "@engram/core";
 import { ValidationError } from "@engram/core";
@@ -24,7 +28,15 @@ const isProjectKey = (k: string): boolean =>
   k === "tracked" || k === "defaultType" || k === "secretScan";
 
 const isAutoContextKey = (k: string): boolean =>
-  k === "autoContext" || k === "autoContextScope" || k === "autoContextLimit";
+  [
+    "autoContext",
+    "autoContextScope",
+    "autoContextLimit",
+    "autoContextSelection",
+    "autoContextMaxChars",
+    "autoContextIncludeScoped",
+    "autoContextIncludeInactive",
+  ].includes(k);
 
 /** ENG-15: the global personal-policy key. */
 const isPersonalSecretScanKey = (k: string): boolean => k === "personalSecretScan";
@@ -51,6 +63,12 @@ export const configCommand = (action?: string, key?: string, value?: string) =>
         `  autoContextScope: ${chalk.cyan(g.autoContextScope ?? DEFAULT_AUTO_CONTEXT_SCOPE)}`,
       );
       yield* out(`  autoContextLimit: ${g.autoContextLimit ?? DEFAULT_AUTO_CONTEXT_LIMIT}`);
+      yield* out(`  autoContextSelection: ${g.autoContextSelection ?? "curated"}`);
+      yield* out(
+        `  autoContextMaxChars: ${g.autoContextMaxChars ?? DEFAULT_AUTO_CONTEXT_MAX_CHARS}`,
+      );
+      yield* out(`  autoContextIncludeScoped: ${g.autoContextIncludeScoped ?? "off"}`);
+      yield* out(`  autoContextIncludeInactive: ${g.autoContextIncludeInactive ?? "off"}`);
       yield* out(
         `  personalSecretScan: ${chalk.cyan(g.personalSecretScan ?? DEFAULT_PERSONAL_SECRET_SCAN)}`,
       );
@@ -99,6 +117,12 @@ export const configCommand = (action?: string, key?: string, value?: string) =>
         yield* out(g.autoContextScope ?? DEFAULT_AUTO_CONTEXT_SCOPE);
       else if (key === "autoContextLimit")
         yield* out(String(g.autoContextLimit ?? DEFAULT_AUTO_CONTEXT_LIMIT));
+      else if (key === "autoContextSelection") yield* out(g.autoContextSelection ?? "curated");
+      else if (key === "autoContextMaxChars")
+        yield* out(String(g.autoContextMaxChars ?? DEFAULT_AUTO_CONTEXT_MAX_CHARS));
+      else if (key === "autoContextIncludeScoped") yield* out(g.autoContextIncludeScoped ?? "off");
+      else if (key === "autoContextIncludeInactive")
+        yield* out(g.autoContextIncludeInactive ?? "off");
       else if (key === "personalSecretScan")
         yield* out(g.personalSecretScan ?? DEFAULT_PERSONAL_SECRET_SCAN);
       else return yield* Effect.fail(new ValidationError({ message: `Unknown key "${key}".` }));
@@ -198,7 +222,26 @@ export const configCommand = (action?: string, key?: string, value?: string) =>
         updated = { ...g, author: value };
       } else if (key === "editor") {
         updated = { ...g, editor: value === "" ? undefined : value };
-      } else if (key === "autoContext") {
+      } else if (key === "autoContextSelection") {
+        if (value !== "curated" && value !== "legacy")
+          return yield* Effect.fail(
+            new ValidationError({ message: "autoContextSelection must be curated or legacy" }),
+          );
+        updated = { ...g, autoContextSelection: value };
+      } else if (key === "autoContextMaxChars") {
+        const budget = Number(value);
+        if (!Number.isInteger(budget) || budget < 2048 || budget > 8192)
+          return yield* Effect.fail(
+            new ValidationError({
+              message: "autoContextMaxChars must be an integer between 2048 and 8192",
+            }),
+          );
+        updated = { ...g, autoContextMaxChars: budget };
+      } else if (
+        key === "autoContext" ||
+        key === "autoContextIncludeScoped" ||
+        key === "autoContextIncludeInactive"
+      ) {
         const on = /^(1|true|on|yes)$/i.test(value);
         const off = /^(0|false|off|no)$/i.test(value);
         if (!on && !off) {
@@ -206,7 +249,7 @@ export const configCommand = (action?: string, key?: string, value?: string) =>
             new ValidationError({ message: "autoContext must be on or off" }),
           );
         }
-        updated = { ...g, autoContext: on ? "on" : "off" };
+        updated = { ...g, [key]: on ? "on" : "off" };
       } else if (key === "autoContextScope") {
         const scope = value.toLowerCase() as AutoContextScope;
         if (!AUTO_CONTEXT_SCOPES.includes(scope)) {

@@ -16,13 +16,13 @@ import os from "node:os";
 import path from "node:path";
 import {
   EngramStoreLive,
+  ConfigRepoLive,
   MainLive,
   projectConfigPath,
   projectEngramsDir,
   slugify,
   stringifyFrontmatter,
 } from "@engram/core";
-import { TRUNCATION_MARKER } from "@engram/harnesses/installer";
 import { HOOK_HOSTS, HOOK_EVENTS, capToBytes, hookCommand } from "../src/commands/hook.js";
 
 /* ------------------------------ helpers ------------------------------ */
@@ -32,6 +32,7 @@ const fm = (id: string, title: string): string =>
     id,
     title,
     type: "note",
+    pinned: true,
     tags: [],
     scope: "project",
     created: "2025-08-15T10:00:00.000Z",
@@ -79,6 +80,7 @@ const slowReadLive = (ms: number) => {
   return Layer.mergeAll(
     EngramStoreLive.pipe(Layer.provide(SlowFs), Layer.provide(NodeServices.layer)),
     NodeServices.layer,
+    ConfigRepoLive.pipe(Layer.provide(NodeServices.layer)),
   );
 };
 
@@ -106,6 +108,7 @@ const failingReadLive = () => {
   return Layer.mergeAll(
     EngramStoreLive.pipe(Layer.provide(FailingFs), Layer.provide(NodeServices.layer)),
     NodeServices.layer,
+    ConfigRepoLive.pipe(Layer.provide(NodeServices.layer)),
   );
 };
 
@@ -173,6 +176,24 @@ describe("engram hook (fail-open contract, A2)", () => {
     await expect(runHook({ host: "claude-code", event: "precompact" })).rejects.toThrow(/usage:/);
   });
 
+  it("honors disabled auto-context and keeps Unicode output inside a complete frame", async () => {
+    for (let i = 1; i <= 50; i++)
+      seed(tmp, String(i).padStart(4, "0"), "Unicode " + "🦄".repeat(200));
+    fs.writeFileSync(
+      path.join(home, ".engram", "config.json"),
+      JSON.stringify({ version: 1, autoContext: "off" }),
+    );
+    await runHook({ host: "codex", event: "startup" });
+    expect(stdout()).toBe("");
+    fs.writeFileSync(
+      path.join(home, ".engram", "config.json"),
+      JSON.stringify({ version: 1, autoContextLimit: 100 }),
+    );
+    await runHook({ host: "codex", event: "startup" });
+    expect(Buffer.byteLength(stdout(), "utf8")).toBeLessThanOrEqual(8192);
+    expect(stdout().trimEnd().endsWith("</engram-memory>")).toBe(true);
+  });
+
   it("prints the digest for a seeded project and exits cleanly", async () => {
     seed(tmp, "0001", "Hook digest note");
     await runHook({ host: "claude-code", event: "startup" });
@@ -180,19 +201,20 @@ describe("engram hook (fail-open contract, A2)", () => {
     expect(stderr()).toBe("");
   });
 
-  it("prints the placeholder for an empty store", async () => {
+  it("emits nothing for an empty bootstrap", async () => {
     await runHook({ host: "codex", event: "startup" });
-    expect(stdout()).toContain("(no engrams available)");
+    expect(stdout()).toBe("");
     expect(stderr()).toBe("");
   });
 
-  it("caps injected stdout at 8 KiB with the truncation marker (A2)", async () => {
+  it("keeps curated injected stdout bounded with a complete frame", async () => {
     for (let i = 1; i <= 60; i += 1) {
       seed(tmp, String(i).padStart(4, "0"), `Hookcap ${i} ${"x".repeat(220)}`);
     }
     await runHook({ host: "claude-code", event: "resume" });
     expect(Buffer.byteLength(stdout(), "utf8")).toBeLessThanOrEqual(8192);
-    expect(stdout()).toContain(TRUNCATION_MARKER);
+    expect(stdout()).toContain("curated selection");
+    expect(stdout().trimEnd().endsWith("</engram-memory>")).toBe(true);
   });
 
   it("fails open with empty output when the store cannot be listed; stderr silent without debug", async () => {

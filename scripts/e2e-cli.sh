@@ -637,6 +637,8 @@ mkdir -p "$hook_home"
   hook_output=$(bash -c "$hook_command")
   [[ -n "$hook_output" ]] || fail "claude-code startup hook emitted nothing"
   printf '%s\n' "$hook_output" | grep -F "Use the release database"
+  printf '%s\n' "$hook_output" | grep -F "# Engram bootstrap"
+  printf '%s\n' "$hook_output" | grep -Fx '</engram-memory>'
   hook_bytes=$(printf '%s' "$hook_output" | wc -c)
   [[ "$hook_bytes" -le 8192 ]] || fail "hook output ${hook_bytes} bytes exceeded the 8 KiB cap"
 
