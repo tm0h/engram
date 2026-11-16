@@ -162,6 +162,7 @@ const toEngram = (
   aliases: fm.aliases === undefined ? [] : [...fm.aliases],
   triggers: fm.triggers ?? [],
   appliesTo: fm.appliesTo ?? [],
+  importance: fm.importance,
   reviewAfter: fm.reviewAfter,
   expires: fm.expires,
   sourceType: fm.sourceType,
@@ -206,6 +207,7 @@ function serialize(m: Engram): string {
    * alias-free files keep their exact current shape. Canonical key position:
    * right after related, before reviewAfter. */
   if (m.aliases.length > 0) data.aliases = [...m.aliases];
+  if (m.importance !== undefined) data.importance = m.importance;
   for (const name of ["triggers", "appliesTo"] as const) {
     if (m[name]?.length) data[name] = normalizeMetadata(name, m[name]!);
   }
@@ -768,6 +770,7 @@ const makeEngramStoreLive = (
             aliases: normalizeAliases(input.aliases ?? []),
             triggers: normalizeMetadata("triggers", input.triggers ?? []),
             appliesTo: normalizeMetadata("appliesTo", input.appliesTo ?? []),
+            importance: input.importance,
             reviewAfter: input.reviewAfter,
             expires: input.expires,
             sourceType: input.sourceType,
@@ -1042,6 +1045,7 @@ const makeEngramStoreLive = (
             tags: patch.tags !== undefined ? [...patch.tags] : mem.tags,
             body: patch.body !== undefined ? patch.body.trim() : mem.body,
             pinned: patch.pinned ?? mem.pinned,
+            importance: applyOptionalPatch(mem.importance, patch.importance),
             author: patch.author !== undefined ? patch.author : mem.author,
             status: applyOptionalPatch(mem.status, patch.status),
             supersedes: applyOptionalPatch(mem.supersedes, instruction),

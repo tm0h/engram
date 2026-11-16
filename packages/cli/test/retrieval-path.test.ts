@@ -25,6 +25,8 @@ it("accepts path filtering on search and rejects it on unsupported commands", ()
       "add",
       "--title",
       "Database convention",
+      "--importance",
+      "5",
       "--triggers",
       "node:fs",
       "--applies-to",
@@ -35,6 +37,19 @@ it("accepts path filtering on search and rejects it on unsupported commands", ()
       run("search", "node:fs", "--path", "packages/api/a.ts", "--json", "--explain"),
     );
     expect(matching.results).toHaveLength(1);
+    const id = matching.results[0].id;
+    expect(run("show", id)).toContain("importance: 5");
+    for (const value of ["6", "-1", "1.5", "high"]) {
+      const rejected = spawnSync(
+        process.execPath,
+        ["--import", loader, cli, "edit", id, "--importance", value],
+        { cwd: root, env, encoding: "utf8" },
+      );
+      expect(rejected.status).not.toBe(0);
+    }
+    expect(run("show", id)).toContain("importance: 5");
+    run("edit", id, "--importance", "");
+    expect(run("show", id)).not.toContain("importance:");
     expect(matching.results[0].explanation.contributions).toContainEqual({
       field: "trigger",
       token: "node:fs",
@@ -56,4 +71,4 @@ it("accepts path filtering on search and rejects it on unsupported commands", ()
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 30000);
+}, 60000);

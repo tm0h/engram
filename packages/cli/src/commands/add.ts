@@ -32,6 +32,7 @@ export interface AddOptions extends LifecycleValueFlags {
   readonly aliases?: string;
   readonly triggers?: string;
   readonly appliesTo?: string;
+  readonly importance?: string;
   /** ENG-15: explicit per-write override for a blocking scan policy. */
   readonly allowSecrets?: boolean;
 }
@@ -153,6 +154,12 @@ export const addCommand = (opts: AddOptions) =>
         aliases: aliases ?? [],
         triggers: opts.triggers?.split(","),
         appliesTo: opts.appliesTo?.split(","),
+        importance:
+          opts.importance === undefined
+            ? undefined
+            : opts.importance.trim() === ""
+              ? Number.NaN
+              : Number(opts.importance),
         reviewAfter: lifecycle.reviewAfter,
         expires: lifecycle.expires,
         sourceType: lifecycle.sourceType,

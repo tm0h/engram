@@ -537,3 +537,29 @@ At most 20 patterns, 256 characters each. `engram edit <id> --triggers ""` or
 `--applies-to ""` clears that field; omitting the flags preserves it. Fields also
 round-trip through Markdown. These flags belong to the CLI; use the CLI to manage
 them from harnesses.
+
+### Lifecycle ranking and diverse results
+
+Search keeps inactive memories ineligible by default. After lexical abstention and
+exact-trigger matching, active results receive small explained bonuses:
+`importance` adds 0.1 per level (optional integer 0–5, default absent), matching
+`appliesTo` adds 0.25 when `search --path` is supplied, and recent notes/issues
+receive up to 0.25, decreasing linearly to zero after 30 days. Invalid or future
+update times receive no freshness bonus. Decisions, facts, preferences, and context
+have no age-based adjustment. Pinning and trigger contributions remain separately
+visible. These new adjustments never admit an otherwise unmatched memory.
+
+Use `engram add --importance 5` or `engram edit <id> --importance 3` to set author
+importance; `engram edit <id> --importance ""` clears it. The optional Markdown
+`importance` key round-trips through edits and appears in `show`. Use the CLI to
+manage importance from harnesses.
+
+Search diversification conservatively compares same-scope, same-type memories
+whose titles have at least 80% token-set overlap and whose bodies have at least
+90% overlap (at least eight unique body tokens). It keeps the strongest match
+from each group ahead of repeated content; duplicates remain available later
+with a negative `diversification` contribution. Comparison is bounded to 64 group
+representatives and bodies up to 16 KiB/titles up to 1 KiB; larger entries are
+never classified using a truncated prefix. `--explain` contributions still sum
+to the final score. Recency-only listing and the legacy benchmark ranker are
+unchanged. Pagination runs after this ranking.

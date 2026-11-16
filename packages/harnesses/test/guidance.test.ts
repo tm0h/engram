@@ -403,3 +403,16 @@ it("documents ENG-19 CLI retrieval consistently", () => {
     for (const flag of ["--triggers", "--applies-to", "--path"]) expect(text).toContain(flag);
   }
 });
+
+it("documents importance consistently across CLI guidance", () => {
+  for (const file of [
+    "README.md",
+    "packages/harnesses/src/pi/skills/engram/SKILL.md",
+    "packages/harnesses/claude/skills/engram/SKILL.md",
+    "packages/harnesses/claude/scaffold/SKILL.md",
+  ]) {
+    const text = fs.readFileSync(path.join(repoRoot, file), "utf8");
+    expect(text).toContain("--importance");
+    expect(text).toContain("diversification");
+  }
+});

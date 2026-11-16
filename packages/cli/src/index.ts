@@ -123,6 +123,15 @@ program
     "--related <ids>",
     "Comma-separated exact entry ids to link (same scope; missing targets are a warning).",
   )
+  .option(
+    "--importance <0-5>",
+    "Author-assigned importance; integer 0-5. Empty on edit clears.",
+    (v: string) => {
+      if (v !== "" && !/^[0-5]$/.test(v))
+        throw new InvalidArgumentError("importance must be an integer from 0 to 5");
+      return v;
+    },
+  )
   .option("--triggers <phrases>", "Comma-separated exact retrieval triggers; empty on edit clears.")
   .option(
     "--applies-to <patterns>",
@@ -153,6 +162,7 @@ program
         aliases: opts.aliases as string | undefined,
         triggers: opts.triggers as string | undefined,
         appliesTo: opts.appliesTo as string | undefined,
+        importance: opts.importance as string | undefined,
         reviewAfter: opts.reviewAfter as string | undefined,
         expires: opts.expires as string | undefined,
         sourceType: opts.sourceType as string | undefined,
@@ -291,6 +301,15 @@ program
     "--related <ids>",
     "Comma-separated exact entry ids to link (replaces the list; same scope; missing targets are a warning).",
   )
+  .option(
+    "--importance <0-5>",
+    "Author-assigned importance; integer 0-5. Empty on edit clears.",
+    (v: string) => {
+      if (v !== "" && !/^[0-5]$/.test(v))
+        throw new InvalidArgumentError("importance must be an integer from 0 to 5");
+      return v;
+    },
+  )
   .option("--triggers <phrases>", "Comma-separated exact retrieval triggers; empty on edit clears.")
   .option(
     "--applies-to <patterns>",
@@ -330,6 +349,7 @@ program
           aliases: opts.aliases as string | undefined,
           triggers: opts.triggers as string | undefined,
           appliesTo: opts.appliesTo as string | undefined,
+          importance: opts.importance as string | undefined,
           reviewAfter: opts.reviewAfter as string | undefined,
           expires: opts.expires as string | undefined,
           sourceType: opts.sourceType as string | undefined,
