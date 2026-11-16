@@ -186,7 +186,35 @@ describe("engram-cli packaging (pi extension)", () => {
         encoding: "utf8",
         env: { ...process.env, HOME: home },
       });
-      expect(hookOut).toContain("(no engrams available)");
+      expect(hookOut).toBe("");
+
+      // An empty payload must not conceal a broken packaged hook: initialize
+      // a real store, then verify the shared curated policy through the bundle.
+      const packagedCli = (...args: string[]): string =>
+        execFileSync(process.execPath, [bin, ...args], {
+          cwd: emptyProject,
+          encoding: "utf8",
+          env: { ...process.env, HOME: home },
+        });
+      execFileSync("git", ["init", "--quiet"], { cwd: emptyProject });
+      packagedCli("init", "--tracked");
+      packagedCli(
+        "add",
+        "--title",
+        "Packaged pinned convention",
+        "--pinned",
+        "Private body must stay out of startup",
+      );
+      packagedCli("add", "--title", "Ordinary packaged note", "Ordinary note body");
+      const curated = packagedCli("hook", "codex", "startup");
+      expect(curated).toContain("Packaged pinned convention");
+      expect(curated).not.toContain("Ordinary packaged note");
+      expect(curated).not.toContain("Private body must stay out of startup");
+      expect(curated.startsWith("<engram-memory>\n")).toBe(true);
+      expect(curated.trimEnd().endsWith("</engram-memory>")).toBe(true);
+      expect(Buffer.byteLength(curated, "utf8")).toBeLessThanOrEqual(8192);
+      packagedCli("config", "set", "autoContext", "off");
+      expect(packagedCli("hook", "codex", "startup")).toBe("");
 
       // uninstall removes only engram-owned entries
       execFileSync(
