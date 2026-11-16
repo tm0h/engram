@@ -282,6 +282,12 @@ export const AutoContextLimitSchema = Schema.Number.pipe(
 );
 export type AutoContextLimit = Schema.Schema.Type<typeof AutoContextLimitSchema>;
 
+export const DEFAULT_AUTO_CONTEXT_MAX_CHARS = 4800;
+export const AutoContextMaxCharsSchema = Schema.Number.pipe(
+  Schema.check(Schema.isInt()),
+  Schema.check(Schema.isBetween({ minimum: 2048, maximum: 8192 })),
+);
+
 export const GlobalConfigSchema = Schema.Struct({
   version: Schema.Number,
   author: Schema.optional(Schema.String),
@@ -289,6 +295,10 @@ export const GlobalConfigSchema = Schema.Struct({
   autoContext: Schema.optional(AutoContextToggleSchema),
   autoContextScope: Schema.optional(AutoContextScopeSchema),
   autoContextLimit: Schema.optional(AutoContextLimitSchema),
+  autoContextSelection: Schema.optional(Schema.Literals(["curated", "legacy"])),
+  autoContextMaxChars: Schema.optional(AutoContextMaxCharsSchema),
+  autoContextIncludeScoped: Schema.optional(AutoContextToggleSchema),
+  autoContextIncludeInactive: Schema.optional(AutoContextToggleSchema),
   /** ENG-15: scan policy for personal (global-scope) writes. */
   personalSecretScan: Schema.optional(SecretPolicySchema),
 });
@@ -312,6 +322,10 @@ export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
   autoContext: DEFAULT_AUTO_CONTEXT,
   autoContextScope: DEFAULT_AUTO_CONTEXT_SCOPE,
   autoContextLimit: DEFAULT_AUTO_CONTEXT_LIMIT,
+  autoContextSelection: "curated",
+  autoContextMaxChars: DEFAULT_AUTO_CONTEXT_MAX_CHARS,
+  autoContextIncludeScoped: "off",
+  autoContextIncludeInactive: "off",
   /** ENG-15: personal writes warn by default. */
   personalSecretScan: DEFAULT_PERSONAL_SECRET_SCAN,
 };

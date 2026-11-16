@@ -416,3 +416,23 @@ it("documents importance consistently across CLI guidance", () => {
     expect(text).toContain("diversification");
   }
 });
+
+it("documents curated startup defaults across harnesses", () => {
+  for (const file of [
+    "README.md",
+    "packages/harnesses/src/pi/README.md",
+    "packages/harnesses/src/opencode/README.md",
+    "packages/harnesses/src/pi/skills/engram/SKILL.md",
+    "packages/harnesses/claude/skills/engram/SKILL.md",
+    "packages/harnesses/claude/scaffold/SKILL.md",
+  ]) {
+    const text = fs.readFileSync(path.join(repoRoot, file), "utf8");
+    for (const key of [
+      "autoContextSelection",
+      "autoContextMaxChars",
+      "autoContextIncludeScoped",
+      "autoContextIncludeInactive",
+    ])
+      expect(text).toContain(key);
+  }
+});

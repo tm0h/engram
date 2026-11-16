@@ -105,7 +105,7 @@ const evtCtx = (cwd: string) =>
 
 /* -------------------------------- tests -------------------------------- */
 
-describe("PR1 acceptance / shared auto-context", () => {
+describe("legacy selection compatibility / shared auto-context", () => {
   let orig = "";
   let origHome: string | undefined;
   let tmp = "";
@@ -116,6 +116,12 @@ describe("PR1 acceptance / shared auto-context", () => {
     tmp = mkProject();
     home = fs.mkdtempSync(path.join(os.tmpdir(), "engram-accepthome-"));
     fs.mkdirSync(path.join(home, ".engram", "engrams"), { recursive: true });
+    // This original >25-entry journey verifies the explicit legacy mode;
+    // curated defaults have dedicated policy and adapter integration coverage.
+    fs.writeFileSync(
+      path.join(home, ".engram", "config.json"),
+      JSON.stringify({ version: 1, autoContextSelection: "legacy" }),
+    );
     process.chdir(tmp);
     process.env.HOME = home;
   });
@@ -187,7 +193,7 @@ describe("PR1 acceptance / shared auto-context", () => {
     seedAcceptanceStore(tmp);
     fs.writeFileSync(
       path.join(home, ".engram", "config.json"),
-      JSON.stringify({ version: 1, autoContextLimit: 5 }),
+      JSON.stringify({ version: 1, autoContextSelection: "legacy", autoContextLimit: 5 }),
     );
     const res = await run(autoContextOp());
     expect(res.details).toMatchObject({ limit: 5, nextOffset: 5 });
@@ -206,6 +212,12 @@ describe("PR1 acceptance / first-request delivery", () => {
     tmp = mkProject();
     home = fs.mkdtempSync(path.join(os.tmpdir(), "engram-accepthome-"));
     fs.mkdirSync(path.join(home, ".engram", "engrams"), { recursive: true });
+    // This original >25-entry journey verifies the explicit legacy mode;
+    // curated defaults have dedicated policy and adapter integration coverage.
+    fs.writeFileSync(
+      path.join(home, ".engram", "config.json"),
+      JSON.stringify({ version: 1, autoContextSelection: "legacy" }),
+    );
     process.chdir(tmp);
     process.env.HOME = home;
   });

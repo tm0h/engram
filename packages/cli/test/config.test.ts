@@ -151,6 +151,31 @@ describe("engram config / auto-context keys", () => {
     expect(error.message).toMatch(/project.*personal.*both|both.*personal.*project/);
   });
 
+  it("round-trips bootstrap settings and rejects invalid settings without rewriting", async () => {
+    for (const [key, value] of [
+      ["autoContextSelection", "curated"],
+      ["autoContextMaxChars", "2048"],
+      ["autoContextIncludeScoped", "on"],
+      ["autoContextIncludeInactive", "off"],
+    ]) {
+      await run(configCommand("set", key, value));
+      lines = [];
+      await run(configCommand("get", key));
+      expect(output()).toBe(value);
+    }
+    for (const [key, value] of [
+      ["autoContextSelection", "all"],
+      ["autoContextMaxChars", "1000"],
+      ["autoContextMaxChars", "9000"],
+      ["autoContextMaxChars", "2048.5"],
+      ["autoContextIncludeScoped", "maybe"],
+    ]) {
+      const before = fs.readFileSync(globalConfigFile(home), "utf8");
+      await runFail(configCommand("set", key, value));
+      expect(fs.readFileSync(globalConfigFile(home), "utf8")).toBe(before);
+    }
+  });
+
   it("set autoContextLimit persists 1..100 integers and rejects the rest", async () => {
     await run(configCommand("set", "autoContextLimit", "50"));
     expect(readGlobal(home)).toMatchObject({ autoContextLimit: 50 });

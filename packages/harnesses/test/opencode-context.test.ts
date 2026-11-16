@@ -44,6 +44,7 @@ const seedEntry = (root: string, id: string, title: string): void => {
     `id: "${id}"`,
     `title: ${JSON.stringify(title)}`,
     "type: decision",
+    "importance: 3",
     "tags: []",
     "scope: project",
     "created: 2026-08-16T10:00:00.000Z",
@@ -411,7 +412,7 @@ describe("opencode plugin / auto-context integration", () => {
 
     // successful add: that session reloads and sees it
     const added = await hooks.tool.engram_add.execute(
-      { title: "Fresh from add", body: "b" },
+      { title: "Fresh from add", body: "b", pinned: true },
       { sessionID: "s1", directory: tmp },
     );
     expect(added.metadata?.isError).toBe(false);

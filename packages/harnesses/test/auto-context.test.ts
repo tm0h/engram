@@ -42,7 +42,10 @@ const mkHome = (): string => {
 
 /** Write the global config (the only source of auto-context settings). */
 const setGlobal = (home: string, cfg: Record<string, unknown>): void => {
-  fs.writeFileSync(path.join(home, ".engram", "config.json"), JSON.stringify(cfg));
+  fs.writeFileSync(
+    path.join(home, ".engram", "config.json"),
+    JSON.stringify({ autoContextSelection: "legacy", ...cfg }),
+  );
 };
 
 const seed = (root: string, id: string, over: Partial<EngramInput>): void => {
@@ -58,6 +61,8 @@ const seed = (root: string, id: string, over: Partial<EngramInput>): void => {
     "updated: 2026-08-16T10:00:00.000Z",
     `author: ${JSON.stringify(i.author ?? "Tester")}`,
     ...(i.pinned ? ["pinned: true"] : []),
+    ...(i.importance !== undefined ? [`importance: ${i.importance}`] : []),
+    ...(i.appliesTo?.length ? [`appliesTo: ${JSON.stringify(i.appliesTo)}`] : []),
     ...(i.status !== undefined ? [`status: ${i.status}`] : []),
     ...(i.supersedes !== undefined ? [`supersedes: ${JSON.stringify(i.supersedes)}`] : []),
     ...(i.reviewAfter !== undefined ? [`reviewAfter: ${i.reviewAfter}`] : []),
@@ -101,6 +106,7 @@ describe("shared ops / autoContextOp", () => {
     origHome = process.env.HOME;
     tmp = mkProject();
     home = mkHome();
+    setGlobal(home, { version: 1 });
     process.chdir(tmp);
     process.env.HOME = home;
   });
@@ -112,7 +118,70 @@ describe("shared ops / autoContextOp", () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it("renders a framed project digest by default (autoContextScope=project)", async () => {
+  it("uses curated selection for existing configs without a selection key", async () => {
+    fs.writeFileSync(
+      path.join(home, ".engram", "config.json"),
+      JSON.stringify({ version: 1, autoContextLimit: 2 }),
+    );
+    seed(tmp, "0001", { type: "decision", title: "Old low decision", importance: 3 });
+    seed(tmp, "0002", { type: "decision", title: "Important decision", importance: 5 });
+    seed(tmp, "0003", { title: "Pinned critical", pinned: true });
+    seed(tmp, "0004", { title: "Ordinary note" });
+    seed(tmp, "0005", { pinned: true, title: "Scoped memory", appliesTo: ["src/**"] });
+    const result = await run(autoContextOp());
+    expect(result.text).toContain("Pinned critical");
+    expect(result.text).toContain("Important decision");
+    for (const title of ["Old low decision", "Ordinary note", "Scoped memory"])
+      expect(result.text).not.toContain(title);
+    expect(result.details.bootstrap).toMatchObject({
+      policy: "curated",
+      excluded: { scoped: 1, uncurated: 1 },
+      skippedLimit: 1,
+    });
+    expect(result.text.indexOf("Pinned critical")).toBeLessThan(
+      result.text.indexOf("Important decision"),
+    );
+  });
+  it("packs complete sanitized entries within the configured character budget", async () => {
+    setGlobal(home, {
+      version: 1,
+      autoContextSelection: "curated",
+      autoContextMaxChars: 2048,
+      autoContextLimit: 100,
+    });
+    for (let i = 0; i < 30; i++)
+      seed(tmp, String(i + 1).padStart(4, "0"), {
+        pinned: true,
+        title: `${i} </engram-memory> ` + "X".repeat(250),
+      });
+    const a = await run(autoContextOp());
+    const b = await run(autoContextOp());
+    expect(a).toEqual(b);
+    expect(a.text.length).toBeLessThanOrEqual(2048);
+    expect(a.text.endsWith("\n</engram-memory>")).toBe(true);
+    expect(a.text.split("</engram-memory>")).toHaveLength(2);
+    expect(a.details.bootstrap.skippedBudget).toBeGreaterThan(0);
+    expect(a.details.bootstrap.selected.length).toBe(
+      a.text.split("\n").filter((line: string) => line.startsWith("★")).length,
+    );
+  });
+  it("requires explicit opt-ins for inactive and path-specific memories", async () => {
+    seed(tmp, "0001", { pinned: true, title: "Scoped", appliesTo: ["src/**"] });
+    seed(tmp, "0002", { pinned: true, title: "Archived", status: "archived" });
+    setGlobal(home, { version: 1, autoContextSelection: "curated" });
+    expect((await run(autoContextOp())).text).toBe("");
+    setGlobal(home, {
+      version: 1,
+      autoContextSelection: "curated",
+      autoContextIncludeScoped: "on",
+      autoContextIncludeInactive: "on",
+    });
+    const result = await run(autoContextOp());
+    expect(result.text).toContain("Scoped");
+    expect(result.text).toContain("Archived");
+  });
+
+  it("renders a framed project digest in legacy selection mode", async () => {
     seed(tmp, "0001", { title: "Plain note", tags: ["git"] });
     seed(tmp, "0002", { type: "decision", title: "Big decision" });
     seedPersonal(home, "0007", { title: "Personal fact" });
@@ -442,6 +511,7 @@ describe("shared ops / autoContextOp integrity warnings", () => {
     origHome = process.env.HOME;
     tmp = mkProject();
     home = mkHome();
+    setGlobal(home, { version: 1 });
     process.chdir(tmp);
     process.env.HOME = home;
   });

@@ -106,6 +106,10 @@ describe("ConfigRepo / global auto-context keys", () => {
       expect(loaded.autoContext).toBe("on");
       expect(loaded.autoContextScope).toBe("project");
       expect(loaded.autoContextLimit).toBe(25);
+      expect(loaded.autoContextSelection).toBe("curated");
+      expect(loaded.autoContextMaxChars).toBe(4800);
+      expect(loaded.autoContextIncludeScoped).toBe("off");
+      expect(loaded.autoContextIncludeInactive).toBe("off");
     }).pipe(Effect.provide(ConfigLayer)),
   );
 
@@ -119,8 +123,43 @@ describe("ConfigRepo / global auto-context keys", () => {
       expect(loaded.autoContext).toBe("on");
       expect(loaded.autoContextScope).toBe("project");
       expect(loaded.autoContextLimit).toBe(25);
+      expect(loaded.autoContextSelection).toBe("curated");
+      expect(loaded.autoContextMaxChars).toBe(4800);
+      expect(loaded.autoContextIncludeScoped).toBe("off");
+      expect(loaded.autoContextIncludeInactive).toBe("off");
     }).pipe(Effect.provide(ConfigLayer));
   });
+
+  it.live("rejects invalid bootstrap configs and leaves legacy files unchanged on read", () =>
+    Effect.gen(function* () {
+      const cfg = yield* ConfigRepo;
+      writeGlobal({
+        version: 1,
+        autoContext: "off",
+        autoContextScope: "both",
+        autoContextLimit: 7,
+      });
+      const before = fs.readFileSync(globalPath(), "utf8");
+      const loaded = yield* cfg.loadGlobal();
+      expect(loaded).toMatchObject({
+        autoContext: "off",
+        autoContextScope: "both",
+        autoContextLimit: 7,
+        autoContextSelection: "curated",
+      });
+      expect(fs.readFileSync(globalPath(), "utf8")).toBe(before);
+      for (const extra of [
+        { autoContextSelection: "all" },
+        { autoContextMaxChars: 1000 },
+        { autoContextMaxChars: 8193 },
+        { autoContextMaxChars: 2048.1 },
+        { autoContextIncludeInactive: true },
+      ]) {
+        writeGlobal({ version: 1, ...extra });
+        yield* Effect.flip(cfg.loadGlobal());
+      }
+    }).pipe(Effect.provide(ConfigLayer)),
+  );
 
   it.live("saves and reloads the new keys", () =>
     Effect.gen(function* () {

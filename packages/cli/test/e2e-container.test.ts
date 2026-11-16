@@ -214,3 +214,9 @@ it("audits importance add, edit and clear on the packaged CLI", () => {
   expect(audit).toContain('engram edit "$retrieval_id" --importance 2');
   expect(audit).toContain('engram edit "$retrieval_id" --importance ""');
 });
+
+it("audits the framed curated startup block", () => {
+  const e2e = readRepoFile("scripts/e2e-cli.sh");
+  expect(e2e).toContain('grep -F "# Engram bootstrap"');
+  expect(e2e).toContain("grep -Fx '</engram-memory>'");
+});

@@ -421,7 +421,7 @@ program
 program
   .command("config [action] [key] [value]")
   .description(
-    "View/edit config. Keys: tracked, defaultType, author, editor, autoContext, autoContextScope, autoContextLimit.",
+    "View/edit config. Keys: tracked, defaultType, author, editor, autoContext, autoContextScope, autoContextLimit, autoContextSelection, autoContextMaxChars, autoContextIncludeScoped, autoContextIncludeInactive.",
   )
   .action((action: string | undefined, key: string | undefined, value: string | undefined) =>
     run(Config.configCommand(action, key, value)),

@@ -6,6 +6,7 @@
  *
  * Rendering is plain text (no ANSI): the primary consumer is the LLM.
  */
+import { bootstrapCandidates } from "./bootstrap.js";
 import { Effect, Exit, Option, Result } from "effect";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
@@ -13,6 +14,7 @@ import {
   ConfigRepo,
   EngramStore,
   DEFAULT_AUTO_CONTEXT_LIMIT,
+  DEFAULT_AUTO_CONTEXT_MAX_CHARS,
   DEFAULT_AUTO_CONTEXT_SCOPE,
   ENGRAM_STATUSES,
   ENGRAM_TYPES,
@@ -1126,12 +1128,25 @@ const assembleAutoPayload = (
   root: Option.Option<string>,
   personalOnly: boolean,
   warning: string | null,
+  maxChars = MAX_RESULT_CHARS,
+  curated = false,
 ): { text: string; truncated: boolean } => {
   // Every dynamic line — root-bearing headers, digest entries, footer — goes
   // through the same sanitization; only the trusted wrapper constants bypass it.
-  const body = digestLines(sections, flat, page, root, personalOnly).map(sanitizeAutoLine);
+  const body = (
+    curated
+      ? [
+          ...(personalOnly ? [`(${PERSONAL_ONLY_NOTE})`] : []),
+          `# Engram bootstrap - ${sections.map((section) => (section.scope === "project" ? `project (${Option.getOrUndefined(root)})` : "personal (~/.engram)")).join(" + ")}`,
+          `${page.items.length} curated of ${page.total} eligible engrams.`,
+          ...page.items.map((m) => lineOf(m, sections.length > 1)),
+        ]
+      : digestLines(sections, flat, page, root, personalOnly)
+  ).map(sanitizeAutoLine);
   const lines = [AUTO_OPEN, AUTO_INTRO, ...(warning ? ["", warning] : []), "", ...body];
-  if (page.nextOffset !== null && page.items.length > 0) {
+  if (curated && page.items.length < page.total)
+    lines.push("", "(curated selection; inspect Engram memory for more)");
+  if (!curated && page.nextOffset !== null && page.items.length > 0) {
     lines.push(
       "",
       sanitizeAutoLine(autoFooter(page.offset + 1, page.offset + page.items.length, page.total)),
@@ -1140,12 +1155,28 @@ const assembleAutoPayload = (
 
   // Reserve room for the truncation marker and the closing tag so the hard
   // cap can never cut the frame short.
-  const budget = MAX_RESULT_CHARS - AUTO_CLOSE.length - 1;
+  const budget = Math.min(maxChars, MAX_RESULT_CHARS) - AUTO_CLOSE.length - 1;
   let truncated = false;
   let text = lines.join("\n");
   if (text.length > budget) {
     const capped = capText(text, budget - AUTO_TRUNCATED.length - 1);
     text = `${capped.text}\n${AUTO_TRUNCATED}`;
+    truncated = true;
+  }
+  // Automatic injection also serves byte-capped CLI hooks. Preserve the frame
+  // and reserve one byte for their trailing newline, including Unicode text.
+  const encoder = new TextEncoder();
+  const byteBudget = 8191 - encoder.encode(`\n${AUTO_CLOSE}`).length;
+  if (encoder.encode(text).length > byteBudget) {
+    const suffix = `\n${AUTO_TRUNCATED}`;
+    let low = 0,
+      high = text.length;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if (encoder.encode(text.slice(0, mid) + suffix).length <= byteBudget) low = mid;
+      else high = mid - 1;
+    }
+    text = text.slice(0, low) + suffix;
     truncated = true;
   }
   return { text: `${text}\n${AUTO_CLOSE}`, truncated };
@@ -1161,6 +1192,9 @@ const autoContextImpl = (): Effect.Effect<OpResult, unknown, EngramStore | Confi
     const enabled = global.autoContext === "on";
     const scopeSetting = global.autoContextScope ?? DEFAULT_AUTO_CONTEXT_SCOPE;
     const limit = global.autoContextLimit ?? DEFAULT_AUTO_CONTEXT_LIMIT;
+    const policy = global.autoContextSelection ?? "curated";
+    const maxChars = global.autoContextMaxChars ?? DEFAULT_AUTO_CONTEXT_MAX_CHARS;
+    const now = Date.now();
 
     if (!enabled) {
       return {
@@ -1196,15 +1230,67 @@ const autoContextImpl = (): Effect.Effect<OpResult, unknown, EngramStore | Confi
       diagnosticCount += scanned.diagnostics.length;
       sections.push({
         scope,
-        /* ENG-17 R3 (leader ruling): the startup injection excludes inactive
-         * entries by default, same as contextDigest, via the core helper.
-         * ordered() semantics apply to what remains; warnings, caps, and
-         * pagination are unchanged. */
-        items: ordered(scanned.entries.filter((m) => effectiveStatus(m) === "active")),
+        // Legacy keeps decision/pin grouping; curated selection below ranks
+        // author intent across scopes. Both obey the explicit eligibility toggles.
+        items:
+          policy === "legacy"
+            ? ordered(
+                scanned.entries.filter(
+                  (m) =>
+                    (global.autoContextIncludeInactive === "on" ||
+                      effectiveStatus(m, now) === "active") &&
+                    (global.autoContextIncludeScoped === "on" || !m.appliesTo?.length),
+                ),
+              )
+            : [...scanned.entries],
       });
     }
-    const flat = sections.flatMap((s) => s.items);
-    const page = paginate(flat, 0, limit);
+    const all = sections.flatMap((s) => s.items);
+    const plan = bootstrapCandidates(all, {
+      now,
+      includeInactive: global.autoContextIncludeInactive === "on",
+      includeScoped: global.autoContextIncludeScoped === "on",
+    });
+    const flat = policy === "curated" ? plan.candidates.map((c) => c.entry) : all;
+    const personalOnly = scopeSetting === "both" && Option.isNone(root);
+    const warning = omittedFiles > 0 ? incompleteMemoryWarning(omittedFiles) : null;
+    const selected: Engram[] = [];
+    let skippedBudget = 0,
+      skippedLimit = 0;
+    if (policy === "curated") {
+      for (const item of flat) {
+        if (selected.length >= limit) {
+          skippedLimit++;
+          continue;
+        }
+        const trial = [...selected, item];
+        const trialPage: Page<Engram> = {
+          items: trial,
+          total: flat.length,
+          offset: 0,
+          limit,
+          nextOffset: null,
+        };
+        if (
+          assembleAutoPayload(
+            sections,
+            flat,
+            trialPage,
+            root,
+            personalOnly,
+            warning,
+            maxChars,
+            true,
+          ).truncated
+        )
+          skippedBudget++;
+        else selected.push(item);
+      }
+    }
+    const page =
+      policy === "curated"
+        ? { items: selected, total: flat.length, offset: 0, limit, nextOffset: null }
+        : paginate(flat, 0, limit);
     const base = {
       enabled: true,
       scope: scopeSetting,
@@ -1213,6 +1299,19 @@ const autoContextImpl = (): Effect.Effect<OpResult, unknown, EngramStore | Confi
       limit: page.limit,
       offset: page.offset,
       nextOffset: page.nextOffset,
+      bootstrap: {
+        policy,
+        maxChars,
+        selected:
+          policy === "curated"
+            ? plan.candidates
+                .filter((c) => selected.includes(c.entry))
+                .map((c) => ({ id: c.entry.id, scope: c.entry.scope, reason: c.reason }))
+            : page.items.map((m) => ({ id: m.id, scope: m.scope, reason: "legacy" })),
+        excluded: policy === "curated" ? plan.excluded : {},
+        skippedBudget,
+        skippedLimit,
+      },
       memoryIncomplete: omittedFiles > 0,
       omittedFiles,
       diagnosticCount,
@@ -1224,10 +1323,16 @@ const autoContextImpl = (): Effect.Effect<OpResult, unknown, EngramStore | Confi
       return { text: "", isError: false, details: { ...base, loaded: false, truncated: false } };
     }
 
-    const personalOnly = scopeSetting === "both" && Option.isNone(root);
-    const warning = omittedFiles > 0 ? incompleteMemoryWarning(omittedFiles) : null;
-    const payload = assembleAutoPayload(sections, flat, page, root, personalOnly, warning);
-
+    const payload = assembleAutoPayload(
+      sections,
+      flat,
+      page,
+      root,
+      personalOnly,
+      warning,
+      maxChars,
+      policy === "curated",
+    );
     return {
       text: payload.text,
       isError: false,
@@ -1241,11 +1346,10 @@ const autoContextImpl = (): Effect.Effect<OpResult, unknown, EngramStore | Confi
   });
 
 /**
- * Automatic startup digest (fail-open). Same ordering, pagination, and size
- * cap as `contextDigest`, but framed as bounded background memory for
- * system-prompt injection and driven entirely by the global config keys
- * `autoContext` (on/off), `autoContextScope` (default `project`), and
- * `autoContextLimit` (default 25, 1..100).
+ * Automatic startup digest (fail-open), driven by global autoContext settings.
+ * Curated selection packs whole sanitized lines by author intent and budget;
+ * explicit legacy mode retains decision/pin grouping and pagination. Manual
+ * contextDigest remains a separate read surface.
  *
  * Contract: never injects bodies, never emits tool names, never throws. On
  * any read/config/domain failure it returns an empty payload with

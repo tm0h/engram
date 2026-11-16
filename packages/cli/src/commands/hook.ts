@@ -23,7 +23,7 @@ import {
   HOOK_TIMEOUT_MS,
   TRUNCATION_MARKER,
 } from "@engram/harnesses/installer";
-import { buildContextDigest } from "./context.js";
+import { autoContextOp } from "@engram/harnesses/shared";
 
 export const HOOK_HOSTS = ["claude-code", "codex"] as const;
 export const HOOK_EVENTS = ["startup", "resume", "compact"] as const;
@@ -100,13 +100,13 @@ export const hookCommand = ({ host, event, timeoutMs = HOOK_TIMEOUT_MS }: HookOp
     const debug = Boolean(process.env[HOOK_DEBUG_ENV]);
     const buffered = bufferedConsole();
     let failure: string | null = null;
-    const digest = yield* buildContextDigest({}).pipe(
+    const digest = yield* autoContextOp().pipe(
+      Effect.map((result) => {
+        if (typeof result.details.error === "string") failure = result.details.error;
+        return result.text;
+      }),
       Effect.provideService(Console.Console, buffered.console),
       Effect.timeoutOption(Duration.millis(timeoutMs)),
-      Effect.catch((e) => {
-        failure = e instanceof Error ? e.message : String(e);
-        return Effect.succeedNone;
-      }),
       Effect.catchDefect((d) => {
         failure = d instanceof Error ? d.message : String(d);
         return Effect.succeedNone;
@@ -127,7 +127,7 @@ export const hookCommand = ({ host, event, timeoutMs = HOOK_TIMEOUT_MS }: HookOp
     if (debug) {
       const notes = `${buffered.stdout()}${buffered.stderr()}`;
       if (notes !== "") process.stderr.write(notes);
-      if (Option.isNone(digest)) {
+      if (Option.isNone(digest) || failure !== null) {
         const reason = failure !== null ? failure : "no result";
         process.stderr.write(
           failure !== null
