@@ -168,7 +168,6 @@ program
   .option("-s, --scope <scope>", "personal | project | all")
   .option("--type <type>", "Filter by type.")
   .option("--tag <tag>", "Filter by tag.")
-  .option("--path <path>", "Current repository-relative path for applicability filtering.")
   .option("--all", "Include inactive entries (superseded, archived, expired).")
   .action((opts: Record<string, string | undefined>) =>
     run(
@@ -370,7 +369,6 @@ program
   .option("-q, --query <query>", "Return full bodies of engrams matching a query.")
   .option("--full", "Include full bodies of every engram.")
   .option("-n, --limit <n>", "Max engrams.", (v: string) => parseInt(v, 10))
-  .option("--path <path>", "Current repository-relative path for applicability filtering.")
   .option("--all", "Include inactive entries (superseded, archived, expired).")
   .action((opts: Record<string, string | number | boolean | undefined>) =>
     run(

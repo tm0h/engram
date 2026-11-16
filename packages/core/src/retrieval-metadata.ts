@@ -33,18 +33,40 @@ export const normalizeMetadata = (
   values: readonly string[],
 ): readonly string[] => (field === "triggers" ? normalizeAliases(values) : [...new Set(values)]);
 
-/** * matches within a segment; ** matches zero or more complete segments. */
+/** Wildcard matching with rolling dynamic-programming rows. Each pattern
+ * character/path character pair is visited at most once: no regex backtracking.
+ * Memory is linear in path length. */
+function segmentApplies(pattern: string, segment: string): boolean {
+  let previous = Array.from({ length: segment.length + 1 }, () => false);
+  previous[0] = true;
+  for (const char of pattern.split("")) {
+    const next = Array.from({ length: segment.length + 1 }, () => false);
+    next[0] = char === "*" && previous[0]!;
+    for (let i = 1; i <= segment.length; i++) {
+      next[i] =
+        char === "*" ? previous[i]! || next[i - 1]! : previous[i - 1]! && char === segment[i - 1];
+    }
+    previous = next;
+  }
+  return previous[segment.length]!;
+}
+
+/** * matches within a segment; ** matches zero or more complete segments.
+ * Total work is O(pattern length * path length), including segment matching. */
 export function pathApplies(pattern: string, currentPath: string): boolean {
-  const parts = pattern.split("/");
-  const regex = parts
-    .map((part, index) => {
-      if (part === "**") return index === parts.length - 1 ? ".*" : "(?:[^/]+/)*";
-      const segment = part
-        .split("*")
-        .map((text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-        .join("[^/]*");
-      return segment + (index < parts.length - 1 ? "/" : "");
-    })
-    .join("");
-  return new RegExp(`^${regex}$`).test(currentPath);
+  const segments = currentPath.split("/");
+  let previous = Array.from({ length: segments.length + 1 }, () => false);
+  previous[0] = true;
+  for (const part of pattern.split("/")) {
+    const next = Array.from({ length: segments.length + 1 }, () => false);
+    next[0] = part === "**" && previous[0]!;
+    for (let i = 1; i <= segments.length; i++) {
+      next[i] =
+        part === "**"
+          ? previous[i]! || next[i - 1]!
+          : previous[i - 1]! && segmentApplies(part, segments[i - 1]!);
+    }
+    previous = next;
+  }
+  return previous[segments.length]!;
 }

@@ -108,6 +108,7 @@ export function searchEngrams(
   );
   const parsed = query ? parseQuery(query) : undefined;
   let results: SearchResult[];
+  let beforeAbstention: ReadonlyArray<SearchResult> = [];
   if (parsed === undefined || parsed.alternatives.length === 0) {
     results = recencyResults(candidates, options.explain === true);
   } else if (!abstentionEligible(parsed)) {
@@ -122,6 +123,7 @@ export function searchEngrams(
     // either way); the public explanation surface is unchanged because
     // explanations are stripped again unless they were asked for.
     results = rankEntries(candidates, parsed, { explain: true });
+    beforeAbstention = results;
     if (results.length > 0 && abstainPolicy(candidates, parsed, results)) {
       results = [];
     }
@@ -131,12 +133,20 @@ export function searchEngrams(
   }
   // Exact whole-query trigger matches are explicit author intent. Structured
   // queries keep their hard field/AND requirements and never use this shortcut.
-  if (parsed && parsed.alternatives.length && query && !/[":*]|\b(?:AND|OR)\b/.test(query)) {
+  if (
+    parsed &&
+    parsed.alternatives.length &&
+    query &&
+    parsed.alternatives.every(
+      (terms) => terms.length === 1 && terms[0]!.kind === "word" && terms[0]!.field === undefined,
+    )
+  ) {
     const trigger = normalizeText(query.trim());
     const byId = new Map(results.map((result) => [result.engram, result]));
+    const lexical = new Map(beforeAbstention.map((result) => [result.engram, result]));
     for (const engram of candidates) {
       if (!engram.triggers?.some((value) => normalizeText(value.trim()) === trigger)) continue;
-      const prior = byId.get(engram);
+      const prior = lexical.get(engram) ?? byId.get(engram);
       byId.set(engram, {
         engram,
         score: (prior?.score ?? 0) + 4,
