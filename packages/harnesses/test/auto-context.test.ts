@@ -348,6 +348,48 @@ describe("shared ops / autoContextOp", () => {
     expect(small.text.trimEnd().endsWith("</engram-memory>")).toBe(true);
   });
 
+  it("reports only emitted legacy entries under character and byte budgets", async () => {
+    for (const title of ["L".repeat(180), "🦄".repeat(180)]) {
+      // Exercise both a character-limited payload and the UTF-8 hook ceiling.
+      const maxChars = title.startsWith("L") ? 2048 : 8192;
+      setGlobal(home, {
+        version: 1,
+        autoContextSelection: "legacy",
+        autoContextLimit: 100,
+        autoContextMaxChars: maxChars,
+      });
+      for (let i = 1; i <= 100; i++)
+        seed(tmp, String(i).padStart(4, "0"), { title: `${title} ${i}` });
+      const result = await run(autoContextOp());
+      const emitted = result.text
+        .split("\n")
+        .filter((line: string) => /^ ?[★ ]? \d{4} note /.test(line))
+        .map((line: string) => line.match(/\d{4}/)![0]);
+      const selected = result.details.bootstrap.selected.map((m: { id: string }) => m.id);
+      expect(selected).toEqual(emitted);
+      expect(selected.length).toBeGreaterThan(0);
+      expect(selected.length).toBeLessThan(100);
+      expect(result.details.bootstrap.skippedBudget).toBe(100 - selected.length);
+      expect(result.details.bootstrap.skippedLimit).toBe(0);
+      expect(result.details.nextOffset).toBe(selected.length);
+      expect(result.text).toContain(`(showing 1-${selected.length} of 100;`);
+      expect(result.text.length).toBeLessThanOrEqual(maxChars);
+      expect(Buffer.byteLength(result.text, "utf8")).toBeLessThanOrEqual(8191);
+      expect(result.text.endsWith("\n</engram-memory>")).toBe(true);
+      expect(result.details.truncated).toBe(true);
+      setGlobal(home, {
+        version: 1,
+        autoContextSelection: "legacy",
+        autoContextLimit: 2,
+        autoContextMaxChars: 8192,
+      });
+      const limited = await run(autoContextOp());
+      expect(limited.details.bootstrap).toMatchObject({ skippedBudget: 0, skippedLimit: 98 });
+      expect(limited.details.bootstrap.selected).toHaveLength(2);
+      expect(limited.details.nextOffset).toBe(2);
+    }
+  });
+
   it("caps the whole payload at MAX_RESULT_CHARS and keeps the closing tag", async () => {
     setGlobal(home, { version: 1, autoContextLimit: 100 });
     const long = "L".repeat(180);

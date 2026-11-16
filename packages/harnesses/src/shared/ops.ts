@@ -1130,6 +1130,7 @@ const assembleAutoPayload = (
   warning: string | null,
   maxChars = MAX_RESULT_CHARS,
   curated = false,
+  budgetLimited = false,
 ): { text: string; truncated: boolean } => {
   // Every dynamic line — root-bearing headers, digest entries, footer — goes
   // through the same sanitization; only the trusted wrapper constants bypass it.
@@ -1152,6 +1153,8 @@ const assembleAutoPayload = (
       sanitizeAutoLine(autoFooter(page.offset + 1, page.offset + page.items.length, page.total)),
     );
   }
+
+  if (budgetLimited) lines.push(AUTO_TRUNCATED);
 
   // Reserve room for the truncation marker and the closing tag so the hard
   // cap can never cut the frame short.
@@ -1287,10 +1290,61 @@ const autoContextImpl = (): Effect.Effect<OpResult, unknown, EngramStore | Confi
         else selected.push(item);
       }
     }
-    const page =
-      policy === "curated"
-        ? { items: selected, total: flat.length, offset: 0, limit, nextOffset: null }
-        : paginate(flat, 0, limit);
+    const legacyWindow = paginate(flat, 0, limit);
+    if (policy === "legacy") {
+      // Keep the legacy window and its ordering, but render only complete
+      // entries. Reserve the budget marker during each trial so diagnostics
+      // and the continuation offset describe the same emitted prefix.
+      skippedLimit = flat.length - legacyWindow.items.length;
+      const complete = assembleAutoPayload(
+        sections,
+        flat,
+        legacyWindow,
+        root,
+        personalOnly,
+        warning,
+        maxChars,
+        false,
+      );
+      if (!complete.truncated) {
+        selected.push(...legacyWindow.items);
+      } else {
+        for (const item of legacyWindow.items) {
+          const trial = [...selected, item];
+          const trialPage: Page<Engram> = {
+            ...legacyWindow,
+            items: trial,
+            nextOffset: trial.length < flat.length ? trial.length : null,
+          };
+          if (
+            assembleAutoPayload(
+              sections,
+              flat,
+              trialPage,
+              root,
+              personalOnly,
+              warning,
+              maxChars,
+              false,
+              trial.length < legacyWindow.items.length,
+            ).truncated
+          )
+            break;
+          selected.push(item);
+        }
+      }
+      skippedBudget = legacyWindow.items.length - selected.length;
+    }
+    const page: Page<Engram> = {
+      items: selected,
+      total: flat.length,
+      offset: 0,
+      limit,
+      nextOffset:
+        policy === "legacy" && selected.length > 0 && selected.length < flat.length
+          ? selected.length
+          : null,
+    };
     const base = {
       enabled: true,
       scope: scopeSetting,
@@ -1332,6 +1386,7 @@ const autoContextImpl = (): Effect.Effect<OpResult, unknown, EngramStore | Confi
       warning,
       maxChars,
       policy === "curated",
+      policy === "legacy" && skippedBudget > 0,
     );
     return {
       text: payload.text,
@@ -1339,7 +1394,7 @@ const autoContextImpl = (): Effect.Effect<OpResult, unknown, EngramStore | Confi
       details: {
         ...base,
         loaded: true,
-        truncated: payload.truncated,
+        truncated: payload.truncated || (policy === "legacy" && skippedBudget > 0),
         chars: payload.text.length,
       },
     };
