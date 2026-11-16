@@ -1,6 +1,7 @@
 /** `engram search <query>` */
 import { Effect } from "effect";
 import chalk from "chalk";
+import { validRetrievalPath } from "@engram/core";
 import { EngramStore } from "@engram/core";
 import { scopesToQuery } from "@engram/core";
 import { searchEngrams } from "@engram/core";
@@ -16,6 +17,7 @@ import { out } from "../io.js";
 
 export interface SearchOptions {
   readonly scope?: string;
+  readonly currentPath?: string;
   readonly limit?: number;
   /** ENG-17 R13: re-include inactive entries (superseded, archived, expired). */
   readonly all?: boolean;
@@ -26,6 +28,10 @@ export interface SearchOptions {
 
 export const searchCommand = (query: string, opts: SearchOptions) =>
   Effect.gen(function* () {
+    if (opts.currentPath !== undefined && !validRetrievalPath(opts.currentPath))
+      return yield* Effect.fail(
+        new ValidationError({ message: "--path must be repository-relative without traversal" }),
+      );
     const invalid = searchPaginationError(opts.offset ?? 0, opts.limit);
     if (invalid || (opts.offset !== undefined && !opts.json && !opts.explain)) {
       return yield* Effect.fail(
@@ -40,6 +46,7 @@ export const searchCommand = (query: string, opts: SearchOptions) =>
       const candidates: Engram[] = [];
       for (const scope of scopes) candidates.push(...(yield* store.list(scope)));
       const ranked = searchEngrams(candidates, query, undefined, {
+        currentPath: opts.currentPath,
         includeInactive: opts.all === true,
         explain: opts.explain === true,
         now,
@@ -55,6 +62,7 @@ export const searchCommand = (query: string, opts: SearchOptions) =>
       // ENG-17 R13: --all threads through the core options; the default
       // already excludes inactive entries inside searchEngrams.
       const results = searchEngrams(engrams, query, opts.limit, {
+        currentPath: opts.currentPath,
         includeInactive: opts.all === true,
         now,
       });

@@ -123,6 +123,11 @@ program
     "--related <ids>",
     "Comma-separated exact entry ids to link (same scope; missing targets are a warning).",
   )
+  .option("--triggers <phrases>", "Comma-separated exact retrieval triggers; empty on edit clears.")
+  .option(
+    "--applies-to <patterns>",
+    "Comma-separated repository-relative paths/globs; empty on edit clears.",
+  )
   .option(
     "--aliases <aliases>",
     "Comma-separated alternate names (max 20, 80 chars each; a comma cannot be part of an alias through this flag).",
@@ -146,6 +151,8 @@ program
         supersedes: opts.supersedes as string | undefined,
         related: opts.related as string | undefined,
         aliases: opts.aliases as string | undefined,
+        triggers: opts.triggers as string | undefined,
+        appliesTo: opts.appliesTo as string | undefined,
         reviewAfter: opts.reviewAfter as string | undefined,
         expires: opts.expires as string | undefined,
         sourceType: opts.sourceType as string | undefined,
@@ -161,6 +168,7 @@ program
   .option("-s, --scope <scope>", "personal | project | all")
   .option("--type <type>", "Filter by type.")
   .option("--tag <tag>", "Filter by tag.")
+  .option("--path <path>", "Current repository-relative path for applicability filtering.")
   .option("--all", "Include inactive entries (superseded, archived, expired).")
   .action((opts: Record<string, string | undefined>) =>
     run(
@@ -193,10 +201,12 @@ program
   })
   .option("--json", "Emit one versioned JSON document. Default unlimited results.")
   .option("--explain", "Include matched fields, normalized query tokens, and score contributions.")
+  .option("--path <path>", "Current repository-relative path for applicability filtering.")
   .option("--all", "Include inactive entries (superseded, archived, expired).")
   .action((query: string, opts: Record<string, string | number | undefined>) =>
     run(
       Search.searchCommand(query, {
+        currentPath: opts.path as string | undefined,
         scope: opts.scope as string | undefined,
         limit: opts.limit as number | undefined,
         all: Boolean(opts.all),
@@ -282,6 +292,11 @@ program
     "--related <ids>",
     "Comma-separated exact entry ids to link (replaces the list; same scope; missing targets are a warning).",
   )
+  .option("--triggers <phrases>", "Comma-separated exact retrieval triggers; empty on edit clears.")
+  .option(
+    "--applies-to <patterns>",
+    "Comma-separated repository-relative paths/globs; empty on edit clears.",
+  )
   .option(
     "--aliases <aliases>",
     "Comma-separated alternate names; replaces the set (max 20, 80 chars each; a comma cannot be part of an alias through this flag).",
@@ -314,6 +329,8 @@ program
           supersedes: opts.supersedes as string | undefined,
           related: opts.related as string | undefined,
           aliases: opts.aliases as string | undefined,
+          triggers: opts.triggers as string | undefined,
+          appliesTo: opts.appliesTo as string | undefined,
           reviewAfter: opts.reviewAfter as string | undefined,
           expires: opts.expires as string | undefined,
           sourceType: opts.sourceType as string | undefined,
@@ -353,6 +370,7 @@ program
   .option("-q, --query <query>", "Return full bodies of engrams matching a query.")
   .option("--full", "Include full bodies of every engram.")
   .option("-n, --limit <n>", "Max engrams.", (v: string) => parseInt(v, 10))
+  .option("--path <path>", "Current repository-relative path for applicability filtering.")
   .option("--all", "Include inactive entries (superseded, archived, expired).")
   .action((opts: Record<string, string | number | boolean | undefined>) =>
     run(

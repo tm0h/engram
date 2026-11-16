@@ -72,6 +72,9 @@ export function renderFull(m: Engram): string {
   }
   /* ENG-46: one ordered aliases line when non-empty; absent and empty lists
    * print nothing. Sits right after the related line (R14-d). */
+  for (const name of ["triggers", "appliesTo"] as const) {
+    if (m[name]?.length) lifecycle.push(`${name}: ${m[name]!.join(", ")}`);
+  }
   if (m.aliases.length > 0) {
     lifecycle.push(`aliases: ${m.aliases.join(", ")}`);
   }

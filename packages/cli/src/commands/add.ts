@@ -30,6 +30,8 @@ export interface AddOptions extends LifecycleValueFlags {
   /** ENG-46: comma-separated alternate names. Split on commas with empty
    * members preserved (R6); the core boundary rejects them (R14a). */
   readonly aliases?: string;
+  readonly triggers?: string;
+  readonly appliesTo?: string;
   /** ENG-15: explicit per-write override for a blocking scan policy. */
   readonly allowSecrets?: boolean;
 }
@@ -149,6 +151,8 @@ export const addCommand = (opts: AddOptions) =>
         supersedes: lifecycle.supersedes,
         related,
         aliases: aliases ?? [],
+        triggers: opts.triggers?.split(","),
+        appliesTo: opts.appliesTo?.split(","),
         reviewAfter: lifecycle.reviewAfter,
         expires: lifecycle.expires,
         sourceType: lifecycle.sourceType,

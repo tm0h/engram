@@ -24,6 +24,7 @@
  */
 import { Result } from "effect";
 import yaml from "js-yaml";
+import { metadataErrors } from "./retrieval-metadata.js";
 import {
   ENGRAM_STATUSES,
   ENGRAM_TYPES,
@@ -132,6 +133,8 @@ export type EntryIssueCode =
    * Noncanonical-but-valid values are NOT defects: they read as authored
    * and canonicalize on the next mediated write. */
   | "aliases_invalid"
+  | "triggers_invalid"
+  | "appliesTo_invalid"
   /* ENG-41 entry format version. Only schema_version_unsupported is
    * non-entry-preventing: a future-format file still reads. */
   | "schema_version_invalid"
@@ -417,6 +420,16 @@ export const validateEntry = (raw: string): ValidatedEntry => {
    * surface words failures identically. Valid noncanonical values are
    * retained verbatim; canonicalization happens only on mediated rewrites.
    * All defects are entry-preventing. */
+  for (const name of ["triggers", "appliesTo"] as const) {
+    if (fm[name] !== undefined) {
+      for (const message of metadataErrors(name, fm[name]))
+        issues.push({
+          code: `${name}_invalid`,
+          hint: "Use a YAML list of valid strings or remove the field.",
+          message,
+        });
+    }
+  }
   const rawAliases = fm.aliases;
   let aliases: ReadonlyArray<string> | undefined;
   if (rawAliases !== undefined) {
@@ -667,6 +680,8 @@ export const validateEntry = (raw: string): ValidatedEntry => {
         supersedes: supersedes as string | undefined,
         related,
         aliases,
+        triggers: fm.triggers as ReadonlyArray<string> | undefined,
+        appliesTo: fm.appliesTo as ReadonlyArray<string> | undefined,
         reviewAfter: reviewAfter as string | undefined,
         expires: expires as string | undefined,
         sourceType: sourceType as SourceType | undefined,

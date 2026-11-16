@@ -24,3 +24,5 @@ export * from "./templates.js";
 export * from "./gitignore.js";
 export * from "./util.js";
 export * from "./layer.js";
+
+export { validRetrievalPath } from "./retrieval-metadata.js";

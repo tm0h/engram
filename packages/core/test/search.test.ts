@@ -411,3 +411,34 @@ describe("searchEngrams: alias field (ENG-47)", () => {
     });
   });
 });
+
+describe("ENG-19 contextual retrieval", () => {
+  it("retrieves exact triggers with an explanation", () => {
+    const entry = mem({ id: "trigger", title: "Database convention", triggers: ["fix login"] });
+    const results = searchEngrams([entry], "fix login", undefined, { explain: true });
+    expect(results[0]?.engram.id).toBe("trigger");
+    expect(results[0]?.explanation?.contributions).toContainEqual({
+      field: "trigger",
+      token: "fix login",
+      score: 4,
+      component: "trigger",
+    });
+    expect(searchEngrams([entry], "fix logins")).toEqual([]);
+  });
+  it("filters scoped entries only with an explicit path", () => {
+    const entries = [
+      mem({ id: "scoped", title: "auth", appliesTo: ["packages/api/**"] }),
+      mem({ id: "global", title: "auth" }),
+    ];
+    expect(searchEngrams(entries, "auth")).toHaveLength(2);
+    expect(
+      searchEngrams(entries, "auth", undefined, { currentPath: "packages/web/a.ts" }).map(
+        (r) => r.engram.id,
+      ),
+    ).toEqual(["global"]);
+    expect(
+      searchEngrams(entries, "auth", undefined, { currentPath: "packages/api/a.ts" }),
+    ).toHaveLength(2);
+    expect(() => searchEngrams(entries, "auth", undefined, { currentPath: "../secret" })).toThrow();
+  });
+});

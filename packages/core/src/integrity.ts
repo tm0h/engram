@@ -44,6 +44,8 @@ export type StoreDiagnosticCode =
    * shape, empty, overlength, and over-cap values are entry-preventing
    * errors. Noncanonical-but-valid values are not defects. */
   | "aliases_invalid"
+  | "triggers_invalid"
+  | "appliesTo_invalid"
   /* ENG-41 entry format version (packages/core/src/frontmatter.ts). Only
    * schema_version_unsupported is a warning: a future-format entry still
    * reads; an invalid shape is entry-preventing. */
