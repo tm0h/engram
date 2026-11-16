@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Lifecycle-aware search ranking: author importance, path applicability and bounded
+  note/issue freshness bonuses with explanations, plus conservative near-duplicate
+  diversification. Durable decisions never lose relevance merely because of age.
+
+### Added
+
 - Exact retrieval triggers and repository-relative path applicability (ENG-19).
   Add/edit `--triggers` and `--applies-to`; search `--path` filters scoped memories
   and `--explain` exposes exact trigger contributions.

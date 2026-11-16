@@ -39,6 +39,7 @@ export interface EditOptions extends LifecycleValueFlags, LifecycleClearFlags {
   readonly aliases?: string;
   readonly triggers?: string;
   readonly appliesTo?: string;
+  readonly importance?: string;
   /** ENG-46: remove the aliases list (mutually exclusive with --aliases). */
   readonly clearAliases?: boolean;
   /** ENG-15: explicit per-write override for a blocking scan policy. */
@@ -195,6 +196,8 @@ export const editCommand = (id: string, opts: EditOptions) =>
 
     // ENG-46 three-state mapping: clear wins, a parsed value replaces, an
     // absent flag preserves. Rejection wording comes from the core boundary.
+    if (opts.importance !== undefined)
+      patch = { ...patch, importance: opts.importance === "" ? null : Number(opts.importance) };
     if (opts.triggers !== undefined)
       patch = { ...patch, triggers: opts.triggers === "" ? null : opts.triggers.split(",") };
     if (opts.appliesTo !== undefined)

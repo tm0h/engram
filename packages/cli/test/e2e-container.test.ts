@@ -207,3 +207,10 @@ describe("Docker E2E runner", () => {
     expect(agentGuide).toContain("clean committed snapshot");
   });
 });
+
+it("audits importance add, edit and clear on the packaged CLI", () => {
+  const audit = readRepoFile("scripts/e2e-cli.sh");
+  expect(audit).toContain("--importance 5 --triggers");
+  expect(audit).toContain('engram edit "$retrieval_id" --importance 2');
+  expect(audit).toContain('engram edit "$retrieval_id" --importance ""');
+});

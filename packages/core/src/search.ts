@@ -13,6 +13,7 @@
  * both sides; plain word queries are expanded with `tokenizeQuery`
  * (camelCase, snake_case, paths, and so on).
  */
+import { rankMetadata } from "./rank-metadata.js";
 import { validRetrievalPath, pathApplies } from "./retrieval-metadata.js";
 import type { Engram } from "./domain.js";
 import { effectiveStatus } from "./domain.js";
@@ -28,10 +29,21 @@ export interface SearchResult {
 }
 
 /** Which scoring component produced a contribution (ENG-18). */
-export type ScoreComponent = "bm25" | "phrase" | "prefix" | "pinned" | "trigger";
+export type ScoreComponent = "bm25" | "phrase" | "prefix" | "pinned" | "trigger" | "metadata";
 
 export interface ScoreContribution {
-  readonly field: "tag" | "alias" | "title" | "type" | "body" | "pinned" | "trigger";
+  readonly field:
+    | "tag"
+    | "alias"
+    | "title"
+    | "type"
+    | "body"
+    | "pinned"
+    | "trigger"
+    | "importance"
+    | "freshness"
+    | "applicability"
+    | "diversification";
   /** Normalized query token (or folded phrase text), not source text or a
    * source offset. */
   readonly token: string | null;
@@ -172,6 +184,7 @@ export function searchEngrams(
       (a, b) => b.score - a.score || a.engram.id.localeCompare(b.engram.id),
     );
   }
+  if (parsed && parsed.alternatives.length > 0) results = rankMetadata(results, options);
   return typeof limit === "number" ? results.slice(0, limit) : results;
 }
 

@@ -4677,6 +4677,31 @@ describe("EngramStore / ENG-46 aliases", () => {
 
   /* ------------------------ model + write boundary ------------------------ */
 
+  it.live("importance round-trips, clears and rejects invalid values without writes", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const m = yield* store.add("project", input({ importance: 5 }), NOSCAN);
+      expect(readData(m.path).importance).toBe(5);
+      expect((yield* store.get("project", m.id)).importance).toBe(5);
+      yield* store.update("project", m.id, { body: "updated" }, NOSCAN);
+      expect(readData(m.path).importance).toBe(5);
+      for (const importance of [-1, 6, 1.5, Number.NaN]) {
+        const before = bytes(m.path);
+        yield* Effect.flip(store.update("project", m.id, { importance }, NOSCAN));
+        expect(bytes(m.path)).toBe(before);
+        yield* Effect.flip(store.add("project", input({ importance }), NOSCAN));
+      }
+      yield* store.update("project", m.id, { importance: 0 }, NOSCAN);
+      expect(readData(m.path).importance).toBe(0);
+      yield* store.update("project", m.id, { importance: null }, NOSCAN);
+      expect(readData(m.path)).not.toHaveProperty("importance");
+      seed("0009-invalid.md", { ...BASE, id: "0009", importance: "high" });
+      expect(
+        (yield* store.scan("project")).diagnostics.some((d) => d.code === "importance_invalid"),
+      ).toBe(true);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
   it.live("ENG-19 persists, preserves and clears retrieval metadata", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;

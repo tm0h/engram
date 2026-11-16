@@ -89,6 +89,7 @@ export const FrontmatterSchema = Schema.Struct({
   aliases: Schema.optional(Schema.Array(Schema.String)),
   triggers: Schema.optional(Schema.Array(Schema.String)),
   appliesTo: Schema.optional(Schema.Array(Schema.String)),
+  importance: Schema.optional(Schema.Literals([0, 1, 2, 3, 4, 5])),
   /** ISO 8601 timestamp with explicit zone (same contract as created/updated). */
   reviewAfter: Schema.optional(Schema.String),
   /** ISO 8601 timestamp with explicit zone (same contract as created/updated). */
@@ -127,6 +128,7 @@ export interface Engram {
   readonly aliases: ReadonlyArray<string>;
   readonly triggers?: ReadonlyArray<string>;
   readonly appliesTo?: ReadonlyArray<string>;
+  readonly importance?: number;
   readonly reviewAfter?: string | undefined;
   readonly expires?: string | undefined;
   readonly sourceType?: SourceType | undefined;
@@ -164,6 +166,7 @@ export interface EngramInput {
   readonly aliases: ReadonlyArray<string>;
   readonly triggers?: ReadonlyArray<string>;
   readonly appliesTo?: ReadonlyArray<string>;
+  readonly importance?: number;
   readonly reviewAfter?: string | undefined;
   readonly expires?: string | undefined;
   readonly sourceType?: SourceType | undefined;
@@ -196,6 +199,7 @@ export interface EngramPatch {
   readonly aliases?: ReadonlyArray<string> | null | undefined;
   readonly triggers?: ReadonlyArray<string> | null | undefined;
   readonly appliesTo?: ReadonlyArray<string> | null | undefined;
+  readonly importance?: number | null | undefined;
   readonly reviewAfter?: string | null | undefined;
   readonly expires?: string | null | undefined;
   readonly sourceType?: SourceType | null | undefined;

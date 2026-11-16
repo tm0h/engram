@@ -46,6 +46,7 @@ export type StoreDiagnosticCode =
   | "aliases_invalid"
   | "triggers_invalid"
   | "appliesTo_invalid"
+  | "importance_invalid"
   /* ENG-41 entry format version (packages/core/src/frontmatter.ts). Only
    * schema_version_unsupported is a warning: a future-format entry still
    * reads; an invalid shape is entry-preventing. */

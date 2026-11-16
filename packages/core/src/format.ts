@@ -72,6 +72,7 @@ export function renderFull(m: Engram): string {
   }
   /* ENG-46: one ordered aliases line when non-empty; absent and empty lists
    * print nothing. Sits right after the related line (R14-d). */
+  if (m.importance !== undefined) lifecycle.push(`importance: ${m.importance}`);
   for (const name of ["triggers", "appliesTo"] as const) {
     if (m[name]?.length) lifecycle.push(`${name}: ${m[name]!.join(", ")}`);
   }

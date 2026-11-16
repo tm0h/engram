@@ -135,6 +135,7 @@ export type EntryIssueCode =
   | "aliases_invalid"
   | "triggers_invalid"
   | "appliesTo_invalid"
+  | "importance_invalid"
   /* ENG-41 entry format version. Only schema_version_unsupported is
    * non-entry-preventing: a future-format file still reads. */
   | "schema_version_invalid"
@@ -430,6 +431,20 @@ export const validateEntry = (raw: string): ValidatedEntry => {
         });
     }
   }
+  const importance = fm.importance;
+  if (
+    importance !== undefined &&
+    (typeof importance !== "number" ||
+      !Number.isInteger(importance) ||
+      importance < 0 ||
+      importance > 5)
+  ) {
+    issues.push({
+      code: "importance_invalid",
+      message: "importance must be an integer from 0 to 5",
+      hint: "Use importance: 0 through 5, or remove the field.",
+    });
+  }
   const rawAliases = fm.aliases;
   let aliases: ReadonlyArray<string> | undefined;
   if (rawAliases !== undefined) {
@@ -682,6 +697,7 @@ export const validateEntry = (raw: string): ValidatedEntry => {
         aliases,
         triggers: fm.triggers as ReadonlyArray<string> | undefined,
         appliesTo: fm.appliesTo as ReadonlyArray<string> | undefined,
+        importance: importance as 0 | 1 | 2 | 3 | 4 | 5 | undefined,
         reviewAfter: reviewAfter as string | undefined,
         expires: expires as string | undefined,
         sourceType: sourceType as SourceType | undefined,
