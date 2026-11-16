@@ -391,3 +391,15 @@ describe("guidance / alias scoring (ENG-47)", () => {
     expect(ocReadmeText).toMatch(/tags > alias > title > type > body/);
   });
 });
+
+it("documents ENG-19 CLI retrieval consistently", () => {
+  for (const file of [
+    "README.md",
+    "packages/harnesses/src/pi/skills/engram/SKILL.md",
+    "packages/harnesses/claude/skills/engram/SKILL.md",
+    "packages/harnesses/claude/scaffold/SKILL.md",
+  ]) {
+    const text = fs.readFileSync(path.join(repoRoot, file), "utf8");
+    for (const flag of ["--triggers", "--applies-to", "--path"]) expect(text).toContain(flag);
+  }
+});

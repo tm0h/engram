@@ -13,6 +13,7 @@
  * both sides; plain word queries are expanded with `tokenizeQuery`
  * (camelCase, snake_case, paths, and so on).
  */
+import { validRetrievalPath, pathApplies } from "./retrieval-metadata.js";
 import type { Engram } from "./domain.js";
 import { effectiveStatus } from "./domain.js";
 import { normalizeText, tokenizeQuery } from "./tokenize.js";
@@ -27,10 +28,10 @@ export interface SearchResult {
 }
 
 /** Which scoring component produced a contribution (ENG-18). */
-export type ScoreComponent = "bm25" | "phrase" | "prefix" | "pinned";
+export type ScoreComponent = "bm25" | "phrase" | "prefix" | "pinned" | "trigger";
 
 export interface ScoreContribution {
-  readonly field: "tag" | "alias" | "title" | "type" | "body" | "pinned";
+  readonly field: "tag" | "alias" | "title" | "type" | "body" | "pinned" | "trigger";
   /** Normalized query token (or folded phrase text), not source text or a
    * source offset. */
   readonly token: string | null;
@@ -52,6 +53,7 @@ export interface SearchOptions {
   readonly includeInactive?: boolean;
   readonly now?: number;
   readonly explain?: boolean;
+  readonly currentPath?: string;
 }
 
 function activeCandidates(list: ReadonlyArray<Engram>, options: SearchOptions): Engram[] {
@@ -96,9 +98,17 @@ export function searchEngrams(
   limit?: number,
   options: SearchOptions = {},
 ): SearchResult[] {
-  const candidates = activeCandidates(list, options);
+  if (options.currentPath !== undefined && !validRetrievalPath(options.currentPath))
+    throw new Error("currentPath must be a repository-relative path without traversal");
+  const candidates = activeCandidates(list, options).filter(
+    (m) =>
+      options.currentPath === undefined ||
+      !m.appliesTo?.length ||
+      m.appliesTo.some((pattern) => pathApplies(pattern, options.currentPath!)),
+  );
   const parsed = query ? parseQuery(query) : undefined;
   let results: SearchResult[];
+  let beforeAbstention: ReadonlyArray<SearchResult> = [];
   if (parsed === undefined || parsed.alternatives.length === 0) {
     results = recencyResults(candidates, options.explain === true);
   } else if (!abstentionEligible(parsed)) {
@@ -113,12 +123,54 @@ export function searchEngrams(
     // either way); the public explanation surface is unchanged because
     // explanations are stripped again unless they were asked for.
     results = rankEntries(candidates, parsed, { explain: true });
+    beforeAbstention = results;
     if (results.length > 0 && abstainPolicy(candidates, parsed, results)) {
       results = [];
     }
     if (options.explain !== true) {
       results = results.map(({ engram, score }) => ({ engram, score }));
     }
+  }
+  // Exact whole-query trigger matches are explicit author intent. Structured
+  // queries keep their hard field/AND requirements and never use this shortcut.
+  if (
+    parsed &&
+    parsed.alternatives.length &&
+    query &&
+    parsed.alternatives.every(
+      (terms) => terms.length === 1 && terms[0]!.kind === "word" && terms[0]!.field === undefined,
+    )
+  ) {
+    const trigger = normalizeText(query.trim());
+    const byId = new Map(results.map((result) => [result.engram, result]));
+    const lexical = new Map(beforeAbstention.map((result) => [result.engram, result]));
+    for (const engram of candidates) {
+      if (!engram.triggers?.some((value) => normalizeText(value.trim()) === trigger)) continue;
+      const prior = lexical.get(engram) ?? byId.get(engram);
+      byId.set(engram, {
+        engram,
+        score: (prior?.score ?? 0) + 4,
+        ...(options.explain
+          ? {
+              explanation: {
+                mode: "relevance" as const,
+                contributions: [
+                  ...(prior?.explanation?.contributions ?? []),
+                  {
+                    field: "trigger" as const,
+                    token: trigger,
+                    score: 4,
+                    component: "trigger" as const,
+                  },
+                ],
+              },
+            }
+          : {}),
+      });
+    }
+    results = [...byId.values()].sort(
+      (a, b) => b.score - a.score || a.engram.id.localeCompare(b.engram.id),
+    );
   }
   return typeof limit === "number" ? results.slice(0, limit) : results;
 }

@@ -518,3 +518,22 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 ## License
 
 MIT
+
+### Retrieval triggers and path applicability
+
+`engram add --triggers "fix login,auth troubleshooting" --applies-to "packages/api/**"`
+records exact whole-query trigger phrases and repository-relative path patterns.
+Triggers use the alias normalization and limits (20 unique phrases, 80 code points),
+but match the entire query and add a fixed +4 contribution labeled `trigger` in
+`search --explain`. They do not bypass explicit field filters or AND queries.
+Aliases remain the general BM25 vocabulary field.
+
+`engram search "fix login" --path packages/api/auth.ts --explain` filters out
+memories whose nonempty `appliesTo` patterns do not match. Unscoped memories stay
+eligible. Without `--path`, applicability does not filter. Paths are case-sensitive
+and repository-relative with forward slashes; absolute paths and `..` are rejected.
+Patterns support `*` within a segment and `**` across segments; no other glob syntax.
+At most 20 patterns, 256 characters each. `engram edit <id> --triggers ""` or
+`--applies-to ""` clears that field; omitting the flags preserves it. Fields also
+round-trip through Markdown. These flags belong to the CLI; use the CLI to manage
+them from harnesses.

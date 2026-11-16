@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vite-plus/test";
 import { searchEngrams, searchEngramsLegacy } from "../src/search.js";
+import { rankEntries } from "../src/rank.js";
+import { parseQuery } from "../src/query.js";
 import type { Engram } from "../src/domain.js";
 
 const mem = (over: Partial<Engram> & { id: string; title: string }): Engram => ({
@@ -409,5 +411,77 @@ describe("searchEngrams: alias field (ENG-47)", () => {
       token: "auth",
       component: "bm25",
     });
+  });
+});
+
+describe("ENG-19 contextual retrieval", () => {
+  it("retrieves exact triggers with an explanation", () => {
+    const entry = mem({ id: "trigger", title: "Database convention", triggers: ["fix login"] });
+    const results = searchEngrams([entry], "fix login", undefined, { explain: true });
+    expect(results[0]?.engram.id).toBe("trigger");
+    expect(results[0]?.explanation?.contributions).toContainEqual({
+      field: "trigger",
+      token: "fix login",
+      score: 4,
+      component: "trigger",
+    });
+    expect(searchEngrams([entry], "fix logins")).toEqual([]);
+  });
+  it("filters scoped entries only with an explicit path", () => {
+    const entries = [
+      mem({ id: "scoped", title: "auth", appliesTo: ["packages/api/**"] }),
+      mem({ id: "global", title: "auth" }),
+    ];
+    expect(searchEngrams(entries, "auth")).toHaveLength(2);
+    expect(
+      searchEngrams(entries, "auth", undefined, { currentPath: "packages/web/a.ts" }).map(
+        (r) => r.engram.id,
+      ),
+    ).toEqual(["global"]);
+    expect(
+      searchEngrams(entries, "auth", undefined, { currentPath: "packages/api/a.ts" }),
+    ).toHaveLength(2);
+    expect(() => searchEngrams(entries, "auth", undefined, { currentPath: "../secret" })).toThrow();
+  });
+});
+
+describe("trigger review regressions", () => {
+  it("uses parsed structure instead of raw punctuation", () => {
+    for (const query of ["node:fs", "a*", "alpha OR beta"]) {
+      const entry = mem({ id: "trigger", title: "unrelated", triggers: [query] });
+      expect(searchEngrams([entry], query)[0]?.score).toBe(4);
+    }
+    for (const query of ["title:missing", '"missing phrase"', "missing*", "missing AND absent"]) {
+      const entry = mem({ id: "trigger", title: "unrelated", triggers: [query] });
+      expect(searchEngrams([entry], query)).toEqual([]);
+    }
+  });
+  it("adds four to the lexical score even when lexical retrieval abstains", () => {
+    const query = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima";
+    const entry = mem({ id: "trigger", title: "bravo", triggers: [query] });
+    const list = [
+      entry,
+      ...Array.from({ length: 10 }, (_, i) => mem({ id: `f${i}`, title: "bravo filler" })),
+    ];
+    expect(
+      searchEngrams(
+        list.map((m) => ({ ...m, triggers: [] })),
+        query,
+      ),
+    ).toEqual([]);
+    const lexical = rankEntries(list, parseQuery(query), { explain: true }).find(
+      (r) => r.engram === entry,
+    )!;
+    for (const explain of [true, false]) {
+      const result = searchEngrams(list, query, 1, { explain })[0]!;
+      expect(result.engram.id).toBe("trigger");
+      expect(result.score).toBe(lexical.score + 4);
+      if (explain)
+        expect(result.explanation?.contributions).toEqual([
+          ...lexical.explanation!.contributions,
+          { field: "trigger", token: query, score: 4, component: "trigger" },
+        ]);
+      else expect(result.explanation).toBeUndefined();
+    }
   });
 });

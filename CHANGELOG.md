@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Exact retrieval triggers and repository-relative path applicability (ENG-19).
+  Add/edit `--triggers` and `--applies-to`; search `--path` filters scoped memories
+  and `--explain` exposes exact trigger contributions.
+
 ### Changed
 
 - **Search abstains on near-match queries whose candidates cover almost

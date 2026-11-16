@@ -465,6 +465,13 @@ if grep -Fx ".engram/" .gitignore; then
   fail "tracked mode left the project store ignored"
 fi
 
+step "Retrieval triggers and applicability"
+retrieval_id=$(engram add --title "Retrieval convention" --triggers "repair widgets" --applies-to "packages/api/**" "Durable convention" | entry_id)
+engram search "repair widgets" --path packages/api/auth.ts --json --explain | parse_json 'value.results.some(r => r.id === "'"$retrieval_id"'" && r.explanation.contributions.some(c => c.field === "trigger"))'
+engram search "repair widgets" --path packages/web/auth.ts --json | parse_json 'value.results.length === 0'
+engram edit "$retrieval_id" --triggers "" --applies-to ""
+engram search "repair widgets" --json | parse_json 'value.results.length === 0'
+
 step "Secret scanner policies"
 before_count=$(find .engram/engrams -type f -name '*.md' | wc -l)
 scan_log="$run_root/scanner.log"

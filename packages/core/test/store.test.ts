@@ -4677,6 +4677,33 @@ describe("EngramStore / ENG-46 aliases", () => {
 
   /* ------------------------ model + write boundary ------------------------ */
 
+  it.live("ENG-19 persists, preserves and clears retrieval metadata", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const m = yield* store.add(
+        "project",
+        input({ triggers: [" Fix Login ", "fix login"], appliesTo: ["packages/api/**"] }),
+        NOSCAN,
+      );
+      expect(readData(m.path).triggers).toEqual(["fix login"]);
+      expect((yield* store.get("project", m.id)).appliesTo).toEqual(["packages/api/**"]);
+      const updated = yield* store.update("project", m.id, { body: "changed" }, NOSCAN);
+      expect(readData(updated.path).triggers).toEqual(["fix login"]);
+      yield* store.update("project", m.id, { triggers: null, appliesTo: null }, NOSCAN);
+      expect(readData(updated.path)).not.toHaveProperty("triggers");
+      expect(readData(updated.path)).not.toHaveProperty("appliesTo");
+      for (const pattern of ["../secret", "/etc/passwd", "C:/secret", "a/../../b", "a\\b"]) {
+        const before = bytes(updated.path);
+        yield* Effect.flip(store.update("project", m.id, { appliesTo: [pattern] }, NOSCAN));
+        expect(bytes(updated.path)).toBe(before);
+      }
+      seed("0009-invalid.md", { ...BASE, id: "0009", appliesTo: ["../secret"] });
+      expect(
+        (yield* store.scan("project")).diagnostics.some((d) => d.code === "appliesTo_invalid"),
+      ).toBe(true);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
   it.live("add normalizes aliases at the write boundary", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;

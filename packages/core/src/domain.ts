@@ -87,6 +87,8 @@ export const FrontmatterSchema = Schema.Struct({
    * names. Rule violations are `aliases_invalid`; valid-but-noncanonical
    * values read as authored and canonicalize on the next mediated write. */
   aliases: Schema.optional(Schema.Array(Schema.String)),
+  triggers: Schema.optional(Schema.Array(Schema.String)),
+  appliesTo: Schema.optional(Schema.Array(Schema.String)),
   /** ISO 8601 timestamp with explicit zone (same contract as created/updated). */
   reviewAfter: Schema.optional(Schema.String),
   /** ISO 8601 timestamp with explicit zone (same contract as created/updated). */
@@ -123,6 +125,8 @@ export interface Engram {
    * of [] so every consumer can iterate without undefined checks; the key
    * serializes only when non-empty. */
   readonly aliases: ReadonlyArray<string>;
+  readonly triggers?: ReadonlyArray<string>;
+  readonly appliesTo?: ReadonlyArray<string>;
   readonly reviewAfter?: string | undefined;
   readonly expires?: string | undefined;
   readonly sourceType?: SourceType | undefined;
@@ -158,6 +162,8 @@ export interface EngramInput {
   /** ENG-46: user-authored alternate names; the write boundary normalizes
    * and validates the complete list before any file is written. */
   readonly aliases: ReadonlyArray<string>;
+  readonly triggers?: ReadonlyArray<string>;
+  readonly appliesTo?: ReadonlyArray<string>;
   readonly reviewAfter?: string | undefined;
   readonly expires?: string | undefined;
   readonly sourceType?: SourceType | undefined;
@@ -188,6 +194,8 @@ export interface EngramPatch {
   /* ENG-46: `aliases` joins the three-state fields. `undefined` preserves,
    * `null` clears, and an array replaces the whole set (normalized first). */
   readonly aliases?: ReadonlyArray<string> | null | undefined;
+  readonly triggers?: ReadonlyArray<string> | null | undefined;
+  readonly appliesTo?: ReadonlyArray<string> | null | undefined;
   readonly reviewAfter?: string | null | undefined;
   readonly expires?: string | null | undefined;
   readonly sourceType?: SourceType | null | undefined;

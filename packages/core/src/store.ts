@@ -21,6 +21,7 @@
  *   ---
  *   <markdown body>
  */
+import { metadataErrors, normalizeMetadata } from "./retrieval-metadata.js";
 import { Context, Effect, Layer, Option, Result } from "effect";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
@@ -159,6 +160,8 @@ const toEngram = (
   // ENG-46: read default []; the parsed YAML array is copied at the model
   // boundary like related, and valid noncanonical values stay as authored.
   aliases: fm.aliases === undefined ? [] : [...fm.aliases],
+  triggers: fm.triggers ?? [],
+  appliesTo: fm.appliesTo ?? [],
   reviewAfter: fm.reviewAfter,
   expires: fm.expires,
   sourceType: fm.sourceType,
@@ -203,6 +206,9 @@ function serialize(m: Engram): string {
    * alias-free files keep their exact current shape. Canonical key position:
    * right after related, before reviewAfter. */
   if (m.aliases.length > 0) data.aliases = [...m.aliases];
+  for (const name of ["triggers", "appliesTo"] as const) {
+    if (m[name]?.length) data[name] = normalizeMetadata(name, m[name]!);
+  }
   if (m.reviewAfter !== undefined) data.reviewAfter = m.reviewAfter;
   if (m.expires !== undefined) data.expires = m.expires;
   if (m.sourceType !== undefined) data.sourceType = m.sourceType;
@@ -732,6 +738,13 @@ const makeEngramStoreLive = (
           /* ENG-46: aliases normalize and validate BEFORE any filesystem side
            * effect (including creating the store directory), so a rejected
            * add leaves the store byte-identical. */
+          for (const name of ["triggers", "appliesTo"] as const) {
+            const errors = metadataErrors(name, input[name] ?? []);
+            if (errors.length)
+              return yield* Effect.fail(
+                new FrontmatterParseError({ file: probeFile, message: errors.join("; ") }),
+              );
+          }
           const aliasError = aliasFailure(input.aliases ?? []);
           if (aliasError !== undefined) {
             return yield* Effect.fail(
@@ -753,6 +766,8 @@ const makeEngramStoreLive = (
             supersedes: input.supersedes,
             related: input.related === undefined ? undefined : [...input.related],
             aliases: normalizeAliases(input.aliases ?? []),
+            triggers: normalizeMetadata("triggers", input.triggers ?? []),
+            appliesTo: normalizeMetadata("appliesTo", input.appliesTo ?? []),
             reviewAfter: input.reviewAfter,
             expires: input.expires,
             sourceType: input.sourceType,
@@ -985,6 +1000,16 @@ const makeEngramStoreLive = (
               );
             }
           }
+          for (const name of ["triggers", "appliesTo"] as const) {
+            const errors = metadataErrors(
+              name,
+              patch[name] === null ? [] : (patch[name] ?? mem[name] ?? []),
+            );
+            if (errors.length)
+              return yield* Effect.fail(
+                new FrontmatterParseError({ file: currentFile, message: errors.join("; ") }),
+              );
+          }
           const aliasInstruction =
             patch.aliases === undefined || patch.aliases === null
               ? patch.aliases
@@ -1033,6 +1058,14 @@ const makeEngramStoreLive = (
              * The preserved branch canonicalizes the current values; null
              * clears to the model default [] (the key then never serializes). */
             aliases: applyOptionalPatch(normalizeAliases(mem.aliases), aliasInstruction) ?? [],
+            triggers: normalizeMetadata(
+              "triggers",
+              patch.triggers === undefined ? (mem.triggers ?? []) : (patch.triggers ?? []),
+            ),
+            appliesTo: normalizeMetadata(
+              "appliesTo",
+              patch.appliesTo === undefined ? (mem.appliesTo ?? []) : (patch.appliesTo ?? []),
+            ),
             reviewAfter: applyOptionalPatch(mem.reviewAfter, patch.reviewAfter),
             expires: applyOptionalPatch(mem.expires, patch.expires),
             sourceType: applyOptionalPatch(mem.sourceType, patch.sourceType),
