@@ -121,3 +121,19 @@ export interface EditOptions {
 export interface InitOptions {
   readonly tracked: boolean;
 }
+
+/** Stateless automatic recall. Run with runOpAtDirectory(harnessDirectory, ...).
+ * Reject oversized inputs rather than silently changing the user's topic. */
+export interface ContextualRecallOptions {
+  readonly prompt: string;
+  /** Both intents use the same conservative policy; retained in diagnostics. */
+  readonly intent: "task" | "question";
+  /** Up to 16 repository-relative paths of at most 256 UTF-16 code units. */
+  readonly activePaths?: ReadonlyArray<string>;
+  /** Only actually emitted bootstrap identities, bound to their project root.
+   * null denotes personal-only context outside a project. No session cache. */
+  readonly bootstrap?: {
+    readonly projectRoot: string | null;
+    readonly selected: ReadonlyArray<{ readonly id: string; readonly scope: Scope }>;
+  };
+}

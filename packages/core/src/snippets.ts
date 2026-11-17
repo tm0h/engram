@@ -57,3 +57,16 @@ export function matchingSnippet(body: string, query: string): string | null {
   const text = parts.slice(start, end).join("").replace(/\s+/gu, " ").trim();
   return `${start > 0 ? "…" : ""}${text}${end < parts.length ? "…" : ""}`;
 }
+
+/** Opening advice for automatic recall when selection has metadata/trigger
+ * evidence but no matching body window. Manual search retains null snippets. */
+export function openingSnippet(body: string): string | null {
+  const compact = body.replace(/\s+/gu, " ").trim();
+  let text = "";
+  for (const { segment } of segmenter.segment(compact)) {
+    // Reserve one UTF-16 unit for an ellipsis; never split a grapheme.
+    if (text.length + segment.length > SNIPPET_MAX_CHARS - 1) return text ? `${text}…` : null;
+    text += segment;
+  }
+  return text || null;
+}

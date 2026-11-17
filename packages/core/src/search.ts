@@ -13,6 +13,7 @@
  * both sides; plain word queries are expanded with `tokenizeQuery`
  * (camelCase, snake_case, paths, and so on).
  */
+import { contextualQuery } from "./contextual-evidence.js";
 import { rankMetadata } from "./rank-metadata.js";
 import { validRetrievalPath, pathApplies } from "./retrieval-metadata.js";
 import type { Engram } from "./domain.js";
@@ -62,6 +63,9 @@ export interface SearchExplanation {
  * default excludes them). `now`: check time for expiry, for deterministic
  * tests; defaults to `Date.now()`. */
 export interface SearchOptions {
+  /** Interpret prompt text literally. Disables query-level abstention: automatic
+   * consumers must apply their per-entry confidence policy to these results. */
+  readonly literal?: boolean;
   readonly includeInactive?: boolean;
   readonly now?: number;
   readonly explain?: boolean;
@@ -118,12 +122,13 @@ export function searchEngrams(
       !m.appliesTo?.length ||
       m.appliesTo.some((pattern) => pathApplies(pattern, options.currentPath!)),
   );
-  const parsed = query ? parseQuery(query) : undefined;
+  const parsed = query ? parseQuery(options.literal ? contextualQuery(query) : query) : undefined;
   let results: SearchResult[];
   let beforeAbstention: ReadonlyArray<SearchResult> = [];
   if (parsed === undefined || parsed.alternatives.length === 0) {
     results = recencyResults(candidates, options.explain === true);
-  } else if (!abstentionEligible(parsed)) {
+  } else if (options.literal || !abstentionEligible(parsed)) {
+    // Literal consumers apply their own per-entry confidence policy.
     // ENG-59: queries the policy would never judge (structured shapes,
     // too few alternatives) rank with the caller's explain setting; no
     // contributions are collected for them.

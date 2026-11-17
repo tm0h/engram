@@ -1396,6 +1396,7 @@ const autoContextImpl = (): Effect.Effect<OpResult, unknown, EngramStore | Confi
       offset: page.offset,
       nextOffset: page.nextOffset,
       bootstrap: {
+        projectRoot: Option.getOrNull(root),
         policy,
         maxChars,
         selected:
