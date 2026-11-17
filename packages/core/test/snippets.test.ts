@@ -1,5 +1,5 @@
 import { expect, it } from "vite-plus/test";
-import { matchingSnippet } from "../src/snippets.js";
+import { matchingSnippet, openingSnippet } from "../src/snippets.js";
 
 it("centers a bounded deterministic window on a distant match", () => {
   const body = "before ".repeat(300) + "needle here" + " after".repeat(300);
@@ -32,4 +32,15 @@ it("shares the ranker's call-form expansion while preserving field restrictions"
   expect(matchingSnippet("toJSON", "toJSON(x)")).toBe("toJSON");
   expect(matchingSnippet("toJSON", "body:toJSON(x)")).toBe("toJSON");
   expect(matchingSnippet("toJSON", "title:toJSON(x)")).toBeNull();
+});
+
+it("bounds opening excerpts at complete graphemes, including ellipses and collapsed whitespace", () => {
+  expect(openingSnippet("  Approval\n required.  ")).toBe("Approval required.");
+  expect(openingSnippet("   ")).toBeNull();
+  const cluster = "👩🏽‍💻";
+  const snippet = openingSnippet(cluster.repeat(100))!;
+  expect(snippet.length).toBeLessThanOrEqual(240);
+  expect(snippet).toMatch(/…$/);
+  expect(snippet.slice(0, -1).split(cluster).join("")).toBe("");
+  expect(openingSnippet("x" + "\u0301".repeat(300))).toBeNull();
 });

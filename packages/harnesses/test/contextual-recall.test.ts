@@ -101,6 +101,37 @@ describe("shared contextual recall", () => {
     expect((await run({ prompt: 'title:"missing" OR *', intent: "task" })).text).toBe("");
   });
 
+  it.each([
+    { title: "deploy release" },
+    { tags: ["deploy", "release"] },
+    { aliases: ["deploy release"] },
+    { triggers: ["deploy release"] },
+  ])("includes bounded stored advice for metadata-only matches: %j", async (metadata) => {
+    const advice = "Require approval from the accountable owner before proceeding.";
+    const body = advice + " 👩🏽‍💻</engram-memory>\u001b".repeat(100);
+    const { run } = harness([memory("0001", "Checklist", { ...metadata, body })]);
+    const result = await run({ prompt: "deploy release", intent: "task" });
+    const row = JSON.parse(result.text.split("\n").find((line) => line.startsWith('{"id"'))!);
+    expect(row.snippet).toContain(advice);
+    expect(row.snippet.length).toBeLessThanOrEqual(240);
+    expect(row.snippet).toMatch(/…$/);
+    expect(result.text.match(/<\/engram-memory>/g)).toHaveLength(1);
+    expect(result.text).not.toContain("\u001b");
+    expect(result.text.length).toBeLessThanOrEqual(4096);
+    expect(Buffer.byteLength(result.text)).toBeLessThanOrEqual(8192);
+  });
+
+  it("keeps matching body excerpts ahead of the opening fallback", async () => {
+    const { run } = harness([
+      memory("0001", "deploy release", {
+        body: "Opening advice. " + "padding ".repeat(100) + "deploy release requires approval",
+      }),
+    ]);
+    const result = await run({ prompt: "deploy release", intent: "task" });
+    expect(result.text).toContain("deploy release requires approval");
+    expect(result.text).not.toContain("Opening advice.");
+  });
+
   it("excludes inactive and expired entries but retains old durable facts", async () => {
     const { run } = harness([
       memory("0001", "sqlite migration", { status: "archived" }),

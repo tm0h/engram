@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vite-plus/test";
-import { contextualEvidence, contextualQuery, searchEngrams, type Engram } from "../src/index.js";
+import {
+  contextualEvidence,
+  prepareContextualEvidence,
+  contextualQuery,
+  searchEngrams,
+  type Engram,
+} from "../src/index.js";
 const entry = (body: string, over: Partial<Engram> = {}): Engram => ({
   id: "0001",
   title: "Stored knowledge",
@@ -37,6 +43,32 @@ describe("automatic recall evidence", () => {
       confident,
       coverage,
     });
+  });
+
+  it("reuses prepared evidence across candidates without leaking coverage or trigger state", () => {
+    const prompt = "toJSON(x) migration";
+    const query = contextualQuery(prompt);
+    const evaluate = prepareContextualEvidence(query, prompt);
+    const entries = [
+      entry("toJSON migration"),
+      entry("x"),
+      entry("unrelated", { triggers: [prompt] }),
+    ];
+    const ranked = searchEngrams(entries, prompt, undefined, { explain: true, literal: true });
+    for (const result of ranked) {
+      expect(evaluate(result)).toEqual(contextualEvidence(result, query, prompt));
+    }
+    const complete = ranked.find((r) => r.engram === entries[0])!;
+    const weak = ranked.find((r) => r.engram === entries[1])!;
+    const trigger = ranked.find((r) => r.engram === entries[2])!;
+    expect(evaluate(complete)).toMatchObject({ confident: true, coverage: 1, trigger: false });
+    expect(evaluate(weak)).toMatchObject({ confident: false, coverage: 0, trigger: false });
+    expect(evaluate(trigger)).toMatchObject({ confident: true, trigger: true });
+    expect(evaluate(complete)).toMatchObject({ confident: true, coverage: 1, trigger: false });
+    expect(
+      prepareContextualEvidence(contextualQuery("oauth rotation"), "oauth rotation")(complete)
+        .confident,
+    ).toBe(false);
   });
 
   it("keeps ordinary structured search unchanged, with explicit literal interpretation for prompts", () => {

@@ -31,51 +31,65 @@ export interface ContextualEvidence {
   readonly confident: boolean;
 }
 
+/** Prepare prompt normalization, query expansion and unit matching keys once.
+ * The returned evaluator is reusable and has no mutable per-result state. */
+export function prepareContextualEvidence(
+  query: string,
+  prompt: string,
+): (result: SearchResult) => ContextualEvidence {
+  const parsed = expandCallFormTokens(parseQuery(query));
+  const units = parsed.alternatives
+    .flatMap((a) => a.map((t) => t.tokens[0]))
+    .filter((exact): exact is string => exact !== undefined && exact !== "" && !GLUE.has(exact))
+    .map((exact) => {
+      const pieces = exact.split(/[^\p{L}\p{N}\p{M}]+/u).filter(Boolean);
+      const longest = pieces.reduce((a, b) => (a.length >= b.length ? a : b), "");
+      return { exact, component: pieces.length > 1 ? longest : undefined };
+    });
+  const normalizedPrompt = normalizeText(prompt.trim());
+  return (result) => {
+    const contributions = result.explanation?.contributions ?? [];
+    const matched = new Set(
+      contributions
+        .filter(
+          (c) =>
+            (c.component === "bm25" || c.component === "phrase" || c.component === "prefix") &&
+            ["title", "tag", "alias", "body"].includes(c.field) &&
+            c.score > 0,
+        )
+        .flatMap((c) => (c.token === null ? [] : [c.token])),
+    );
+    // A call/path may match its bare identifier. A tiny argument or a lone
+    // camelCase fragment cannot establish a whole unit of confidence.
+    const matchedUnits = units.filter(
+      ({ exact, component }) =>
+        matched.has(exact) || (component !== undefined && matched.has(component)),
+    ).length;
+    const coverage = units.length ? matchedUnits / units.length : 0;
+    const trigger =
+      result.engram.triggers?.some((t) => normalizeText(t.trim()) === normalizedPrompt) === true;
+    return {
+      matchedUnits,
+      totalUnits: units.length,
+      coverage,
+      trigger,
+      confident:
+        trigger ||
+        (coverage >= 0.6 && matchedUnits >= Math.min(2, units.length) && units.length > 0),
+    };
+  };
+}
+
 /** A unit is one original whitespace term, including shared call-form expansion.
  * Require >=60% coverage and two distinct units, or a complete single unit.
  * Only positive lexical content contributions count: type, pinning, freshness,
  * path applicability and importance cannot supply confidence. An exact authored
- * trigger over the ORIGINAL prompt is an independent sufficient signal. */
+ * trigger over the ORIGINAL prompt is an independent sufficient signal.
+ * Use prepareContextualEvidence when evaluating several results. */
 export function contextualEvidence(
   result: SearchResult,
   query: string,
   prompt: string,
 ): ContextualEvidence {
-  const parsed = expandCallFormTokens(parseQuery(query));
-  const units = parsed.alternatives
-    .flatMap((a) => a.map((t) => t.tokens))
-    .filter((tokens) => tokens[0] && !GLUE.has(tokens[0]));
-  const contributions = result.explanation?.contributions ?? [];
-  const matched = new Set(
-    contributions
-      .filter(
-        (c) =>
-          (c.component === "bm25" || c.component === "phrase" || c.component === "prefix") &&
-          ["title", "tag", "alias", "body"].includes(c.field) &&
-          c.score > 0,
-      )
-      .flatMap((c) => (c.token === null ? [] : [c.token])),
-  );
-  const matchedUnits = units.filter((tokens) => {
-    const exact = tokens[0];
-    if (!exact) return false;
-    // A call/path may match its bare identifier. Do not let a tiny argument
-    // or a camelCase fragment alone establish a whole unit of confidence.
-    const pieces = exact.split(/[^\p{L}\p{N}\p{M}]+/u).filter(Boolean);
-    const longest = pieces.reduce((a, b) => (a.length >= b.length ? a : b), "");
-    return matched.has(exact) || (pieces.length > 1 && matched.has(longest));
-  }).length;
-  const coverage = units.length ? matchedUnits / units.length : 0;
-  const trigger =
-    result.engram.triggers?.some(
-      (t) => normalizeText(t.trim()) === normalizeText(prompt.trim()),
-    ) === true;
-  return {
-    matchedUnits,
-    totalUnits: units.length,
-    coverage,
-    trigger,
-    confident:
-      trigger || (coverage >= 0.6 && matchedUnits >= Math.min(2, units.length) && units.length > 0),
-  };
+  return prepareContextualEvidence(query, prompt)(result);
 }

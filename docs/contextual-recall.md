@@ -80,8 +80,12 @@ BM25 score threshold. Corpus labels and existing baseline gates are unchanged.
 | Retrieval deadline  | 500 ms, including configuration and store reads                         |
 
 Oversized or malformed inputs produce an empty result before store/config reads.
-Output is packed by whole rows, with bounded titles and matching body excerpts;
-only actually emitted entries appear in `details.selected`. Stored controls and
+Query units and normalized trigger text are prepared once per recall and reused
+across candidates. Output is packed by whole rows, with bounded titles and matching
+body excerpts; confident metadata/trigger-only matches use a bounded opening
+excerpt when no matching body window exists. Manual search keeps its null
+excerpt for metadata-only matches.
+Only actually emitted entries appear in `details.selected`. Stored controls and
 angle brackets are sanitized inside a complete untrusted-memory frame. Scores,
 coverage, timing, store paths and continuation/tool instructions are absent from prompt
 text. Titles/snippets remain recorded memory data, not instructions.

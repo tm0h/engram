@@ -4,9 +4,10 @@ import {
   DEFAULT_AUTO_CONTEXT_SCOPE,
   EngramStore,
   contextualQuery,
-  contextualEvidence,
+  prepareContextualEvidence,
   searchEngrams,
   matchingSnippet,
+  openingSnippet,
   pathApplies,
   validRetrievalPath,
   type Engram,
@@ -117,9 +118,10 @@ const retrieve = (opts: ContextualRecallOptions) =>
     let duplicateCount = 0;
     let confidentCount = 0;
     const header = personalOnly ? `(${PERSONAL_ONLY_NOTE})\n` : "";
+    const evidenceFor = prepareContextualEvidence(query, opts.prompt);
     for (const result of ranked) {
       const m = result.engram;
-      const evidence = contextualEvidence(result, query, opts.prompt);
+      const evidence = evidenceFor(result);
       const duplicate = delivered.has(`${m.scope}:${m.id}`);
       if (ranking.length < CONTEXTUAL_RECALL_LIMITS.diagnosticResults)
         ranking.push({
@@ -142,7 +144,7 @@ const retrieve = (opts: ContextualRecallOptions) =>
           scope: m.scope,
           type: m.type,
           title: m.title.slice(0, 256),
-          snippet: matchingSnippet(m.body, query),
+          snippet: matchingSnippet(m.body, query) ?? openingSnippet(m.body),
         }),
       );
       const text = frameRecall(header + [...rows, row].join("\n"));
