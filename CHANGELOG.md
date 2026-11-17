@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Matching body snippets and compact relevance reasons in search summaries.
+- `engram related <id>` for direct lifecycle lineage and explicit links, with
+  exact same-scope resolution and bounded pagination.
+- Untrusted-memory framing and whole-entry pagination for harness search output.
+
 ### Changed
 
 - Automatic startup context now selects pinned memories, important decisions and

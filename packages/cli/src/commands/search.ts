@@ -72,7 +72,7 @@ export const searchCommand = (query: string, opts: SearchOptions) =>
         first = false;
       }
       if (results.length) any = true;
-      yield* out(renderSearch(results));
+      yield* out(renderSearch(results, query));
     }
     if (!any) yield* out(chalk.gray(`No matches for "${query}".`));
   });

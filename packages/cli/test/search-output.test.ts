@@ -55,7 +55,7 @@ describe("search JSON and explanations", () => {
       searchCommand(query, { scope: "project", ...opts }).pipe(Effect.provide(MainLive)),
     );
 
-  it("emits one JSON document with pagination and no memory bodies or filesystem paths", async () => {
+  it("emits bounded snippets with pagination and excludes stored body/path fields", async () => {
     await run({ json: true, explain: true, limit: 1, offset: 1 });
     expect(lines).toHaveLength(1);
     const parsed = JSON.parse(lines[0]) as {
@@ -89,7 +89,11 @@ describe("search JSON and explanations", () => {
     });
     expect(parsed.results[0]?.score).toBeCloseTo(bodyPoints, 5);
     expect(parsed.results[0]?.explanation.contributions[0]?.score).toBeCloseTo(bodyPoints, 5);
-    expect(lines[0]).not.toContain("private detail");
+    expect(JSON.parse(lines[0]).results[0]).toMatchObject({
+      snippet: "auth private detail",
+      relevance: "Matched body",
+    });
+    expect(JSON.parse(lines[0]).results[0]).not.toHaveProperty("body");
     expect(lines[0]).not.toContain(root);
   });
   it("emits empty JSON without a prose trailer", async () => {
@@ -104,10 +108,11 @@ describe("search JSON and explanations", () => {
     expect(lines.join("\n")).toMatch(/score=0\.831776/);
     expect(lines.join("\n")).not.toContain("private body");
   });
-  it("preserves default text output and does not add explanations", async () => {
+  it("explains title-only hits without an unrelated body preview", async () => {
     await run({ limit: 1 });
     expect(lines.join("\n")).toContain("Auth choice");
-    expect(lines.join("\n")).toContain("private body");
+    expect(lines.join("\n")).not.toContain("private body");
+    expect(lines.join("\n")).toContain("Matched title");
     expect(lines.join("\n")).not.toContain("contributions");
   });
   it("keeps legacy scope headers and per-scope limits", async () => {

@@ -2,6 +2,8 @@
  * Output formatting helpers. All return plain strings; chalk handles TTY vs
  * piped automatically (colors are stripped when output is not a TTY).
  */
+import { searchRelevance } from "./search-output.js";
+import { matchingSnippet } from "./snippets.js";
 import chalk from "chalk";
 import type { Engram, EngramType } from "./domain.js";
 import type { LinkAdjacency, LinkTargetResolution } from "./links.js";
@@ -97,7 +99,7 @@ export function renderFull(m: Engram): string {
 }
 
 /** Render search results with scores. */
-export function renderSearch(results: ReadonlyArray<SearchResult>): string {
+export function renderSearch(results: ReadonlyArray<SearchResult>, query = ""): string {
   if (!results.length) return chalk.gray("(no matches)");
   return results
     .map(({ engram: m, score }) => {
@@ -105,8 +107,10 @@ export function renderSearch(results: ReadonlyArray<SearchResult>): string {
       const meta = chalk.gray(
         `      ${dateShort(m.updated)} · score ${score}${m.author ? ` · ${m.author}` : ""}`,
       );
-      const preview = m.body ? chalk.gray(`      ${truncate(m.body, 100)}`) : "";
-      return `${line}\n${meta}${preview ? "\n" + preview : ""}`;
+      const snippet = matchingSnippet(m.body, query);
+      const reason = `      ${searchRelevance(m, query)}`;
+      const preview = snippet === null ? "" : chalk.gray(`      ${JSON.stringify(snippet)}`);
+      return `${line}\n${meta}\n${reason}${preview ? "\n" + preview : ""}`;
     })
     .join("\n");
 }
@@ -177,9 +181,40 @@ export function renderContext(engrams: ReadonlyArray<Engram>, opts: ContextOpts)
  * then every incoming backlink. Serializable plain data so the shared op and
  * the CLI build the same shape from the same adjacency and pre-slice it with
  * the same pagination math. */
-export type LinksRow =
+export type LinksRow = (
   | { readonly direction: "outgoing"; readonly resolution: LinkTargetResolution }
-  | { readonly direction: "incoming"; readonly entry: Engram };
+  | { readonly direction: "incoming"; readonly entry: Engram }
+) & { readonly relation?: "supersedes" | "superseded by" | "related" | "related by" };
+
+/** Direct edges only; lifecycle history remains visible even when inactive. */
+export function linkRows(adjacency: LinkAdjacency): LinksRow[] {
+  return [
+    ...(adjacency.supersedes
+      ? [
+          {
+            direction: "outgoing" as const,
+            resolution: adjacency.supersedes,
+            relation: "supersedes" as const,
+          },
+        ]
+      : []),
+    ...adjacency.outgoing.map((resolution) => ({
+      direction: "outgoing" as const,
+      resolution,
+      ...(adjacency.includeLifecycle ? { relation: "related" as const } : {}),
+    })),
+    ...(adjacency.supersededBy ?? []).map((entry) => ({
+      direction: "incoming" as const,
+      entry,
+      relation: "superseded by" as const,
+    })),
+    ...adjacency.incoming.map((entry) => ({
+      direction: "incoming" as const,
+      entry,
+      ...(adjacency.includeLifecycle ? { relation: "related by" as const } : {}),
+    })),
+  ];
+}
 
 /** The pre-sliced page handed to renderLinks: the row window plus the numbers
  * needed to describe an empty window explicitly. The pagination footer is not
@@ -260,7 +295,12 @@ function rowLines(row: LinksRow): string[] {
  * rows on this page). Genuinely empty sections print `(none)`; a window at or
  * past the total prints an explicit offset note instead. */
 export function renderLinks(adjacency: LinkAdjacency, page: LinksPage): string {
-  const lines: string[] = [targetHeader(adjacency.target)];
+  const lines: string[] = [
+    targetHeader(adjacency.target).replace(
+      /^Links/,
+      adjacency.includeLifecycle ? "Related" : "Links",
+    ),
+  ];
   if (adjacency.target.status === "ambiguous") {
     lines.push(...claimantLines(adjacency.target.claimants, "    "));
   }
@@ -282,7 +322,11 @@ export function renderLinks(adjacency: LinkAdjacency, page: LinksPage): string {
       current = row.direction;
       lines.push(current === "outgoing" ? "Outgoing" : "Incoming");
     }
-    lines.push(...rowLines(row));
+    lines.push(
+      ...rowLines(row).map((line) =>
+        row.relation ? `  [${row.relation}] ${line.trimStart()}` : line,
+      ),
+    );
   }
   return lines.join("\n");
 }

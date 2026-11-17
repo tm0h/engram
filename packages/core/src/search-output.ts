@@ -1,4 +1,8 @@
 /** Public search summaries. Explicit allowlist: never serialize stored bodies or paths. */
+import { rankEntries } from "./rank.js";
+import { parseQuery } from "./query.js";
+import { normalizeText } from "./tokenize.js";
+import { matchingSnippet } from "./snippets.js";
 import type { Engram } from "./domain.js";
 import type { SearchExplanation, SearchResult } from "./search.js";
 
@@ -7,6 +11,8 @@ export interface SearchSummary extends Pick<
   "id" | "scope" | "title" | "type" | "tags" | "updated" | "pinned"
 > {
   readonly score: number;
+  readonly snippet: string | null;
+  readonly relevance: string;
   readonly explanation?: SearchExplanation;
 }
 
@@ -27,6 +33,25 @@ export function searchPaginationError(offset: number, limit?: number): string | 
   if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1))
     return "limit must be a positive safe integer";
   return undefined;
+}
+
+/** Compact reasons use the same lexical matcher without changing retrieval scores. */
+export function searchRelevance(m: Engram, query: string): string {
+  const parsed = parseQuery(query);
+  if (!parsed.alternatives.length) return "Recency order";
+  const fields = [
+    ...new Set(
+      rankEntries([m], parsed, { explain: true })[0]
+        ?.explanation?.contributions.filter((c) => c.component !== "pinned")
+        .map((c) => c.field) ?? [],
+    ),
+  ];
+  const plain = parsed.alternatives.every(
+    (a) => a.length === 1 && a[0]!.kind === "word" && !a[0]!.field,
+  );
+  if (plain && m.triggers?.some((t) => normalizeText(t.trim()) === normalizeText(query.trim())))
+    fields.push("trigger");
+  return fields.length ? `Matched ${fields.join(", ")}` : "Pinned entry; no lexical body match";
 }
 
 /** Takes globally ranked results and slices before producing public summaries. */
@@ -56,6 +81,8 @@ export function searchReport(
       updated: m.updated,
       pinned: m.pinned,
       score,
+      snippet: matchingSnippet(m.body, query),
+      relevance: searchRelevance(m, query),
       ...(explanation ? { explanation } : {}),
     })),
   };
@@ -73,7 +100,7 @@ export function renderSearchExplanation(report: SearchReport): string {
                 `${c.field}${c.token === null ? "" : ` ${JSON.stringify(c.token)}`} +${c.score}`,
             )
             .join(", ");
-    return `${r.scope}:${r.id} ${JSON.stringify(r.title)} score=${r.score}\n  ${why ?? ""}`;
+    return `${r.scope}:${r.id} ${JSON.stringify(r.title)} score=${r.score}\n  ${why ?? r.relevance}${r.snippet === null ? "" : `\n  ${JSON.stringify(r.snippet)}`}`;
   });
   if (lines.length === 0) lines.push("(no matches on this page)");
   lines.push(

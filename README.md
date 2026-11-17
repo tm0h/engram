@@ -600,3 +600,24 @@ Existing enable/scope/limit values are retained without rewriting configuration
 files; missing new settings use the defaults above. Both selection modes obey
 the eligibility toggles and output caps. Manual `engram context` and search
 pagination are unchanged. Exact token accounting is a separate capability.
+
+### Matching snippets and related context
+
+Search text, JSON, and harness results now show a bounded matching body excerpt
+(maximum 240 UTF-16 characters, including ellipses) and a compact relevance reason.
+Excerpts prefer the earliest contiguous query phrase, then the earliest lexical
+match. Original Unicode graphemes are retained; whitespace is collapsed.
+Metadata-only matches have `snippet: null`, rather than an unrelated body preview.
+Detailed score contributions remain opt-in with `--explain`.
+
+`engram related <id> [--scope project|personal] [--offset n] [--limit n]`
+shows direct `supersedes` and `superseded by` lineage plus authored `related`
+links and computed `related by` backlinks, including inactive entries. It uses
+one same-scope scan, exact ids, and the existing missing/ambiguous resolution
+rules. Outgoing lineage precedes outgoing links, then incoming lineage and
+backlinks; incoming groups sort by creation time and id. The default page is 10
+rows, maximum 100, with an 8192-character output cap and continuation footer.
+No semantic or transitive edges are inferred or persisted. `engram links` keeps
+its explicit-link-only behavior. Pi also supports `/engram related <id>` with
+the same flags. Harness recalled snippets and related context are framed as
+untrusted data; complete frames and continuation details survive size capping.

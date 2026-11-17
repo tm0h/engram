@@ -289,3 +289,20 @@ Existing enable/scope/limit values are retained without rewriting configuration
 files; missing new settings use the defaults above. Both selection modes obey
 the eligibility toggles and output caps. Manual `engram context` and search
 pagination are unchanged. Exact token accounting is a separate capability.
+
+### Matching snippets and related context
+
+Search summaries include a deterministic body snippet of at most 240 characters,
+centered on the earliest lexical match (contiguous phrases take priority), plus
+matched-field relevance reasons. Title/tag/alias/trigger-only hits have a null
+snippet; unrelated body text is omitted. JSON exposes `snippet` and `relevance`
+without a full `body` or filesystem path. Harness search frames recalled text
+as untrusted memory data; it never overrides current instructions. Capped pages
+report only emitted entries and preserve the first unread offset.
+
+`engram related <id>` complements `links` with direct lifecycle lineage:
+`supersedes`, `superseded by`, outgoing `related`, and incoming `related by`.
+It includes inactive history, resolves exact same-scope ids from one scan, and
+preserves MISSING/AMBIGUOUS states. It infers no semantic or transitive edges.
+Use `--scope project|personal`, `--offset n`, and `--limit n` (default 10,
+maximum 100). Follow the continuation footer; related reads never write files.
