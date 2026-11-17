@@ -1,3 +1,4 @@
+import { RECALL_PREFIX, RECALL_SUFFIX, recallData, frameRecall } from "./recall-frame.js";
 /**
  * Harness-agnostic engram operations. Every op returns an infallible
  * `OpResult` Effect: domain errors are captured into `isError` results so any
@@ -20,6 +21,7 @@ import {
   ENGRAM_TYPES,
   SOURCE_TYPES,
   computeLinkAdjacency,
+  linkRows,
   detectAuthor,
   effectiveStatus,
   ensureGitignoreLine,
@@ -392,37 +394,66 @@ export const searchOp = (opts: SearchOptions): Effect.Effect<OpResult, never, En
       const ranked = searchEngrams(candidates, opts.query, undefined, {
         explain: opts.explain === true,
       });
-      const matched = ranked.map((r) => r.engram);
-      const multiScope = resolved.scopes.length > 1;
-      const page = paginate(matched, opts.offset ?? 0, opts.limit ?? DEFAULT_SEARCH_LIMIT);
-      const report = searchReport(ranked, opts.query, page.offset, page.limit);
-
-      const lines: string[] = [
-        `# Engram search: "${opts.query}" - ${matched.length} match${matched.length === 1 ? "" : "es"}.`,
-      ];
-      if (!matched.length) {
-        lines.push(`No matches. Broaden the query, or call engram_context for the digest.`);
-        if (resolved.personalOnly) lines.push(`(${PERSONAL_ONLY_NOTE})`);
-        return ok(lines.join("\n"), { ...report });
+      const offset = opts.offset ?? 0;
+      const limit = opts.limit ?? DEFAULT_SEARCH_LIMIT;
+      const header = `# Engram search: ${recallData(JSON.stringify(opts.query.slice(0, 256)))} - ${ranked.length} matches.`;
+      const rows: string[] = [];
+      const summaries: ReturnType<typeof searchReport>["results"][number][] = [];
+      const footerFor = (count: number): string => {
+        const next = offset + count;
+        if (count === 0 || next >= ranked.length) return "";
+        const params: Record<string, unknown> = { query: opts.query, offset: next };
+        if (opts.scope !== undefined) params.scope = opts.scope;
+        if (opts.limit !== undefined) params.limit = opts.limit;
+        if (opts.explain) params.explain = true;
+        const call = recallData(`engram_search(${JSON.stringify(params)})`);
+        return call.length <= 1024
+          ? pageFooter({
+              from: offset + 1,
+              to: next,
+              total: ranked.length,
+              nextOffset: next,
+              nextCall: call,
+            })
+          : `(repeat engram_search with the same query, scope and limit; offset ${next})`;
+      };
+      const compose = (count: number) =>
+        [header, ...rows.slice(0, count), footerFor(count)].filter(Boolean).join("\n");
+      // Build only the emitted prefix. Bound each metadata field before encoding
+      // so even a pathological first entry fits and always advances one row.
+      for (let i = offset; i < ranked.length && summaries.length < limit; i++) {
+        const summary = searchReport(ranked, opts.query, i, 1).results[0]!;
+        const row = recallData(
+          JSON.stringify({
+            id: summary.id,
+            scope: summary.scope,
+            title: summary.title.slice(0, 256),
+            type: summary.type,
+            score: summary.score,
+            relevance: summary.relevance,
+            snippet: summary.snippet,
+          }),
+        );
+        rows.push(row);
+        if (frameRecall(compose(rows.length)).length > MAX_RESULT_CHARS) {
+          rows.pop();
+          break;
+        }
+        summaries.push(summary);
       }
-      lines.push(...page.items.map((m) => lineOf(m, multiScope)));
-
-      const from = page.offset + 1;
-      const to = page.offset + page.items.length;
-      let footer: string | null = null;
-      if (page.nextOffset !== null && page.items.length > 0) {
-        const nextParams: Record<string, unknown> = { query: opts.query, offset: page.nextOffset };
-        if (opts.scope !== undefined) nextParams.scope = opts.scope;
-        if (opts.limit !== undefined) nextParams.limit = opts.limit;
-        if (opts.explain) nextParams.explain = true;
-        const nextCall = `engram_search(${JSON.stringify(nextParams)})`;
-        footer = `${pageFooter({ from, to, total: page.total, nextOffset: page.nextOffset, nextCall })}; use engram_show({"id":"…"}) to read one`;
-      }
-
-      const body = lines.join("\n");
-      const text = footer === null ? applyCap(body) : capWithFooter(body, footer).text;
-      return ok(text, {
-        ...report,
+      const count = summaries.length;
+      const nextOffset = count > 0 && offset + count < ranked.length ? offset + count : null;
+      const body = count
+        ? compose(count)
+        : `${header}\n${ranked.length ? "(no matches on this page)" : "No matches. Broaden the query, or call engram_context for the digest."}`;
+      return ok(frameRecall(body), {
+        schemaVersion: 1,
+        query: opts.query,
+        total: ranked.length,
+        offset,
+        limit,
+        nextOffset,
+        results: summaries,
       });
     }),
   );
@@ -619,9 +650,20 @@ export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, Engram
  * scan feeds `computeLinkAdjacency`; the flattened outgoing-then-incoming row
  * stream is paginated with the shared helpers and capped with the footer
  * reserved so a continuation is never truncated away. */
-export const linksOp = (opts: LinksOptions): Effect.Effect<OpResult, never, EngramStore> =>
+const graphOp = (
+  opts: LinksOptions,
+  includeLifecycle = false,
+): Effect.Effect<OpResult, never, EngramStore> =>
   capture(
     Effect.gen(function* () {
+      const resultBudget =
+        MAX_RESULT_CHARS - (includeLifecycle ? RECALL_PREFIX.length + RECALL_SUFFIX.length : 0);
+      const render = (adjacency: Parameters<typeof renderLinks>[0], page: LinksPage) => {
+        const text = renderLinks(adjacency, page);
+        return includeLifecycle ? recallData(text) : text;
+      };
+      const result = (text: string, details: Record<string, unknown>) =>
+        ok(includeLifecycle ? frameRecall(text) : text, details);
       const defaultLimit = opts.limit ?? DEFAULT_SEARCH_LIMIT;
       const invalid = searchPaginationError(opts.offset ?? 0, defaultLimit);
       if (invalid) return err(invalid);
@@ -640,15 +682,9 @@ export const linksOp = (opts: LinksOptions): Effect.Effect<OpResult, never, Engr
 
       // R1: exactly one scan per query; the same StoreScan feeds adjacency.
       const scanned = yield* store.scan(scope);
-      const adjacency = computeLinkAdjacency(scanned, opts.id);
+      const adjacency = computeLinkAdjacency(scanned, opts.id, includeLifecycle);
 
-      const rows: LinksRow[] = [
-        ...adjacency.outgoing.map((resolution) => ({
-          direction: "outgoing" as const,
-          resolution,
-        })),
-        ...adjacency.incoming.map((entry) => ({ direction: "incoming" as const, entry })),
-      ];
+      const rows = linkRows(adjacency);
       const page = paginate(rows, opts.offset ?? 0, defaultLimit);
 
       const warnings: string[] = [];
@@ -664,7 +700,7 @@ export const linksOp = (opts: LinksOptions): Effect.Effect<OpResult, never, Engr
         const next = page.offset + emitted;
         if (emitted === 0 || next >= page.total) return null;
         // The footer names the slash form: this operation has no LLM tool.
-        const parts = [`/engram links ${opts.id}`];
+        const parts = [`/engram ${includeLifecycle ? "related" : "links"} ${opts.id}`];
         if (opts.scope !== undefined) parts.push(`--scope ${opts.scope}`);
         parts.push(`--offset ${next}`);
         if (opts.limit !== undefined) parts.push(`--limit ${opts.limit}`);
@@ -673,7 +709,7 @@ export const linksOp = (opts: LinksOptions): Effect.Effect<OpResult, never, Engr
           to: next,
           total: page.total,
           nextOffset: next,
-          nextCall: parts.join(" "),
+          nextCall: includeLifecycle ? recallData(parts.join(" ")) : parts.join(" "),
         });
       };
       // P2 efficiency: render each row of the window exactly once. A
@@ -682,14 +718,14 @@ export const linksOp = (opts: LinksOptions): Effect.Effect<OpResult, never, Engr
       // prefix composes from those chunks byte-identically (the join structure
       // is the formatter's: header block, blank line, 8-char section label,
       // rows joined by newlines, blank line + label at a direction switch).
-      const emptyPage = renderLinks(adjacency, {
+      const emptyPage = render(adjacency, {
         offset: page.offset,
         total: page.total,
         rows: [],
       } satisfies LinksPage);
       const headerBlock = emptyPage.slice(0, emptyPage.indexOf("\n\n"));
       const rendered = page.items.map((row) => {
-        const single = renderLinks(adjacency, {
+        const single = render(adjacency, {
           offset: page.offset,
           total: page.total,
           rows: [row],
@@ -731,8 +767,8 @@ export const linksOp = (opts: LinksOptions): Effect.Effect<OpResult, never, Engr
         const footer = footerFor(emitted);
         const reserve =
           footer === null
-            ? MAX_RESULT_CHARS - LINKS_RESULT_MARKER.length - 1
-            : MAX_RESULT_CHARS - footer.length - LINKS_TRUNCATION_MARKER.length - 2;
+            ? resultBudget - LINKS_RESULT_MARKER.length - 1
+            : resultBudget - footer.length - LINKS_TRUNCATION_MARKER.length - 2;
         return reserve - warningsCost;
       };
       const joinedFor = (emitted: number): string => {
@@ -742,8 +778,8 @@ export const linksOp = (opts: LinksOptions): Effect.Effect<OpResult, never, Engr
 
       // Empty window: no rows, no trim, no footer (R13 offset note).
       if (page.items.length === 0) {
-        const capped = capText(joinedFor(0), MAX_RESULT_CHARS - LINKS_RESULT_MARKER.length - 1);
-        return ok(capped.truncated ? `${capped.text}\n${LINKS_RESULT_MARKER}` : capped.text, {
+        const capped = capText(joinedFor(0), resultBudget - LINKS_RESULT_MARKER.length - 1);
+        return result(capped.truncated ? `${capped.text}\n${LINKS_RESULT_MARKER}` : capped.text, {
           id: opts.id,
           scope,
           targetStatus: adjacency.target.status,
@@ -783,7 +819,7 @@ export const linksOp = (opts: LinksOptions): Effect.Effect<OpResult, never, Engr
       }
       const nextOffset = page.offset + emitted < page.total ? page.offset + emitted : null;
 
-      return ok(text, {
+      return result(text, {
         id: opts.id,
         scope,
         targetStatus: adjacency.target.status,
@@ -798,6 +834,9 @@ export const linksOp = (opts: LinksOptions): Effect.Effect<OpResult, never, Engr
       });
     }),
   );
+
+export const linksOp = (opts: LinksOptions) => graphOp(opts);
+export const relatedOp = (opts: LinksOptions) => graphOp(opts, true);
 
 /** Record a new engram. Defaults mirror the CLI: project scope, config type/author. */
 export const addOp = (opts: AddOptions): Effect.Effect<OpResult, never, EngramStore | ConfigRepo> =>

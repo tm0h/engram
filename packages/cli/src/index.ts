@@ -234,49 +234,56 @@ program
     run(Show.showCommand(id, { scope: opts.scope })),
   );
 
-program
-  .command("links <id>")
-  .description(
-    "Show the link graph around one entry: outgoing related plus incoming backlinks (exact id, same scope).",
-  )
-  .option(
-    "-s, --scope <scope>",
-    "personal | project (default: project if initialized)",
-    (v: string) => {
-      if (!isValidScopeArg(v)) {
-        throw new InvalidArgumentError('scope must be "project" or "personal"');
-      }
-      return v;
-    },
-  )
-  .option("--offset <n>", "0-based row offset into the flattened links stream.", (v: string) => {
-    if (!/^\d+$/.test(v) || !Number.isSafeInteger(Number(v))) {
-      throw new InvalidArgumentError("offset must be a nonnegative safe integer");
-    }
-    return Number(v);
-  })
-  .option(
-    "-n, --limit <n>",
-    `Max rows on the page (at most ${Links.MAX_LINKS_LIMIT}). Default 10.`,
-    (v: string) => {
-      if (!/^\d+$/.test(v) || !Number.isSafeInteger(Number(v)) || Number(v) < 1) {
-        throw new InvalidArgumentError("limit must be a positive safe integer");
-      }
-      if (Number(v) > Links.MAX_LINKS_LIMIT) {
-        throw new InvalidArgumentError(`limit must be at most ${Links.MAX_LINKS_LIMIT}`);
+for (const command of ["links", "related"])
+  program
+    .command(`${command} <id>`)
+    .description(
+      command === "related"
+        ? "Show direct lifecycle lineage and explicit links (exact id, same scope)."
+        : "Show outgoing related links and incoming backlinks (exact id, same scope).",
+    )
+    .option(
+      "-s, --scope <scope>",
+      "personal | project (default: project if initialized)",
+      (v: string) => {
+        if (!isValidScopeArg(v)) {
+          throw new InvalidArgumentError('scope must be "project" or "personal"');
+        }
+        return v;
+      },
+    )
+    .option("--offset <n>", "0-based row offset into the flattened links stream.", (v: string) => {
+      if (!/^\d+$/.test(v) || !Number.isSafeInteger(Number(v))) {
+        throw new InvalidArgumentError("offset must be a nonnegative safe integer");
       }
       return Number(v);
-    },
-  )
-  .action((id: string, opts: Record<string, string | number | undefined>) =>
-    run(
-      Links.linksCommand(id, {
-        scope: opts.scope as string | undefined,
-        offset: opts.offset as number | undefined,
-        limit: opts.limit as number | undefined,
-      }),
-    ),
-  );
+    })
+    .option(
+      "-n, --limit <n>",
+      `Max rows on the page (at most ${Links.MAX_LINKS_LIMIT}). Default 10.`,
+      (v: string) => {
+        if (!/^\d+$/.test(v) || !Number.isSafeInteger(Number(v)) || Number(v) < 1) {
+          throw new InvalidArgumentError("limit must be a positive safe integer");
+        }
+        if (Number(v) > Links.MAX_LINKS_LIMIT) {
+          throw new InvalidArgumentError(`limit must be at most ${Links.MAX_LINKS_LIMIT}`);
+        }
+        return Number(v);
+      },
+    )
+    .action((id: string, opts: Record<string, string | number | undefined>) =>
+      run(
+        Links.linksCommand(
+          id,
+          {
+            scope: opts.scope as string | undefined,
+            offset: opts.offset as number | undefined,
+            limit: opts.limit as number | undefined,
+          },
+          command === "related",
+        ),
+      ),
+    );
 
 program
   .command("edit <id> [content]")

@@ -475,6 +475,16 @@ engram show "$retrieval_id" | grep -F 'importance: 2'
 engram edit "$retrieval_id" --importance "" --triggers "" --applies-to ""
 engram search "repair widgets" --json | parse_json 'value.results.length === 0'
 
+step "Matching snippets and related lineage"
+snippet_body=$(node -e 'console.log("prefix ".repeat(100) + "snippetneedle evidence " + "suffix ".repeat(100))')
+snippet_id=$(engram add --title "Snippet probe" "$snippet_body" | entry_id)
+engram search snippetneedle --json | parse_json 'value.results.some(r => r.id === "'"$snippet_id"'" && r.snippet.includes("snippetneedle") && r.snippet.length <= 240 && r.relevance.includes("body") && !("body" in r))'
+lineage_id=$(engram add --title "Lineage probe" --supersedes "$snippet_id" --related "$decision_id" "Replacement evidence" | entry_id)
+engram related "$lineage_id" --limit 1 | grep -F "[supersedes] $snippet_id"
+engram related "$lineage_id" --limit 1 | grep -F 'engram related'
+engram related "$lineage_id" --offset 1 | grep -F "[related] $decision_id"
+engram related "$snippet_id" | grep -F "[superseded by] $lineage_id"
+
 step "Secret scanner policies"
 before_count=$(find .engram/engrams -type f -name '*.md' | wc -l)
 scan_log="$run_root/scanner.log"

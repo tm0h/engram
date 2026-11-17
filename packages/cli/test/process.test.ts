@@ -898,6 +898,27 @@ describe("engram links (process level, ENG-45)", () => {
       .map((f) => readFileSync(join(proj, ".engram", "engrams", f), "utf8"))
       .join("\n%%%\n");
 
+  it("related dispatches lifecycle rows and pagination through the CLI", () => {
+    if (!spawnOk) return;
+    const proj = freshProject("related");
+    const file = seedLink(proj, "0001", "Current", { related: ["0003"] });
+    writeFileSync(
+      file,
+      readFileSync(file, "utf8").replace("type: note", 'type: note\nsupersedes: "0002"'),
+    );
+    seedLink(proj, "0002", "Old");
+    seedLink(proj, "0003", "Explicit");
+    const before = snapshot(proj);
+    const first = runCli(["related", "0001", "--limit", "1"], proj, home);
+    expect(first.status).toBe(0);
+    expect(first.stdout).toContain("[supersedes] 0002");
+    expect(first.stdout).toContain("engram related 0001 --offset 1");
+    const next = runCli(["related", "0001", "--offset", "1"], proj, home);
+    expect(next.stdout).toContain("[related] 0003");
+    expect(runCli(["related", "0001", "--limit", "101"], proj, home).status).not.toBe(0);
+    expect(snapshot(proj)).toBe(before);
+  });
+
   it("defaults to project scope and renders both directions with markers", () => {
     if (!spawnOk) return;
     const proj = freshProject();

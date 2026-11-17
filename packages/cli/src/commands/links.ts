@@ -10,6 +10,7 @@ import { Effect } from "effect";
 import {
   EngramStore,
   computeLinkAdjacency,
+  linkRows,
   incompleteMemoryWarning,
   isValidScopeArg,
   renderLinks,
@@ -41,6 +42,7 @@ const capTo = (text: string, max: number): { text: string; truncated: boolean } 
 export const linksCommand = (
   id: string,
   opts: { scope?: string; offset?: number; limit?: number } = {},
+  includeLifecycle = false,
 ) =>
   Effect.gen(function* () {
     // Validation happens before any store access, with the same bounds the
@@ -69,17 +71,11 @@ export const linksCommand = (
 
     // One scan per query; the same StoreScan feeds adjacency.
     const scanned = yield* store.scan(scope);
-    const adjacency = computeLinkAdjacency(scanned, id);
+    const adjacency = computeLinkAdjacency(scanned, id, includeLifecycle);
 
     // Private pagination over the flattened outgoing-then-incoming stream
     // (same math as the shared paginate helper).
-    const rows: LinksRow[] = [
-      ...adjacency.outgoing.map((resolution) => ({
-        direction: "outgoing" as const,
-        resolution,
-      })),
-      ...adjacency.incoming.map((entry) => ({ direction: "incoming" as const, entry })),
-    ];
+    const rows = linkRows(adjacency);
     const total = rows.length;
     const start = Math.max(0, offset);
     const pageRows = rows.slice(start, start + limit);
@@ -102,7 +98,7 @@ export const linksCommand = (
       const next = start + emitted;
       if (emitted === 0 || next >= total) return null;
       // CLI form in the continuation (R9): this command has no LLM tool.
-      const parts = [`engram links ${id}`];
+      const parts = [`engram ${includeLifecycle ? "related" : "links"} ${id}`];
       if (opts.scope !== undefined) parts.push(`--scope ${opts.scope}`);
       parts.push(`--offset ${next}`);
       if (opts.limit !== undefined) parts.push(`--limit ${opts.limit}`);

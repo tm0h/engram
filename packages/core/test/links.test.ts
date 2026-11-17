@@ -564,3 +564,19 @@ describe("claimById first-claim guard (ENG-45 R2)", () => {
     });
   });
 });
+
+it("related context adds only direct lifecycle edges to explicit links", () => {
+  const entries = [
+    mem({ id: "0001", title: "Current", supersedes: "0002", related: ["0003"] }),
+    mem({ id: "0002", title: "Old" }),
+    mem({ id: "0003", title: "Related" }),
+    mem({ id: "0004", title: "Successor", supersedes: "0001" }),
+    mem({ id: "0005", title: "Unconnected" }),
+  ];
+  const adjacency = computeLinkAdjacency(scan({ entries }), "0001", true);
+  expect(adjacency.supersedes).toMatchObject({ status: "found", id: "0002" });
+  expect(adjacency.supersededBy?.map((m) => m.id)).toEqual(["0004"]);
+  expect(adjacency.outgoing.map((r) => r.id)).toEqual(["0003"]);
+  expect(computeLinkAdjacency(scan({ entries }), "0001")).not.toHaveProperty("supersedes");
+  expect(computeLinkAdjacency(scan({ entries }), "000", true).target.status).toBe("missing");
+});

@@ -47,6 +47,9 @@ export type LinkTargetResolution =
 export interface LinkAdjacency {
   /** The requested target's resolution (found, missing, or ambiguous). */
   readonly target: LinkTargetResolution;
+  readonly supersedes?: LinkTargetResolution;
+  readonly supersededBy?: ReadonlyArray<Engram>;
+  readonly includeLifecycle?: boolean;
   /** The found target's `related` ids resolved in authored order, one
    * discriminated result per slot; dangling and duplicate-claimed ids stay
    * in place. Empty when the target is missing or ambiguous. */
@@ -84,7 +87,11 @@ const chronological = (a: Engram, b: Engram): number =>
  *
  * Callers own scan acquisition (ENG-45's `linksOp` should pass one scan
  * per query so target and adjacency share one coherent snapshot). */
-export const computeLinkAdjacency = (scan: StoreScan, targetId: string): LinkAdjacency => {
+export const computeLinkAdjacency = (
+  scan: StoreScan,
+  targetId: string,
+  includeLifecycle = false,
+): LinkAdjacency => {
   /* Exact-id views, built once per call and shared by target and outgoing
    * resolution. Duplicate claims take precedence over entries; an unclaimed
    * id resolves to its first entry in scan order (the previous `find`
@@ -118,5 +125,18 @@ export const computeLinkAdjacency = (scan: StoreScan, targetId: string): LinkAdj
   const incoming = scan.entries
     .filter((m) => m.related?.includes(targetId) === true)
     .sort(chronological);
-  return { target, outgoing, incoming };
+  return {
+    target,
+    outgoing,
+    incoming,
+    ...(includeLifecycle
+      ? {
+          includeLifecycle: true,
+          ...(target.status === "found" && target.entry.supersedes
+            ? { supersedes: resolveExact(target.entry.supersedes) }
+            : {}),
+          supersededBy: scan.entries.filter((m) => m.supersedes === targetId).sort(chronological),
+        }
+      : {}),
+  };
 };

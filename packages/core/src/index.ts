@@ -16,6 +16,7 @@ export * from "./search.js";
 export * from "./abstention.js";
 export * from "./secrets.js";
 export * from "./search-output.js";
+export * from "./snippets.js";
 export * from "./scope.js";
 export * from "./location.js";
 export * from "./paths.js";

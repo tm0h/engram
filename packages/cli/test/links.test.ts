@@ -77,7 +77,7 @@ describe("engram links command", () => {
   const seedEntry = (
     id: string,
     title: string,
-    over: { related?: string[]; created?: string; body?: string } = {},
+    over: { related?: string[]; supersedes?: string; created?: string; body?: string } = {},
   ): void => {
     const created = over.created ?? "2026-08-16T10:00:00.000Z";
     fs.writeFileSync(
@@ -90,6 +90,7 @@ describe("engram links command", () => {
         scope: "project",
         created,
         updated: created,
+        ...(over.supersedes !== undefined ? { supersedes: over.supersedes } : {}),
         ...(over.related !== undefined ? { related: over.related } : {}),
       }),
     );
@@ -101,6 +102,23 @@ describe("engram links command", () => {
       .sort()
       .map((f) => fs.readFileSync(path.join(engramsDir(), f), "utf8"))
       .join("\n%%%\n");
+
+  it("related paginates direct lifecycle and explicit relations without changing links", async () => {
+    seedEntry("0001", "Current", { supersedes: "0002", related: ["0003"] });
+    seedEntry("0002", "Old");
+    seedEntry("0003", "Explicit");
+    seedEntry("0004", "Successor", { supersedes: "0001" });
+    const before = snapshotAll();
+    await run(linksCommand("0001", { limit: 1 }, true));
+    expect(output()).toContain("Related for 0001");
+    expect(output()).toContain("[supersedes] 0002");
+    expect(output()).toContain("engram related 0001 --offset 1");
+    outLines = [];
+    await run(linksCommand("0001", { offset: 1 }, true));
+    expect(output()).toContain("[related] 0003");
+    expect(output()).toContain("[superseded by] 0004");
+    expect(snapshotAll()).toBe(before);
+  });
 
   it("renders authored outgoing order with markers and chronological incoming rows", async () => {
     seedEntry("0001", "Root entry", { related: ["0005", "0002", "9999"] });

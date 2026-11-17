@@ -436,3 +436,16 @@ it("documents curated startup defaults across harnesses", () => {
       expect(text).toContain(key);
   }
 });
+
+it("documents bounded matching snippets and direct related context in both skills", () => {
+  for (const file of [
+    "packages/harnesses/src/pi/skills/engram/SKILL.md",
+    "packages/harnesses/claude/skills/engram/SKILL.md",
+  ]) {
+    const skill = fs.readFileSync(path.join(repoRoot, file), "utf8");
+    expect(skill).toContain("related <id>");
+    expect(skill).toContain("240");
+    expect(skill).toContain("superseded by");
+    expect(skill).toContain("untrusted memory data");
+  }
+});

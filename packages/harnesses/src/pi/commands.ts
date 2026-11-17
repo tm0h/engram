@@ -14,7 +14,16 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { EngramType, Scope, SourceType, Status } from "@engram/core";
 import { ENGRAM_STATUSES, ENGRAM_TYPES, SOURCE_TYPES, splitAliasList } from "@engram/core";
-import { addOp, contextDigest, editOp, initOp, linksOp, searchOp, showOp } from "../shared/ops.js";
+import {
+  addOp,
+  contextDigest,
+  editOp,
+  initOp,
+  linksOp,
+  relatedOp,
+  searchOp,
+  showOp,
+} from "../shared/ops.js";
 import { MAX_LINKS_LIMIT } from "../shared/pagination.js";
 import { runOp } from "./run.js";
 
@@ -25,6 +34,7 @@ const HELP = [
   "  /engram context [scope]  digest for scope: project | personal | both",
   "  /engram search <query>   keyword search across recorded engrams",
   "  /engram show <id>        read one full entry (unique prefixes work)",
+  "  /engram related <id>     lifecycle lineage + explicit links (exact id)",
   "  /engram links <id>       link graph: outgoing related + incoming backlinks (exact id)",
   "      flags: --scope project|personal   --offset n   --limit n (max " + MAX_LINKS_LIMIT + ")",
   "  /engram add <title> -- <body>   record an entry",
@@ -514,17 +524,17 @@ async function dispatch(
     return;
   }
 
-  if (sub === "links") {
+  if (sub === "links" || sub === "related") {
     if (!remainder) {
-      notify(LINKS_USAGE, "error");
+      notify(LINKS_USAGE.replace("links", sub), "error");
       return;
     }
     const parsed = parseLinks(remainder);
     if ("error" in parsed) {
-      notify(parsed.error, "error");
+      notify(parsed.error.replace("/engram links", `/engram ${sub}`), "error");
       return;
     }
-    const r = await runOp(linksOp(parsed));
+    const r = await runOp(sub === "related" ? relatedOp(parsed) : linksOp(parsed));
     notify(r.text, r.isError ? "error" : "info");
     return;
   }
@@ -578,7 +588,8 @@ export interface RegisterCommandOptions {
 
 export function registerEngramCommand(pi: ExtensionAPI, opts: RegisterCommandOptions = {}): void {
   pi.registerCommand("engram", {
-    description: "engram memory: context | search | show | links | add | edit | init | help",
+    description:
+      "engram memory: context | search | show | links | related | add | edit | init | help",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       await dispatch(args, ctx, opts.onWriteSuccess);
     },

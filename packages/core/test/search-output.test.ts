@@ -15,7 +15,7 @@ const entry = (over: Partial<Engram> = {}): Engram => ({
   author: "private author",
   aliases: [],
   schemaVersion: 1,
-  body: "cafe PRIVATE_BODY",
+  body: "cafe " + "context ".repeat(100) + "PRIVATE_BODY",
   path: "/private/location",
   sourceType: "other",
   sourceRef: "PRIVATE_SOURCE",
@@ -111,4 +111,19 @@ describe("search explanations and public reports", () => {
   it.each([0, -1, 1.5, NaN, Infinity])("rejects invalid limits %s", (limit) => {
     expect(() => searchReport([], "q", 0, limit)).toThrow();
   });
+});
+
+it("explains metadata-only hits without inventing body context", () => {
+  for (const [over, query, field] of [
+    [{ title: "needle" }, "title:needle", "title"],
+    [{ tags: ["needle"] }, "tag:needle", "tag"],
+    [{ aliases: ["needle"] }, "needle", "alias"],
+    [{ triggers: ["fix widget"] }, "fix widget", "trigger"],
+  ] as const) {
+    const report = searchReport(
+      searchEngrams([entry({ ...over, body: "unrelated", pinned: false })], query),
+      query,
+    );
+    expect(report.results[0]).toMatchObject({ snippet: null, relevance: `Matched ${field}` });
+  }
 });
