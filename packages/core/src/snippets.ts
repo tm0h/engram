@@ -1,5 +1,6 @@
 /** Query-aware excerpts. Fold graphemes separately and map every folded code
  * unit back to its original grapheme; normalized offsets never index raw text. */
+import { expandCallFormTokens } from "./query-expansion.js";
 import { parseQuery } from "./query.js";
 import { normalizeText } from "./tokenize.js";
 
@@ -7,7 +8,7 @@ export const SNIPPET_MAX_CHARS = 240;
 const segmenter = new Intl.Segmenter("und", { granularity: "grapheme" });
 
 export function matchingSnippet(body: string, query: string): string | null {
-  const terms = parseQuery(query)
+  const terms = expandCallFormTokens(parseQuery(query))
     .alternatives.flat()
     .filter((t) => !t.field || t.field === "body");
   if (!terms.length || !body) return null;

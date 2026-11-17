@@ -391,6 +391,34 @@ describe("shared ops / searchOp", () => {
     expect((await run(linksOp({ id: "0001", scope: "project" }))).text).not.toContain("supersedes");
   });
 
+  it("explains personal-only fallback on empty searches and budgets it on capped pages", async () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "engram-search-outside-"));
+    process.chdir(outside);
+    try {
+      const empty = await run(searchOp({ query: "missing" }));
+      expect(empty.text).toContain("No matches.");
+      expect(empty.text).toContain("No project engram here - personal scope only.");
+      expect(empty.text.length).toBeLessThanOrEqual(8192);
+      expect(empty.text.endsWith("</engram-memory>")).toBe(true);
+      for (let i = 1; i <= 30; i++)
+        seedPersonal(home, String(i).padStart(4, "0"), {
+          title: `auth ${i} ` + "<".repeat(200),
+          body: "auth " + "<".repeat(250),
+        });
+      const page = await run(searchOp({ query: "auth", limit: 30 }));
+      expect(page.text).toContain("No project engram here - personal scope only.");
+      expect(page.text.length).toBeLessThanOrEqual(8192);
+      expect(page.text.endsWith("</engram-memory>")).toBe(true);
+      const results = page.details.results as Array<{ id: string }>;
+      expect(results.length).toBeGreaterThan(0);
+      expect(results.length).toBeLessThan(30);
+      expect(page.details.nextOffset).toBe(results.length);
+    } finally {
+      process.chdir(tmp);
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   it("matches by title and tag, orders by relevance", async () => {
     seed(tmp, "0001", { title: "Auth flow", tags: ["auth"], body: "b" });
     seed(tmp, "0002", { title: "Unrelated", tags: [], body: "mentions auth once" });

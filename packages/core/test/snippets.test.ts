@@ -27,3 +27,9 @@ it("prefers a phrase over an earlier isolated token and breaks ties by position"
   expect(snippet).not.toContain("alpha");
   expect(snippet!.length).toBeLessThanOrEqual(240);
 });
+
+it("shares the ranker's call-form expansion while preserving field restrictions", () => {
+  expect(matchingSnippet("toJSON", "toJSON(x)")).toBe("toJSON");
+  expect(matchingSnippet("toJSON", "body:toJSON(x)")).toBe("toJSON");
+  expect(matchingSnippet("toJSON", "title:toJSON(x)")).toBeNull();
+});

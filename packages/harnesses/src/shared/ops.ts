@@ -396,7 +396,10 @@ export const searchOp = (opts: SearchOptions): Effect.Effect<OpResult, never, En
       });
       const offset = opts.offset ?? 0;
       const limit = opts.limit ?? DEFAULT_SEARCH_LIMIT;
-      const header = `# Engram search: ${recallData(JSON.stringify(opts.query.slice(0, 256)))} - ${ranked.length} matches.`;
+      const header = [
+        `# Engram search: ${recallData(JSON.stringify(opts.query.slice(0, 256)))} - ${ranked.length} matches.`,
+        ...(resolved.personalOnly ? [`(${PERSONAL_ONLY_NOTE})`] : []),
+      ].join("\n");
       const rows: string[] = [];
       const summaries: ReturnType<typeof searchReport>["results"][number][] = [];
       const footerFor = (count: number): string => {

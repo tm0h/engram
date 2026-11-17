@@ -127,3 +127,12 @@ it("explains metadata-only hits without inventing body context", () => {
     expect(report.results[0]).toMatchObject({ snippet: null, relevance: `Matched ${field}` });
   }
 });
+
+it("pairs call-form body relevance with the matching excerpt", () => {
+  const query = "toJSON(x)";
+  const report = searchReport(
+    searchEngrams([entry({ title: "Serializer", tags: [], body: "toJSON", pinned: false })], query),
+    query,
+  );
+  expect(report.results[0]).toMatchObject({ relevance: "Matched body", snippet: "toJSON" });
+});
