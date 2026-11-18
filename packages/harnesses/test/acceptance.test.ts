@@ -280,13 +280,13 @@ describe("PR1 acceptance / first-request delivery", () => {
     const before = handlers.get("before_agent_start");
     start({ type: "session_start", reason: "startup" }, evtCtx(tmp));
     const res = await before(
-      { type: "before_agent_start", prompt: "go", systemPrompt: "BASE" },
+      { type: "before_agent_start", prompt: "acceptance", systemPrompt: "BASE" },
       evtCtx(tmp),
     );
 
     expect(res.systemPrompt).toContain("Acceptance decision");
     expect(occurrences(res.systemPrompt)).toBe(1);
-    expect(res.systemPrompt.startsWith("BASE\n\n<engram-memory>")).toBe(true);
+    expect(res.systemPrompt.startsWith("BASE\n\nRecorded memory")).toBe(true);
   });
 
   it("OpenCode: first request delivers; repeated requests stay at one block each", async () => {
@@ -309,7 +309,7 @@ describe("PR1 acceptance / first-request delivery", () => {
     engramExtension(pi);
     handlers.get("session_start")({ type: "session_start", reason: "startup" }, evtCtx(tmp));
     const piFirst = await handlers.get("before_agent_start")(
-      { type: "before_agent_start", prompt: "go", systemPrompt: "BASE" },
+      { type: "before_agent_start", prompt: "acceptance", systemPrompt: "BASE" },
       evtCtx(tmp),
     );
     expect(piFirst.systemPrompt).not.toContain("Fresh acceptance entry");
@@ -319,7 +319,7 @@ describe("PR1 acceptance / first-request delivery", () => {
     });
     expect(piAdded.isError).toBe(false);
     const piSecond = await handlers.get("before_agent_start")(
-      { type: "before_agent_start", prompt: "go", systemPrompt: "BASE" },
+      { type: "before_agent_start", prompt: "acceptance", systemPrompt: "BASE" },
       evtCtx(tmp),
     );
     expect(piSecond.systemPrompt).toContain("Fresh acceptance entry");
@@ -351,7 +351,7 @@ describe("PR1 acceptance / first-request delivery", () => {
     engramExtension(pi);
     handlers.get("session_start")({ type: "session_start", reason: "startup" }, evtCtx(tmp));
     const piFirst = await handlers.get("before_agent_start")(
-      { type: "before_agent_start", prompt: "go", systemPrompt: "BASE" },
+      { type: "before_agent_start", prompt: "decision", systemPrompt: "BASE" },
       evtCtx(tmp),
     );
     expect(piFirst.systemPrompt).toContain("Editable decision");
@@ -365,7 +365,7 @@ describe("PR1 acceptance / first-request delivery", () => {
     expect(piEdited.isError).toBe(false);
 
     const piSecond = await handlers.get("before_agent_start")(
-      { type: "before_agent_start", prompt: "go", systemPrompt: "BASE" },
+      { type: "before_agent_start", prompt: "decision", systemPrompt: "BASE" },
       evtCtx(tmp),
     );
     expect(piSecond.systemPrompt).toContain("Edited decision");

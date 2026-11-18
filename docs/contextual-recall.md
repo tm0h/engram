@@ -2,6 +2,8 @@
 
 `contextualRecallOp` is a stateless, harness-neutral operation exported by
 `@engram/harnesses/shared`. Adapters inject its `text` only when nonempty.
+Pi delivers recall through its full-prompt lifecycle hook. See the
+[Pi extension guide](../packages/harnesses/src/pi/README.md#automatic-contextual-recall).
 OpenCode delivers recall through its system transform. See the
 [OpenCode plugin guide](../packages/harnesses/src/opencode/README.md#automatic-context-experimental)
 for request resolution, fallback behavior, and cache invalidation.
@@ -105,3 +107,23 @@ identities. Successful retrieval also reports scope fallback, store diagnostic
 counts, ranked/confident/duplicate counts, and bounded per-candidate scores and
 confidence evidence. It includes no raw prompt, filesystem path, error message,
 full body, or query contribution tokens. Nothing is logged or written by recall.
+
+## Pi application comparison
+
+`packages/harnesses/test/pi-recall-application.test.ts` runs the pinned Pi host
+in print and JSON modes with a deterministic test provider. Both configurations
+use the same project store, prompts, and response logic. Static bootstrap uses
+the curated digest that Pi previously delivered. The provider reads the
+requested assignment from its supplied system context and proposes a setting
+and numeric value, or declines the change when it finds no value.
+
+| Task                        | Static bootstrap | Contextual recall        | Expected behavior            |
+| --------------------------- | ---------------- | ------------------------ | ---------------------------- |
+| Configure Orchid TTL        | Declines change  | Sets `orchid_ttl=604800` | Use the recorded TTL         |
+| Configure Cedar retries     | Declines change  | Sets `cedar_retries=3`   | Use the recorded retry count |
+| Configure Orchid seismology | Declines change  | Declines change          | Abstain on a weak match      |
+
+Exact agreement with the expected setting and value scored **1/3 for static
+bootstrap** and **3/3 for contextual recall** in each mode. Both control
+responses pass. The fixture measures whether Pi delivers enough context for
+a deterministic consumer to apply it. Live-model application remains unmeasured.

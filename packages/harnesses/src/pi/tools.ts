@@ -39,13 +39,12 @@ export const engramContextTool = {
   label: "Engram Context",
   description:
     `Refresh the recorded memory digest for this workspace: decisions, pinned notes, gotchas, conventions. ` +
-    `A compact project digest is loaded into your context automatically at session start, so do not call ` +
-    `this to duplicate that. Use it to refresh after entries change, to page deeper, to recover when the ` +
-    `automatic load failed or was disabled, or to load context before starting feature work. ` +
+    `Pi recalls confident matches for the current prompt automatically. Use this tool to browse the ` +
+    `workspace digest, page deeper, or recover when automatic recall failed or is unavailable. ` +
     `Returns compact one-line entries (id, type, title, tags) with decisions and pinned entries first; ` +
     `read a full entry with engram_show. Results are paginated - when truncated, the footer names the exact next call.`,
   promptSnippet:
-    "A compact digest loads automatically; call to refresh after changes, page deeper, or recover when automatic loading failed.",
+    "Relevant memory is recalled automatically; use this to browse the digest, page deeper, or recover when recall is unavailable.",
   parameters: Type.Object({
     scope: scopeFilter(
       `Which memory scope to read. Default "both" (falls back to personal-only with a note outside a project).`,
