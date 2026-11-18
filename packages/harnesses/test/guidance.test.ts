@@ -46,7 +46,7 @@ describe("guidance / no duplicate startup calls", () => {
     }
   });
 
-  it("engram_context states the digest loads automatically (both harnesses)", () => {
+  it("engram_context explains automatic delivery and manual use", () => {
     for (const { text } of [
       { text: piContext.description + " " + piContext.promptSnippet },
       { text: ocContext.description },
@@ -420,7 +420,6 @@ it("documents importance consistently across CLI guidance", () => {
 it("documents curated startup defaults across harnesses", () => {
   for (const file of [
     "README.md",
-    "packages/harnesses/src/pi/README.md",
     "packages/harnesses/src/opencode/README.md",
     "packages/harnesses/src/pi/skills/engram/SKILL.md",
     "packages/harnesses/claude/skills/engram/SKILL.md",

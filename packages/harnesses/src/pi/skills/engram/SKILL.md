@@ -11,13 +11,9 @@ entries (decisions, facts, gotchas, conventions) recorded per project
 
 ## Session flow
 
-1. **Session context loads automatically.** A compact digest of this
-   workspace's memory (decisions and pinned entries first) is injected into
-   your context automatically when the session starts — no tool call needed.
-   Skim it before proposing anything consequential. Call `engram_context`
-   only to refresh (for example after entries were recorded), to page deeper
-   than the first page, or to recover when automatic loading reported a
-   failure or the extension is unavailable.
+1. **Relevant memory appears automatically.** Pi recalls matching excerpts
+   for the current prompt. Use `engram_context` for a workspace digest, to
+   page through more memory, or to recover if recall is unavailable.
 2. **When you need specifics** (how auth works, why a library was replaced),
    call `engram_search` with keywords, then `engram_show` on the matching id.
 3. **When you learn something durable**, record it with `engram_add`.
@@ -245,8 +241,9 @@ unchanged. Pagination runs after this ranking.
 
 ### Curated automatic startup context
 
-Pi, OpenCode, Claude Code and Codex startup/resume/compaction context uses a
-curated bootstrap by default. It selects active pinned memories, decisions with
+Claude Code and Codex use a curated bootstrap by default for their digest
+hooks. OpenCode uses it as a fallback for contextual recall. The bootstrap
+selects active pinned memories, decisions with
 `importance` at least 3, and critical preferences with `importance` at least 4.
 Path-specific entries (`appliesTo`) are excluded unless explicitly enabled.
 Pinned entries come first, then importance descending; project scope and id break

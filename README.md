@@ -126,15 +126,14 @@ project rule / `.cursorrules` / `AGENTS.md`). The snippet tells the agent to:
   choices and their rationale),
 - use `--scope personal` for notes that must not be shared with the team.
 
-The native Pi integration loads a startup digest automatically. OpenCode
-loads relevant memory for the current request, with the digest available as a
-fallback. Agents can use the manual flow when automatic context is unavailable
-or they need more detail.
+Pi and OpenCode automatically recall relevant memory for the current
+request. OpenCode can use the curated digest as a fallback. Agents can use the
+manual flow when automatic context is unavailable or they need more detail.
 
 ### 2. Harness-specific wiring
 
 - **Pi**: `pi install npm:engram-cli`. Ships native tools, an `/engram`
-  command, a skill, and automatic session-start context loading. See
+  command, a skill, and automatic contextual recall. See
   [Pi extension](#pi-extension).
 - **OpenCode**: add `"plugin": ["engram-cli"]` to `opencode.json`. Ships five
   native tools with typed, validated parameters plus experimental contextual
@@ -163,11 +162,10 @@ The published `engram-cli` npm package doubles as a
 [Pi](https://github.com/earendil-works/pi) package. Installing it
 gives the agent native engram tools (`engram_context`, `engram_search`,
 `engram_show`, `engram_add`, `engram_edit`) with typed, validated parameters,
-plus an `/engram` command, an `engram` skill, and automatic session-start context
-loading: every session begins with a compact digest of recorded memory in
-the system prompt (bounded, fail-open, configurable via
-`engram config set autoContext off`). No CLI-on-PATH shelling out, no
-prompt pasting. Successful adds and edits refresh the cached digest.
+plus an `/engram` command, an `engram` skill, and automatic contextual
+recall. Pi uses the current prompt to add relevant memory excerpts to the
+system prompt. Disable it with `engram config set autoContext off`. The
+next prompt after an add or edit uses the updated store.
 
 ```sh
 pi install npm:engram-cli          # global (personal memory everywhere)
@@ -567,8 +565,8 @@ unchanged. Pagination runs after this ranking.
 
 ### Curated automatic startup context
 
-Automatic startup, resume, and compaction context uses a curated bootstrap by
-default. OpenCode uses the same digest as its fallback for contextual recall.
+Claude Code and Codex use a curated bootstrap by default for their digest
+hooks. OpenCode uses the same digest as its fallback for contextual recall.
 The digest selects active pinned memories, decisions with `importance` at least 3,
 and critical preferences with `importance` at least 4.
 Path-specific entries (`appliesTo`) are excluded unless explicitly enabled.

@@ -255,8 +255,9 @@ unchanged. Pagination runs after this ranking.
 
 ### Curated automatic startup context
 
-Pi, OpenCode, Claude Code and Codex startup/resume/compaction context uses a
-curated bootstrap by default. It selects active pinned memories, decisions with
+Claude Code and Codex use a curated bootstrap by default for their digest
+hooks. OpenCode uses it as a fallback for contextual recall. The bootstrap
+selects active pinned memories, decisions with
 `importance` at least 3, and critical preferences with `importance` at least 4.
 Path-specific entries (`appliesTo`) are excluded unless explicitly enabled.
 Pinned entries come first, then importance descending; project scope and id break

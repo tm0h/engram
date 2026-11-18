@@ -1,20 +1,9 @@
-/**
- * Pi lifecycle delivery tests for the automatic context hook.
- *
- * Captures the registered `session_start` / `before_agent_start` handlers
- * through a fake pi harness and proves the promise-cache contract:
- * load starts on every session_start reason, before_agent_start awaits the
- * in-flight promise (no first-prompt race), one bounded block per prompt,
- * fail-open on failure with a single at-most-once UI warning, and
- * invalidation after a successful engram_add.
- */
-import { describe, it, expect, beforeEach, afterEach } from "vite-plus/test";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vite-plus/test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type {
   BeforeAgentStartEvent,
-  BeforeAgentStartEventResult,
   ExtensionAPI,
   ExtensionContext,
   SessionStartEvent,
@@ -23,6 +12,8 @@ import { projectConfigPath, projectEngramsDir } from "@engram/core";
 import type { OpResult } from "../src/shared/index.js";
 import { registerAutoContext, type AutoContextLoader } from "../src/pi/context-hook.js";
 import engramExtension from "../src/pi/index.js";
+import { registerEngramCommand } from "../src/pi/commands.js";
+import { registerEngramTools } from "../src/pi/tools.js";
 
 /* --------------------------- fake pi harness --------------------------- */
 
@@ -65,9 +56,9 @@ const sessionStart = (reason: SessionStartEvent["reason"]): SessionStartEvent =>
   reason,
 });
 
-const agentStart = (systemPrompt: string): BeforeAgentStartEvent => ({
+const agentStart = (systemPrompt: string, prompt = "seeded"): BeforeAgentStartEvent => ({
   type: "before_agent_start",
-  prompt: "user prompt",
+  prompt,
   systemPrompt,
   systemPromptOptions: {} as BeforeAgentStartEvent["systemPromptOptions"],
 });
@@ -77,274 +68,153 @@ const okResult = (text: string): OpResult => ({ text, isError: false, details: {
 const errResult = (): OpResult => ({
   text: "",
   isError: false,
-  details: { loaded: false, error: "config unreadable" },
+  details: { reason: "unavailable" },
 });
 
 const BASE = "You are a helpful coding agent.";
 
 const countOf = (s: string, needle: string): number => s.split(needle).length - 1;
 
-/* ------------------------------- tests ------------------------------- */
+describe("Pi contextual recall", () => {
+  const payload = "<engram-memory>\ncontext\n</engram-memory>";
 
-describe("pi auto-context hook / registration", () => {
-  it("registers session_start and before_agent_start handlers", () => {
+  it("waits for the first prompt and uses its exact text and directory", async () => {
+    let resolve!: (result: OpResult) => void;
+    const load = vi.fn<AutoContextLoader>(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
     const { pi, handlers } = fakePi();
-    registerAutoContext(pi);
-    expect(handlers.has("session_start")).toBe(true);
-    expect(handlers.has("before_agent_start")).toBe(true);
-  });
+    registerAutoContext(pi, { load });
+    const { ctx } = evtCtx({ cwd: "/other/project", hasUI: false });
+    handlers.get("session_start")!(sessionStart("startup"), ctx);
+    expect(load).not.toHaveBeenCalled();
 
-  it("before_agent_start without a prior session_start still loads (safety net)", async () => {
-    const calls: string[] = [];
-    const loader: AutoContextLoader = async (dir) => {
-      calls.push(dir);
-      return okResult("<engram-memory>\ndigest\n</engram-memory>");
-    };
-    const { pi, handlers } = fakePi();
-    registerAutoContext(pi, { load: loader });
-
-    const { ctx } = evtCtx();
-    const res = (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as
-      | BeforeAgentStartEventResult
-      | undefined;
-    expect(calls).toHaveLength(1);
-    expect(res?.systemPrompt).toContain("<engram-memory>");
-  });
-});
-
-describe("pi auto-context hook / session_start", () => {
-  it("starts a load for every documented reason, using ctx.cwd", async () => {
-    const calls: string[] = [];
-    const loader: AutoContextLoader = async (dir) => {
-      calls.push(dir);
-      return okResult("");
-    };
-    const { pi, handlers } = fakePi();
-    registerAutoContext(pi, { load: loader });
-
-    const { ctx } = evtCtx({ cwd: "/w/project" });
-    for (const reason of ["startup", "reload", "new", "resume", "fork"] as const) {
-      handlers.get("session_start")!(sessionStart(reason), ctx);
-    }
-    expect(calls).toEqual(["/w/project", "/w/project", "/w/project", "/w/project", "/w/project"]);
-  });
-});
-
-describe("pi auto-context hook / before_agent_start", () => {
-  it("awaits the in-flight load promise — the first prompt cannot race it", async () => {
-    let release!: (r: OpResult) => void;
-    const loader: AutoContextLoader = () =>
-      new Promise<OpResult>((resolve) => {
-        release = resolve;
+    const before = handlers.get("before_agent_start")!;
+    const event = agentStart(BASE + "\nEarlier extension", "Refactor Redis retries");
+    const first = before(event, ctx);
+    const repeated = before(event, ctx);
+    expect(load).toHaveBeenCalledExactlyOnceWith("/other/project", event.prompt);
+    resolve(okResult(payload));
+    for (const pending of [first, repeated]) {
+      await expect(pending).resolves.toEqual({
+        systemPrompt: event.systemPrompt + "\n\n" + payload,
       });
-    const { pi, handlers } = fakePi();
-    registerAutoContext(pi, { load: loader });
-
-    const { ctx } = evtCtx();
-    handlers.get("session_start")!(sessionStart("startup"), ctx);
-
-    // first prompt arrives while the load is still pending (print/piped mode)
-    const pending = handlers.get("before_agent_start")!(agentStart(BASE), ctx);
-    release(okResult("<engram-memory>\nlate digest\n</engram-memory>"));
-    const res = (await pending) as BeforeAgentStartEventResult | undefined;
-
-    expect(res?.systemPrompt).toContain("late digest");
-    expect(res?.message).toBeUndefined(); // no persistent transcript message
-  });
-
-  it("appends exactly one bounded block to the system prompt", async () => {
-    const payload =
-      "<engram-memory>\n# Engram context - project engram (/w)\n1 engram.\n</engram-memory>";
-    const { pi, handlers } = fakePi();
-    registerAutoContext(pi, { load: async () => okResult(payload) });
-
-    const { ctx } = evtCtx();
-    handlers.get("session_start")!(sessionStart("startup"), ctx);
-    const res = (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as {
-      systemPrompt?: string;
-    };
-    expect(res.systemPrompt).toBe(`${BASE}\n\n${payload}`);
-    expect(countOf(res.systemPrompt!, "<engram-memory>")).toBe(1);
-    expect(countOf(res.systemPrompt!, "</engram-memory>")).toBe(1);
-  });
-
-  it("consecutive prompts each get exactly one block, without re-loading or accumulating", async () => {
-    const payload = "<engram-memory>\ndigest\n</engram-memory>";
-    let loads = 0;
-    const loader: AutoContextLoader = async () => {
-      loads += 1;
-      return okResult(payload);
-    };
-    const { pi, handlers } = fakePi();
-    registerAutoContext(pi, { load: loader });
-
-    const { ctx } = evtCtx();
-    handlers.get("session_start")!(sessionStart("startup"), ctx);
-
-    // Pi rebuilds the base prompt per turn; each handler sees a fresh copy.
-    for (let turn = 0; turn < 3; turn++) {
-      const res = (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as {
-        systemPrompt?: string;
-      };
-      expect(res.systemPrompt).toBe(`${BASE}\n\n${payload}`);
-      expect(countOf(res.systemPrompt!, "<engram-memory>")).toBe(1);
     }
-    expect(loads).toBe(1);
   });
 
-  it("preserves the system prompt exactly when disabled, empty, or failed", async () => {
-    for (const result of [okResult(""), errResult()]) {
+  it.each(["startup", "reload", "new", "resume", "fork"] as const)(
+    "discards in-flight reads on %s",
+    async (reason) => {
+      let resolve!: (result: OpResult) => void;
+      const load = vi
+        .fn<AutoContextLoader>()
+        .mockImplementationOnce(
+          () =>
+            new Promise((done) => {
+              resolve = done;
+            }),
+        )
+        .mockResolvedValue(okResult(payload));
       const { pi, handlers } = fakePi();
-      registerAutoContext(pi, { load: async () => result });
-
+      registerAutoContext(pi, { load });
       const { ctx } = evtCtx();
-      handlers.get("session_start")!(sessionStart("startup"), ctx);
-      const res = (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as
-        | BeforeAgentStartEventResult
-        | undefined;
-      expect(res?.systemPrompt).toBeUndefined();
-      expect(res?.message).toBeUndefined();
-    }
-  });
-});
+      const before = handlers.get("before_agent_start")!;
+      const pending = before(agentStart(BASE), ctx);
+      handlers.get("session_start")!(sessionStart(reason), ctx);
+      await expect(before(agentStart(BASE), ctx)).resolves.toEqual({
+        systemPrompt: BASE + "\n\n" + payload,
+      });
+      resolve(okResult("stale"));
+      await expect(pending).resolves.toBeUndefined();
+    },
+  );
 
-describe("pi auto-context hook / failure behavior", () => {
-  it("a structured load failure notifies at most once per session, UI only", async () => {
-    const loader: AutoContextLoader = async () => errResult();
-    const { pi, handlers } = fakePi();
-    registerAutoContext(pi, { load: loader });
-
-    const { ctx, notes } = evtCtx();
-    handlers.get("session_start")!(sessionStart("startup"), ctx);
-    for (let turn = 0; turn < 3; turn++) {
-      await handlers.get("before_agent_start")!(agentStart(BASE), ctx);
-    }
-    expect(notes).toHaveLength(1);
-    expect(notes[0].level).toBe("warning");
-    expect(notes[0].message).not.toContain("config unreadable"); // no error content
-  });
-
-  it("a rejected cached promise warns once and never throws", async () => {
-    const loader: AutoContextLoader = () => Promise.reject(new Error("defect"));
-    const { pi, handlers } = fakePi();
-    registerAutoContext(pi, { load: loader });
-
-    const { ctx, notes } = evtCtx();
-    handlers.get("session_start")!(sessionStart("startup"), ctx);
-
-    const results: Array<BeforeAgentStartEventResult | undefined> = [];
-    for (let turn = 0; turn < 3; turn++) {
-      results.push(
-        (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as
-          | BeforeAgentStartEventResult
-          | undefined,
-      );
-    }
-    expect(notes).toHaveLength(1);
-    for (const r of results) {
-      expect(r?.systemPrompt).toBeUndefined();
-    }
-  });
-
-  it("a fast rejection between session_start and the first prompt stays handled", async () => {
-    const loader: AutoContextLoader = () => Promise.reject(new Error("fast boom"));
-    const { pi, handlers } = fakePi();
-    registerAutoContext(pi, { load: loader });
-
-    const unhandled: unknown[] = [];
-    const onUnhandled = (reason: unknown) => unhandled.push(reason);
-    process.on("unhandledRejection", onUnhandled);
-    try {
-      const { ctx, notes } = evtCtx();
-      handlers.get("session_start")!(sessionStart("startup"), ctx);
-
-      // a full event-loop turn passes before any prompt arrives
-      await new Promise((resolve) => setImmediate(resolve));
-      expect(unhandled).toHaveLength(0);
-
-      const res = (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as
-        | BeforeAgentStartEventResult
-        | undefined;
-      expect(res?.systemPrompt).toBeUndefined();
-      expect(notes).toHaveLength(1);
-
-      await handlers.get("before_agent_start")!(agentStart(BASE), ctx);
-      expect(notes).toHaveLength(1); // still once-only
-    } finally {
-      process.off("unhandledRejection", onUnhandled);
-    }
-  });
-
-  it("a synchronous loader throw is handled at session_start, not thrown", async () => {
-    const loader: AutoContextLoader = (() => {
-      throw new Error("sync boom");
-    }) as unknown as AutoContextLoader;
-    const { pi, handlers } = fakePi();
-    registerAutoContext(pi, { load: loader });
-
-    const { ctx, notes } = evtCtx();
-    expect(() => handlers.get("session_start")!(sessionStart("startup"), ctx)).not.toThrow();
-    const res = (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as
-      | BeforeAgentStartEventResult
-      | undefined;
-    expect(res?.systemPrompt).toBeUndefined();
-    expect(notes).toHaveLength(1);
-  });
-
-  it("print/JSON mode (hasUI false) stays silent", async () => {
-    const loader: AutoContextLoader = () => Promise.reject(new Error("defect"));
-    const { pi, handlers } = fakePi();
-    registerAutoContext(pi, { load: loader });
-
-    const { ctx, notes } = evtCtx({ hasUI: false });
-    handlers.get("session_start")!(sessionStart("startup"), ctx);
-    await expect(
-      handlers.get("before_agent_start")!(agentStart(BASE), ctx),
-    ).resolves.toBeUndefined();
-    expect(notes).toHaveLength(0);
-  });
-
-  it("a disabled or empty load stays silent (no warning)", async () => {
-    const { pi, handlers } = fakePi();
-    registerAutoContext(pi, { load: async () => okResult("") });
-
-    const { ctx, notes } = evtCtx();
-    handlers.get("session_start")!(sessionStart("startup"), ctx);
-    await handlers.get("before_agent_start")!(agentStart(BASE), ctx);
-    expect(notes).toHaveLength(0);
-  });
-});
-
-describe("pi auto-context hook / invalidation", () => {
-  it("invalidate forces the next prompt to reload; the digest refreshes", async () => {
-    let payload = "<engram-memory>\nold\n</engram-memory>";
-    let loads = 0;
-    const loader: AutoContextLoader = async () => {
-      loads += 1;
-      return okResult(payload);
-    };
-    const state = (() => {
+  it.each(["directory", "query", "write"] as const)(
+    "drops a pending result after a %s change",
+    async (change) => {
+      let resolve!: (result: OpResult) => void;
+      const load = vi
+        .fn<AutoContextLoader>()
+        .mockImplementationOnce(
+          () =>
+            new Promise((done) => {
+              resolve = done;
+            }),
+        )
+        .mockResolvedValue(okResult(payload));
       const { pi, handlers } = fakePi();
-      const state = registerAutoContext(pi, { load: loader });
-      return { handlers, state };
-    })();
+      const { invalidate } = registerAutoContext(pi, { load });
+      const before = handlers.get("before_agent_start")!;
+      const { ctx } = evtCtx({ cwd: "/first" });
+      const pending = before(agentStart(BASE), ctx);
+      if (change === "write") invalidate();
+      await expect(
+        before(
+          agentStart(BASE, change === "query" ? "Redis" : undefined),
+          change === "directory" ? evtCtx({ cwd: "/second" }).ctx : ctx,
+        ),
+      ).resolves.toEqual({ systemPrompt: BASE + "\n\n" + payload });
+      resolve(okResult("stale"));
+      await expect(pending).resolves.toBeUndefined();
+      expect(load).toHaveBeenCalledTimes(2);
+    },
+  );
 
+  it("checks the store again for each full prompt and skips oversized prompts", async () => {
+    const load = vi
+      .fn<AutoContextLoader>()
+      .mockResolvedValueOnce(okResult(payload))
+      .mockResolvedValue(okResult(""));
+    const { pi, handlers } = fakePi();
+    registerAutoContext(pi, { load });
+    const before = handlers.get("before_agent_start")!;
     const { ctx } = evtCtx();
-    state.handlers.get("session_start")!(sessionStart("startup"), ctx);
-    const first = (await state.handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as {
-      systemPrompt?: string;
-    };
-    expect(first.systemPrompt).toContain("old");
-
-    state.state.invalidate();
-    payload = "<engram-memory>\nnew entry\n</engram-memory>";
-    const second = (await state.handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as {
-      systemPrompt?: string;
-    };
-    expect(second.systemPrompt).toContain("new entry");
-    expect(countOf(second.systemPrompt!, "<engram-memory>")).toBe(1);
-    expect(loads).toBe(2);
+    await expect(before(agentStart(BASE), ctx)).resolves.toEqual({
+      systemPrompt: BASE + "\n\n" + payload,
+    });
+    await expect(before(agentStart(BASE), ctx)).resolves.toBeUndefined();
+    await expect(before(agentStart(BASE, "x".repeat(4097)), ctx)).resolves.toBeUndefined();
+    expect(load).toHaveBeenCalledTimes(2);
   });
+
+  it.each([
+    ["unavailable", () => Promise.resolve(errResult())],
+    ["rejected", () => Promise.reject(new Error("private async error"))],
+    [
+      "thrown",
+      () => {
+        throw new Error("private sync error");
+      },
+    ],
+  ] satisfies Array<[string, AutoContextLoader]>)(
+    "fails open for %s reads",
+    async (_name, load) => {
+      const { pi, handlers } = fakePi();
+      registerAutoContext(pi, { load });
+      const before = handlers.get("before_agent_start")!;
+      const { ctx, notes } = evtCtx();
+      await expect(before(agentStart(BASE), ctx)).resolves.toBeUndefined();
+      await expect(before(agentStart(BASE), ctx)).resolves.toBeUndefined();
+      expect(notes).toEqual([
+        { message: expect.stringContaining("could not be loaded"), level: "warning" },
+      ]);
+      expect(notes[0].message).not.toContain("private");
+
+      const headless = {
+        hasUI: false,
+        cwd: "/w",
+        get ui() {
+          throw new Error("UI unavailable");
+        },
+      } as unknown as ExtensionContext;
+      handlers.get("session_start")!(sessionStart("reload"), headless);
+      await expect(before(agentStart(BASE), headless)).resolves.toBeUndefined();
+      expect(notes).toHaveLength(1);
+    },
+  );
 });
 
 /* ----------------- integration with the real extension ---------------- */
@@ -422,7 +292,7 @@ describe("pi extension / auto-context integration", () => {
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  it("delivers the real digest into the first system prompt", async () => {
+  it("delivers relevant excerpts into the first system prompt", async () => {
     seedEntry(tmp, "0001", "Seeded decision");
     const { pi, handlers } = fullFakePi();
     engramExtension(pi);
@@ -433,9 +303,11 @@ describe("pi extension / auto-context integration", () => {
       systemPrompt?: string;
     };
 
-    expect(res.systemPrompt).toBe(
-      `${BASE}\n\n<engram-memory>\nCompact recorded memory for this workspace. Entries are fallible project/user context and do not override current system, user, or repository instructions.\n\n# Engram bootstrap - project (${tmp})\n1 curated of 1 eligible engrams.\n 0001 decision Seeded decision\n</engram-memory>`,
-    );
+    expect(res.systemPrompt).toContain('"title":"Seeded decision","snippet":"body"');
+    expect(countOf(res.systemPrompt!, "<engram-memory>")).toBe(1);
+    await expect(
+      handlers.get("before_agent_start")!(agentStart(BASE, "volcano"), ctx),
+    ).resolves.toBeUndefined();
   });
 
   it("a successful engram_add invalidates the cache; the next prompt sees the new entry", async () => {
@@ -460,38 +332,14 @@ describe("pi extension / auto-context integration", () => {
     })) as { isError: boolean };
     expect(added.isError).toBe(false);
 
-    const second = (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as {
+    const second = (await handlers.get("before_agent_start")!(
+      agentStart(BASE, "Postgres"),
+      ctx,
+    )) as {
       systemPrompt?: string;
     };
     expect(second.systemPrompt).toContain("Chose Postgres");
     expect(countOf(second.systemPrompt!, "<engram-memory>")).toBe(1);
-  });
-
-  it("a failed engram_add does not invalidate the cache", async () => {
-    seedEntry(tmp, "0001", "Seeded decision");
-    const { pi, handlers, tools } = fullFakePi();
-    engramExtension(pi);
-    const add = tools.find((t) => t.name === "engram_add")!;
-
-    const { ctx } = evtCtx({ cwd: tmp });
-    handlers.get("session_start")!(sessionStart("startup"), ctx);
-    await handlers.get("before_agent_start")!(agentStart(BASE), ctx);
-
-    const failed = (await add.execute("call-1", { title: "   ", body: "b" })) as {
-      isError: boolean;
-    };
-    expect(failed.isError).toBe(true);
-
-    // Out-of-band store change: if the failed add had invalidated the cache,
-    // the next prompt would pick this up. A surviving cache must not.
-    seedEntry(tmp, "0002", "Out of band entry");
-
-    const second = (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as {
-      systemPrompt?: string;
-    };
-    expect(countOf(second.systemPrompt!, "<engram-memory>")).toBe(1);
-    expect(second.systemPrompt).toContain("Seeded decision");
-    expect(second.systemPrompt).not.toContain("Out of band entry");
   });
 
   it("a successful engram_edit invalidates the cache; the next prompt sees the edited title", async () => {
@@ -502,7 +350,10 @@ describe("pi extension / auto-context integration", () => {
 
     const { ctx } = evtCtx({ cwd: tmp });
     handlers.get("session_start")!(sessionStart("startup"), ctx);
-    const first = (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as {
+    const first = (await handlers.get("before_agent_start")!(
+      agentStart(BASE, "decision"),
+      ctx,
+    )) as {
       systemPrompt?: string;
     };
     expect(first.systemPrompt).toContain("Seeded decision");
@@ -513,7 +364,10 @@ describe("pi extension / auto-context integration", () => {
     })) as { isError: boolean };
     expect(edited.isError).toBe(false);
 
-    const second = (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as {
+    const second = (await handlers.get("before_agent_start")!(
+      agentStart(BASE, "decision"),
+      ctx,
+    )) as {
       systemPrompt?: string;
     };
     expect(second.systemPrompt).toContain("Edited decision");
@@ -521,77 +375,97 @@ describe("pi extension / auto-context integration", () => {
     expect(countOf(second.systemPrompt!, "<engram-memory>")).toBe(1);
   });
 
-  it("a failed engram_edit does not invalidate the cache", async () => {
+  it("abstains after disabling recall even when the same query just matched", async () => {
     seedEntry(tmp, "0001", "Seeded decision");
-    const { pi, handlers, tools } = fullFakePi();
+    const { pi, handlers } = fullFakePi();
     engramExtension(pi);
-    const edit = tools.find((t) => t.name === "engram_edit")!;
-
     const { ctx } = evtCtx({ cwd: tmp });
-    handlers.get("session_start")!(sessionStart("startup"), ctx);
-    await handlers.get("before_agent_start")!(agentStart(BASE), ctx);
-
-    const failed = (await edit.execute("call-1", {
-      id: "0001",
-      title: "   ",
-    })) as { isError: boolean };
-    expect(failed.isError).toBe(true);
-
-    // Out-of-band store change: if the failed edit had invalidated the cache,
-    // the next prompt would pick this up. A surviving cache must not.
-    seedEntry(tmp, "0002", "Out of band entry");
-
-    const second = (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as {
-      systemPrompt?: string;
-    };
-    expect(countOf(second.systemPrompt!, "<engram-memory>")).toBe(1);
-    expect(second.systemPrompt).toContain("Seeded decision");
-    expect(second.systemPrompt).not.toContain("Out of band entry");
-  });
-
-  it("autoContext=off leaves the system prompt untouched end-to-end", async () => {
-    seedEntry(tmp, "0001", "Seeded decision");
+    const before = handlers.get("before_agent_start")!;
+    const event = agentStart(BASE);
+    await expect(before(event, ctx)).resolves.toHaveProperty("systemPrompt");
     fs.writeFileSync(
       path.join(home, ".engram", "config.json"),
       JSON.stringify({ version: 1, autoContext: "off" }),
     );
-    const { pi, handlers } = fullFakePi();
-    engramExtension(pi);
-
-    const { ctx } = evtCtx({ cwd: tmp });
-    handlers.get("session_start")!(sessionStart("startup"), ctx);
-    const res = (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as
-      | {
-          systemPrompt?: string;
-        }
-      | undefined;
-    expect(res?.systemPrompt).toBeUndefined();
+    await expect(before(event, ctx)).resolves.toBeUndefined();
   });
 
-  it("the /engram add command also refreshes the digest; failed adds do not", async () => {
-    seedEntry(tmp, "0001", "Seeded decision");
-    const { pi, handlers, commands } = fullFakePi();
+  it("fails open on an empty store or unreadable configuration", async () => {
+    const { pi, handlers } = fullFakePi();
     engramExtension(pi);
+    const { ctx } = evtCtx({ cwd: tmp, hasUI: false });
+    const before = handlers.get("before_agent_start")!;
+    await expect(before(agentStart(BASE), ctx)).resolves.toBeUndefined();
+
+    seedEntry(tmp, "0001", "Seeded decision");
+    fs.writeFileSync(path.join(home, ".engram", "config.json"), "{broken");
+    await expect(before(agentStart(BASE), ctx)).resolves.toBeUndefined();
+  });
+
+  it("invalidates reads only after successful tool and slash writes", async () => {
+    const { pi, handlers, tools, commands } = fullFakePi();
+    let resolve!: (result: OpResult) => void;
+    const { invalidate } = registerAutoContext(pi, {
+      load: () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    });
+    registerEngramTools(pi, { onWriteSuccess: invalidate });
+    registerEngramCommand(pi, { onWriteSuccess: invalidate });
 
     const { ctx } = evtCtx({ cwd: tmp });
-    handlers.get("session_start")!(sessionStart("startup"), ctx);
-    await handlers.get("before_agent_start")!(agentStart(BASE), ctx);
+    const before = handlers.get("before_agent_start")!;
+    const add = tools.find((tool) => tool.name === "engram_add")!;
+    const slash = commands.get("engram")!;
+    const event = agentStart(BASE);
 
-    // failed /engram add: no invalidation
-    await commands.get("engram")!.handler("add Bad --type nope -- body", ctx);
-    seedEntry(tmp, "0002", "Out of band one");
-    let res = (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as {
-      systemPrompt?: string;
-    };
-    expect(res.systemPrompt).not.toContain("Out of band one");
+    const surviving = before(event, ctx);
+    await expect(add.execute("invalid", { title: " ", body: "invalid" })).resolves.toMatchObject({
+      isError: true,
+    });
+    await expect(
+      add.execute("blocked", { title: "Blocked", body: "AKIAIOSFODNN7EXAMPLE" }),
+    ).resolves.toMatchObject({
+      isError: true,
+      details: { reason: "secret_scan_blocked" },
+    });
+    await slash.handler("edit 9999 --title Missing", ctx);
+    resolve(okResult("current"));
+    await expect(surviving).resolves.toEqual({ systemPrompt: BASE + "\n\ncurrent" });
 
-    // successful /engram add: invalidates, next prompt sees the new entry
-    await commands.get("engram")!.handler("add Via slash --pinned -- body text", ctx);
-    res = (await handlers.get("before_agent_start")!(agentStart(BASE), ctx)) as {
-      systemPrompt?: string;
-    };
-    expect(res.systemPrompt).toContain("Via slash");
-    expect(countOf(res.systemPrompt!, "<engram-memory>")).toBe(1);
+    const beforeToolWrite = before(event, ctx);
+    await expect(
+      add.execute("approved", { title: "New memory", body: "reviewed change" }),
+    ).resolves.toMatchObject({ isError: false });
+    resolve(okResult("stale"));
+    await expect(beforeToolWrite).resolves.toBeUndefined();
+
+    const beforeSlashWrite = before(event, ctx);
+    await slash.handler("add New slash memory -- reviewed change", ctx);
+    resolve(okResult("stale"));
+    await expect(beforeSlashWrite).resolves.toBeUndefined();
+  });
+
+  it("recalls successful /engram add and edit writes on following prompts", async () => {
+    const { pi, handlers, commands } = fullFakePi();
+    engramExtension(pi);
+    const { ctx } = evtCtx({ cwd: tmp });
+    const before = handlers.get("before_agent_start")!;
+    const slash = commands.get("engram")!;
+    const event = agentStart(BASE, "slash");
+
+    await expect(before(event, ctx)).resolves.toBeUndefined();
+    await slash.handler("add Via slash -- body text", ctx);
+    const added = (await before(event, ctx)) as { systemPrompt: string };
+    expect(added.systemPrompt).toContain("Via slash");
+    const id = JSON.parse(
+      added.systemPrompt.split("\n").find((line) => line.startsWith('{"id"'))!,
+    ).id;
+    await slash.handler(`edit ${id} --title "Edited slash"`, ctx);
+    const edited = (await before(event, ctx)) as { systemPrompt: string };
+    expect(edited.systemPrompt).toContain("Edited slash");
+    expect(edited.systemPrompt).not.toContain("Via slash");
   });
 
   it("still registers the five tools and keeps their results unchanged", async () => {

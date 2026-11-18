@@ -446,6 +446,29 @@ describe("engram-cli packaging (pi extension)", () => {
     const extUrl = pathToFileURL(
       join(installed, "node_modules", "engram-cli", "dist", "pi-extension.js"),
     ).href;
+    const home = join(installed, "isolated-home");
+    mkdirSync(join(home, ".engram"), { recursive: true });
+    const engrams = join(installed, ".engram", "engrams");
+    mkdirSync(engrams, { recursive: true });
+    writeFileSync(
+      join(installed, ".engram", "config.json"),
+      JSON.stringify({ version: 1, tracked: true }),
+    );
+    writeFileSync(
+      join(engrams, "0001-orchid-cache.md"),
+      [
+        "---",
+        'id: "0001"',
+        "title: Orchid cache",
+        "type: note",
+        "tags: []",
+        "scope: project",
+        "created: 2026-08-16T10:00:00.000Z",
+        "updated: 2026-08-16T10:00:00.000Z",
+        "---",
+        "Store Orchid assets for seven days.",
+      ].join("\n") + "\n",
+    );
     const script = `
       const mod = await import(${JSON.stringify(extUrl)});
       if (typeof mod.default !== "function") throw new Error("default export is not a function");
@@ -455,7 +478,7 @@ describe("engram-cli packaging (pi extension)", () => {
       mod.default({
         registerTool: (t) => tools.push(t.name),
         registerCommand: (name) => commands.push(name),
-        on: (name) => handlers.set(name, true),
+        on: (name, handler) => handlers.set(name, handler),
       });
       const expectedTools = [
         "engram_context",
@@ -470,10 +493,26 @@ describe("engram-cli packaging (pi extension)", () => {
         throw new Error("unexpected commands: " + commands.join(","));
       for (const h of ["session_start", "before_agent_start"])
         if (!handlers.has(h)) throw new Error("missing lifecycle handler: " + h);
+      const ctx = {
+        cwd: process.cwd(),
+        hasUI: false,
+        get ui() { throw new Error("unexpected headless UI use"); },
+      };
+      await handlers.get("session_start")({ reason: "startup" }, ctx);
+      const before = handlers.get("before_agent_start");
+      const recall = await before({ prompt: "Orchid cache", systemPrompt: "BASE" }, ctx);
+      if (!recall?.systemPrompt.startsWith("BASE") ||
+          !recall.systemPrompt.includes("Store Orchid assets for seven days.") ||
+          recall.systemPrompt.split("<engram-memory>").length !== 2 ||
+          recall.message !== undefined)
+        throw new Error("packed Pi did not deliver exactly one task-specific block");
+      const weak = await before({ prompt: "Orchid seismology", systemPrompt: "BASE" }, ctx);
+      if (weak !== undefined) throw new Error("packed Pi did not abstain");
       console.log("OK");
     `;
     const res = execFileSync(process.execPath, ["--input-type=module", "-e", script], {
       cwd: installed,
+      env: { ...process.env, HOME: home },
       encoding: "utf8",
     }).trim();
     expect(res).toBe("OK");
