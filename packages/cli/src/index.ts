@@ -37,6 +37,7 @@ import { statsCommand } from "./commands/stats.js";
 // WU-1; keep the registration append-only and minimal.
 import * as Install from "./commands/install.js";
 import * as Hook from "./commands/hook.js";
+import { recordHookUsageArgument } from "@engram/harnesses/shared";
 import { installEpipeGuard } from "./io.js";
 
 // ENG-39: a piped consumer closing stdout/stderr early (e.g. `| head`) must
@@ -528,6 +529,10 @@ program
     "Lifecycle hook entry point: print the bounded engram digest for host injection. Always exits 0.",
   )
   .action((host: string, event: string) => run(Hook.hookCommand({ host, event })));
+
+program
+  .command(`${Hook.HOOK_USAGE_COMMAND} <event-json>`, { hidden: true })
+  .action((value: string) => run(recordHookUsageArgument(value)));
 
 program.parseAsync(process.argv).catch((err) => {
   // commander emits its own errors (e.g. unknown command); surface cleanly.

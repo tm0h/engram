@@ -15,6 +15,7 @@
  */
 import { Console, Duration, Effect, Option } from "effect";
 import type { Console as ConsoleService } from "effect/Console";
+import { spawn } from "node:child_process";
 import process from "node:process";
 import chalk from "chalk";
 import {
@@ -23,10 +24,39 @@ import {
   HOOK_TIMEOUT_MS,
   TRUNCATION_MARKER,
 } from "@engram/harnesses/installer";
-import { autoContextOp, elapsedUsageMs, recordBootstrapUsage } from "@engram/harnesses/shared";
+import {
+  autoContextOp,
+  elapsedUsageMs,
+  recordBootstrapUsage,
+  recordUsage,
+} from "@engram/harnesses/shared";
 
 export const HOOK_HOSTS = ["claude-code", "codex"] as const;
 export const HOOK_EVENTS = ["startup", "resume", "compact"] as const;
+export const HOOK_USAGE_COMMAND = "_record-hook-usage";
+const HOOK_USAGE_WAIT_MS = 250;
+
+// A pending Node filesystem request can keep a CLI process alive after its
+// Effect times out. Let a separate process finish the write and clean up its
+// lock while the hook returns the context to its host.
+const recordInChild: typeof recordUsage = (usage) =>
+  Effect.tryPromise(
+    () =>
+      new Promise<void>((resolve) => {
+        if (process.env.ENGRAM_STATS === "off" || !process.argv[1]) {
+          resolve();
+          return;
+        }
+        const child = spawn(
+          process.execPath,
+          [...process.execArgv, process.argv[1], HOOK_USAGE_COMMAND, JSON.stringify(usage)],
+          { stdio: "ignore", windowsHide: true },
+        );
+        child.once("exit", () => resolve());
+        child.once("error", () => resolve());
+        child.unref();
+      }),
+  ).pipe(Effect.timeout(HOOK_USAGE_WAIT_MS), Effect.ignore);
 
 export interface HookOptions {
   readonly host: string;
@@ -125,7 +155,7 @@ export const hookCommand = ({ host, event, timeoutMs = HOOK_TIMEOUT_MS }: HookOp
         Buffer.byteLength(withNewline, "utf8") <= HOOK_STDOUT_CAP_BYTES ? withNewline : text,
       );
     }
-    yield* recordBootstrapUsage("hook", ms, result, text);
+
     if (debug) {
       const notes = `${buffered.stdout()}${buffered.stderr()}`;
       if (notes !== "") process.stderr.write(notes);
@@ -138,4 +168,5 @@ export const hookCommand = ({ host, event, timeoutMs = HOOK_TIMEOUT_MS }: HookOp
         );
       }
     }
+    yield* recordBootstrapUsage("hook", ms, result, text, recordInChild);
   }).pipe(Effect.catchDefect(() => Effect.void));

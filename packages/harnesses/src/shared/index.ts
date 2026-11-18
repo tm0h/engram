@@ -14,5 +14,6 @@ export {
   elapsedUsageMs,
   readStats,
   recordBootstrapUsage,
+  recordHookUsageArgument,
   recordUsage,
 } from "./stats.js";

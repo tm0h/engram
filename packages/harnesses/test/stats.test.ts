@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { Effect } from "effect";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { changeStats, readStats, recordUsage } from "../src/shared/stats.js";
+
+vi.mock("node:fs/promises", { spy: true });
 
 let home: string;
 let file: string;
@@ -89,3 +92,38 @@ it("serializes concurrent recording with disable and clear", async () => {
   expect(await read()).toMatchObject({ collection: "disabled", events: 0 });
   expect(() => readFileSync(file)).toThrow();
 });
+
+it("returns on a stalled write and leaves cleanup to the writer that holds the lock", async () => {
+  const lock = join(home, ".engram", "stats", ".lock");
+  const { writeFile: realWriteFile } =
+    await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+  let notifyStarted!: () => void;
+  let releaseWrite!: () => void;
+  const started = new Promise<void>((resolve) => {
+    notifyStarted = resolve;
+  });
+  const stalled = new Promise<void>((resolve) => {
+    releaseWrite = resolve;
+  });
+  vi.mocked(writeFile).mockImplementationOnce(async (target, data) => {
+    notifyStarted();
+    await stalled;
+    // Simulate a write already submitted to the filesystem when aborted.
+    await realWriteFile(target, data);
+  });
+  try {
+    const recording = Effect.runPromise(recordUsage(search()));
+    await started;
+    await recording;
+    expect(existsSync(lock)).toBe(true);
+    expect(existsSync(file)).toBe(false);
+    await Effect.runPromise(recordUsage(search()));
+    expect(existsSync(lock)).toBe(true);
+  } finally {
+    releaseWrite();
+    await vi.waitFor(() => expect(existsSync(lock)).toBe(false));
+  }
+  expect(existsSync(file)).toBe(false);
+  await Effect.runPromise(recordUsage(search()));
+  expect(await read()).toMatchObject({ events: 1 });
+}, 3000);

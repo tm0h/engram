@@ -374,9 +374,10 @@ Use `engram stats --disable` to stop collecting for the local account and
 environment to opt out for those processes regardless of the saved setting.
 `engram stats --clear` removes recorded events and preserves the collection
 setting. Use `engram stats --disable --clear` to stop collection and remove
-history together. Collection skips writes if the file is invalid or inaccessible
-or the write lock remains busy after a short retry. Use `--clear` to reset an
-invalid file. If a terminated writer leaves a stale lock and `--clear` reports
+history together. Recording has a short deadline so automatic context can
+proceed if the statistics directory is slow or the write lock stays busy.
+Collection also skips writes to an invalid or inaccessible statistics file.
+Use `--clear` to reset an invalid file. If a terminated writer leaves a stale lock and `--clear` reports
 that statistics are locked, stop active Engram CLI and harness processes,
 remove `~/.engram/stats/.lock`, then retry.
 

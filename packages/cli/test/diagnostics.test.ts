@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { execFile, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -151,4 +151,49 @@ describe("local diagnostics and statistics", () => {
     expect(json("search", "inventedtoken")).toMatchObject({ total: 0 });
     expect(json("stats")).toMatchObject({ state: "empty", events: 0 });
   }, 25_000);
+  it("lets a hook exit with its context while a statistics write is stalled", async () => {
+    cli("init", "--untracked");
+    cli("add", "Example context", "--title", "Hook context", "--pinned");
+    const preload = join(root, "stall-stats.cjs");
+    const started = join(root, "started");
+    const aborted = join(root, "aborted");
+    const release = join(root, "release");
+    const lock = join(home, ".engram", "stats", ".lock");
+    writeFileSync(
+      preload,
+      `
+      const fs = require("node:fs");
+      const pending = require("node:fs/promises");
+      const { setTimeout } = require("node:timers/promises");
+      const original = pending.writeFile;
+      pending.writeFile = async (target, ...args) => {
+        if (typeof target === "string" && target.endsWith("/.lock/events.json")) {
+          fs.writeFileSync(${JSON.stringify(started)}, "");
+          args[1]?.signal?.addEventListener("abort", () => fs.writeFileSync(${JSON.stringify(aborted)}, ""), { once: true });
+          for (let attempt = 0; attempt < 500; attempt++) {
+            if (fs.existsSync(${JSON.stringify(release)})) break;
+            await setTimeout(20);
+          }
+        }
+        return original(target, ...args);
+      };
+      require("node:module").syncBuiltinESMExports();
+    `,
+    );
+    try {
+      const output = execFileSync(
+        process.execPath,
+        ["--require", preload, ...nodeArgs, "hook", "claude-code", "startup"],
+        { ...options(), timeout: 5000 },
+      );
+      expect(output).toContain("Hook context");
+      await vi.waitFor(() => expect(existsSync(started)).toBe(true), { timeout: 5000 });
+      await vi.waitFor(() => expect(existsSync(aborted)).toBe(true));
+      expect(existsSync(lock)).toBe(true);
+    } finally {
+      writeFileSync(release, "");
+      await vi.waitFor(() => expect(existsSync(lock)).toBe(false));
+    }
+    expect(existsSync(events)).toBe(false);
+  }, 20_000);
 });

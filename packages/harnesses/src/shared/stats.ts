@@ -6,6 +6,7 @@ import { setTimeout } from "node:timers/promises";
 import { globalRoot } from "@engram/core";
 import type { OpResult } from "./types.js";
 
+const RECORD_TIMEOUT_MS = 150;
 const MAX_EVENTS = 1000;
 const MAX_BYTES = 512 * 1024;
 const SHOW_WINDOW_MS = 5 * 60 * 1000;
@@ -104,7 +105,8 @@ async function checkDirectory(files: Paths) {
 
 const blockedByEnvironment = () => process.env.ENGRAM_STATS === "off";
 
-async function readHistory(file: string): Promise<History["events"] | null> {
+async function readHistory(file: string, signal?: AbortSignal): Promise<History["events"] | null> {
+  signal?.throwIfAborted();
   const handle = await open(
     file,
     constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
@@ -114,15 +116,19 @@ async function readHistory(file: string): Promise<History["events"] | null> {
   });
   if (!handle) return [];
   try {
+    signal?.throwIfAborted();
     const info = await handle.stat();
+    signal?.throwIfAborted();
     if (!info.isFile() || info.size > MAX_BYTES) return null;
     const buffer = Buffer.alloc(info.size + 1);
     let bytesRead = 0;
     while (bytesRead < buffer.length) {
+      signal?.throwIfAborted();
       const chunk = await handle.read(buffer, bytesRead, buffer.length - bytesRead, bytesRead);
       if (chunk.bytesRead === 0) break;
       bytesRead += chunk.bytesRead;
     }
+    signal?.throwIfAborted();
     if (bytesRead !== info.size) return null;
     try {
       const { events } = decodeHistory(JSON.parse(buffer.toString("utf8", 0, bytesRead)));
@@ -138,21 +144,27 @@ async function readHistory(file: string): Promise<History["events"] | null> {
 // The lock serializes append, clear and collection changes across processes.
 // Readers see either complete snapshot via rename. Contention has a bounded
 // retry budget so failed or abandoned writers do not stall memory reads.
-async function withLock<A>(files: Paths, run: () => Promise<A>): Promise<A> {
+async function withLock<A>(files: Paths, run: () => Promise<A>, signal?: AbortSignal): Promise<A> {
+  signal?.throwIfAborted();
   await mkdir(files.dir, { mode: 0o700, recursive: true });
+  signal?.throwIfAborted();
   await checkDirectory(files);
   for (const delay of [2, 4, 6, 10, 16, 22, 0]) {
+    signal?.throwIfAborted();
     try {
       await mkdir(files.lock, { mode: 0o700 });
       break;
     } catch (error) {
       if (!hasCode(error, "EEXIST")) throw error;
       if (delay === 0) throw new Error("Local statistics are locked.");
-      await setTimeout(delay);
+      await setTimeout(delay, undefined, { signal });
     }
   }
   const temp = path.join(files.lock, "events.json");
+  // An interrupted Effect may already have returned. This promise still
+  // owns the lock until its outstanding syscall settles and cleanup finishes.
   try {
+    signal?.throwIfAborted();
     return await run();
   } finally {
     try {
@@ -164,25 +176,42 @@ async function withLock<A>(files: Paths, run: () => Promise<A>): Promise<A> {
 }
 
 export const recordUsage = (usage: Usage) =>
-  Effect.tryPromise(async () => {
+  Effect.tryPromise(async (signal) => {
     if (blockedByEnvironment()) return;
     const files = paths();
     await checkDirectory(files);
+    signal.throwIfAborted();
     if (await exists(files.marker)) return;
-    await withLock(files, async () => {
-      if (await exists(files.marker)) return;
-      const events = await readHistory(files.file);
-      if (events === null) return;
-      const event = { at: Date.now(), usage: decodeUsage(usage) };
-      const next = [...events.slice(1 - MAX_EVENTS), event];
-      const temp = path.join(files.lock, "events.json");
-      await writeFile(temp, JSON.stringify({ version: 1, events: next }), {
-        flag: "wx",
-        mode: 0o600,
-      });
-      await rename(temp, files.file);
-    });
-  }).pipe(Effect.ignore);
+    await withLock(
+      files,
+      async () => {
+        if (await exists(files.marker)) return;
+        const events = await readHistory(files.file, signal);
+        if (events === null) return;
+        const event = { at: Date.now(), usage: decodeUsage(usage) };
+        const next = [...events.slice(1 - MAX_EVENTS), event];
+        const temp = path.join(files.lock, "events.json");
+        signal.throwIfAborted();
+        await writeFile(temp, JSON.stringify({ version: 1, events: next }), {
+          flag: "wx",
+          mode: 0o600,
+          signal,
+        });
+        signal.throwIfAborted();
+        await rename(temp, files.file);
+      },
+      signal,
+    );
+  }).pipe(Effect.timeout(RECORD_TIMEOUT_MS), Effect.ignore);
+
+/** The local hook subprocess accepts only an allowlisted numeric usage event. */
+export const recordHookUsageArgument = (value: string) =>
+  Effect.try(() => decodeUsage(JSON.parse(value))).pipe(
+    Effect.flatMap((usage) =>
+      usage.kind === "load" && usage.source === "hook" ? recordUsage(usage) : Effect.void,
+    ),
+    Effect.ignore,
+  );
 
 export const changeStats = (action: "clear" | "enable" | "disable", clearHistory = false) =>
   Effect.tryPromise({
@@ -210,6 +239,7 @@ export const recordBootstrapUsage = (
   ms: number,
   result: OpResult | undefined,
   text: string,
+  record: typeof recordUsage = recordUsage,
 ) => {
   const details = result?.details;
   const outcome: Outcome = !result
@@ -229,7 +259,7 @@ export const recordBootstrapUsage = (
         excluded: Record<string, number>;
       }
     | undefined;
-  return recordUsage({
+  return record({
     kind: "load",
     source,
     ms,
