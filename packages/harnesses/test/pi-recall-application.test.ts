@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vite-plus/test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { Effect } from "effect";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -19,7 +20,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { projectConfigPath, projectEngramsDir } from "@engram/core";
 import engramExtension from "../src/pi/index.js";
-import { autoContextOp, runOpAtDirectory } from "../src/shared/index.js";
+import { autoContextOp, readStats, runOpAtDirectory } from "../src/shared/index.js";
 
 const tasks = [
   { prompt: "Configure orchid ttl", output: { setting: "orchid_ttl", value: 604800 } },
@@ -67,6 +68,7 @@ it("improves configuration proposals over static bootstrap in Pi print and JSON 
   const home = join(cwd, "home");
   const agentDir = join(cwd, "agent");
   vi.stubEnv("HOME", home);
+  vi.stubEnv("ENGRAM_STATS", "on");
   try {
     mkdirSync(join(home, ".engram"), { recursive: true });
     mkdirSync(projectEngramsDir(cwd), { recursive: true });
@@ -208,6 +210,12 @@ it("improves configuration proposals over static bootstrap in Pi print and JSON 
         expect(score).toBe(delivery === "recall" ? 3 : 1);
       }
     }
+    const stats = await Effect.runPromise(readStats());
+    expect(stats).toMatchObject({
+      events: 6,
+      loads: { total: 6, withContext: 4, outcomes: { loaded: 4, weak: 2 } },
+      candidates: { recall: { selected: 4 } },
+    });
   } finally {
     vi.unstubAllEnvs();
     rmSync(cwd, { recursive: true, force: true });

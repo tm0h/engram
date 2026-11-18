@@ -124,6 +124,11 @@ way.
 ## Review and integrity maintenance
 
 The packaged CLI provides maintenance commands that are not native tools.
+Use `engram doctor` to diagnose store, configuration, and managed integration
+state. Use `engram stats` to summarize local usage without recording memory
+content or query text. Both support `--json`. Use
+`engram stats --disable --clear` to stop collection and remove the history.
+
 Run `engram review --scope all` to find superseded, archived, expired,
 review-due, and broken-lineage entries. Add `--json` for structured output.
 The command is read-only.

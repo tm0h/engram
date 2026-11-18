@@ -69,6 +69,19 @@ printf '%s\n' "$where_output"
 [[ "$where_output" == *"/home/node/.engram"* ]] || fail "personal scope escaped the container home"
 engram init --tracked | grep -F "Already initialized"
 
+step "Local diagnostics and usage statistics"
+engram doctor | grep -F "project store: empty"
+engram doctor --json |
+  parse_json 'value.report === "doctor" && value.index.persisted === false && value.scopes.some((scope) => scope.scope === "project" && scope.state === "empty")'
+engram stats --clear --json |
+  parse_json 'value.report === "stats" && value.state === "empty"'
+engram search engram-audit-no-match --json | parse_json 'value.total === 0'
+engram stats --json |
+  parse_json 'value.searches.total === 1 && value.searches.zeroResultRate === 1'
+engram stats --disable --clear --json |
+  parse_json 'value.collection === "disabled" && value.events === 0'
+engram stats --enable | grep -F "Collection: enabled"
+
 step "Add, show, list, and context"
 decision_output=$(
   engram add \

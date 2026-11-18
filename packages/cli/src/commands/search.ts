@@ -13,6 +13,7 @@ import {
   ValidationError,
   type Engram,
 } from "@engram/core";
+import { elapsedUsageMs, recordUsage } from "@engram/harnesses/shared";
 import { out } from "../io.js";
 
 export interface SearchOptions {
@@ -38,6 +39,7 @@ export const searchCommand = (query: string, opts: SearchOptions) =>
         new ValidationError({ message: invalid ?? "--offset requires --json or --explain" }),
       );
     }
+    const started = performance.now();
     const store = yield* EngramStore;
     const projectRoot = yield* store.projectRoot();
     const scopes = scopesToQuery(opts.scope, projectRoot);
@@ -52,11 +54,14 @@ export const searchCommand = (query: string, opts: SearchOptions) =>
         now,
       });
       const report = searchReport(ranked, query, opts.offset ?? 0, opts.limit);
-      yield* out(opts.json ? JSON.stringify(report) : renderSearchExplanation(report));
+      const output = opts.json ? JSON.stringify(report) : renderSearchExplanation(report);
+      const ms = elapsedUsageMs(started);
+      yield* out(output);
+      yield* recordUsage({ kind: "search", source: "cli", matches: report.total, ms });
       return;
     }
     let first = true;
-    let any = false;
+    let matches = 0;
     for (const scope of scopes) {
       const engrams = yield* store.list(scope);
       // ENG-17 R13: --all threads through the core options; the default
@@ -71,8 +76,9 @@ export const searchCommand = (query: string, opts: SearchOptions) =>
         yield* out(chalk.bold(scope === "personal" ? "Personal" : "Project"));
         first = false;
       }
-      if (results.length) any = true;
+      matches += results.length;
       yield* out(renderSearch(results, query));
     }
-    if (!any) yield* out(chalk.gray(`No matches for "${query}".`));
+    if (!matches) yield* out(chalk.gray(`No matches for "${query}".`));
+    yield* recordUsage({ kind: "search", source: "cli", matches, ms: elapsedUsageMs(started) });
   });

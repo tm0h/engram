@@ -9,3 +9,11 @@ export * from "./run.js";
 export * from "./ops.js";
 export * from "./installer.js";
 export * from "./contextual-recall.js";
+export {
+  changeStats,
+  elapsedUsageMs,
+  readStats,
+  recordBootstrapUsage,
+  recordHookUsageArgument,
+  recordUsage,
+} from "./stats.js";

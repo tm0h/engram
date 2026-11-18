@@ -174,6 +174,10 @@ describe("guidance / skills stay aligned", () => {
       expect(skill, `${name}: inactive CLI override`).toContain("--all");
       expect(skill, `${name}: review workflow`).toContain("engram review");
       expect(skill, `${name}: integrity workflow`).toContain("engram check");
+      expect(skill, `${name}: diagnostics workflow`).toContain("engram doctor");
+      expect(skill, `${name}: local statistics controls`).toContain(
+        "engram stats --disable --clear",
+      );
       expect(skill, `${name}: project scan policy`).toContain("secretScan");
       expect(skill, `${name}: personal scan policy`).toContain("personalSecretScan");
     }

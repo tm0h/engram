@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -10,6 +11,7 @@ import {
   type ActiveRequest,
 } from "../src/opencode/context-transform.js";
 import engramPlugin from "../src/opencode/index.js";
+import { readStats } from "../src/shared/stats.js";
 
 const MARKER = "<engram-memory>";
 const block = (text: string) => `${MARKER}\n${text}\n</engram-memory>`;
@@ -302,6 +304,31 @@ describe("OpenCode plugin contextual delivery", () => {
     expect(fallback).not.toMatch(/rollout advice|alternate advice/);
     expect(occurrences(out.system)).toBe(1);
     expect((await render("s2")).join("\n")).toContain("bluebird rollout advice");
+  });
+
+  it("records retrieval and fallback once per cached request", async () => {
+    vi.stubEnv("ENGRAM_STATS", "on");
+    seed(worktree, "0001", "Bluebird", "bluebird rollout advice", true);
+    const { hooks, render } = await setup(fakeClient(turns));
+    await Promise.all([render(), render()]);
+    turns.set("s1", { directory: worktree, text: "unknownquery", parent: "second" });
+    await render();
+    await render();
+    expect(await Effect.runPromise(readStats())).toMatchObject({
+      events: 3,
+      loads: { total: 3, withContext: 2, outcomes: { loaded: 2, weak: 1 } },
+      candidates: { bootstrap: { selected: 1 }, recall: { selected: 1 } },
+    });
+    const context = { sessionID: "s1", directory: worktree } as never;
+    await hooks.tool!.engram_context.execute({}, context);
+    await hooks.tool!.engram_search.execute({ query: "bluebird", offset: 1 }, context);
+    await hooks.tool!.engram_show.execute({ id: "0001" }, context);
+    expect(await Effect.runPromise(readStats())).toMatchObject({
+      events: 6,
+      loads: { total: 4, withContext: 3 },
+      searches: { total: 1, zeroResults: 0 },
+      showAfterSearch: { shows: 1, searchesWithShow: 1 },
+    });
   });
 
   it("refreshes shared project recall after approved adds and edits but keeps cached results on errors", async () => {

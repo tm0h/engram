@@ -15,6 +15,7 @@ import {
 } from "@engram/core";
 import { frameRecall, recallData } from "./recall-frame.js";
 import { PERSONAL_ONLY_NOTE } from "./degraded.js";
+import { recordRecallUsage } from "./stats.js";
 import type { ContextualRecallOptions, OpResult } from "./types.js";
 
 export const CONTEXTUAL_RECALL_LIMITS = {
@@ -117,6 +118,7 @@ const retrieve = (opts: ContextualRecallOptions) =>
     const ranking: Record<string, unknown>[] = [];
     let duplicateCount = 0;
     let confidentCount = 0;
+    let limitedCount = 0;
     const header = personalOnly ? `(${PERSONAL_ONLY_NOTE})\n` : "";
     const evidenceFor = prepareContextualEvidence(query, opts.prompt);
     for (const result of ranked) {
@@ -137,7 +139,10 @@ const retrieve = (opts: ContextualRecallOptions) =>
         duplicateCount++;
         continue;
       }
-      if (selected.length >= CONTEXTUAL_RECALL_LIMITS.results) continue;
+      if (selected.length >= CONTEXTUAL_RECALL_LIMITS.results) {
+        limitedCount++;
+        continue;
+      }
       const row = recallData(
         JSON.stringify({
           id: m.id,
@@ -164,6 +169,7 @@ const retrieve = (opts: ContextualRecallOptions) =>
       rankedCount: ranked.length,
       confidentCount,
       duplicateCount,
+      limitedCount,
       intent: opts.intent,
     };
     return selected.length
@@ -195,5 +201,6 @@ export const contextualRecallOp = (
       : Option.isNone(exit.value) || elapsedMs >= CONTEXTUAL_RECALL_LIMITS.timeoutMs
         ? empty("timeout")
         : exit.value.value;
+    yield* recordRecallUsage(Math.round(elapsedMs), result);
     return { ...result, details: { schemaVersion: 1, ...result.details, elapsedMs } };
   });

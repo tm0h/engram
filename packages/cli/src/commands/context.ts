@@ -7,6 +7,7 @@ import { searchEngrams } from "@engram/core";
 import { findProjectRoot } from "@engram/core";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
+import { elapsedUsageMs, recordUsage } from "@engram/harnesses/shared";
 import { out } from "../io.js";
 
 export interface ContextOptions {
@@ -19,8 +20,8 @@ export interface ContextOptions {
 }
 
 /** Build the full digest text (bounded preamble + body) without printing it.
- * Shared by `engram context` and the ENG-58 fail-open hook runner. */
-export const buildContextDigest = (opts: ContextOptions) =>
+ * Used by `engram context`. */
+const buildContextDigest = (opts: ContextOptions) =>
   Effect.gen(function* () {
     // Output is meant for machine/agent consumption → force plain text.
     chalk.level = 0;
@@ -90,11 +91,25 @@ export const buildContextDigest = (opts: ContextOptions) =>
     }
 
     const body = blocks.length ? blocks.join("\n\n") : "(no engrams available)";
-    return preamble.length ? [...preamble, body].join("\n\n") : body;
+    return {
+      text: preamble.length ? [...preamble, body].join("\n\n") : body,
+      hasPayload: preamble.length > 0 || blocks.length > 0,
+    };
   });
 
 /** `engram context` — print the digest for injection. */
 export const contextCommand = (opts: ContextOptions) =>
   Effect.gen(function* () {
-    yield* out(yield* buildContextDigest(opts));
+    const started = performance.now();
+    const { text, hasPayload } = yield* buildContextDigest(opts);
+    const ms = elapsedUsageMs(started);
+    yield* out(text);
+    const bytes = hasPayload ? Buffer.byteLength(text) : 0;
+    yield* recordUsage({
+      kind: "load",
+      source: "cli",
+      ms,
+      bytes,
+      outcome: bytes ? "loaded" : "empty",
+    });
   });

@@ -8,6 +8,7 @@ import { RECALL_PREFIX, RECALL_SUFFIX, recallData, frameRecall } from "./recall-
  * Rendering is plain text (no ANSI): the primary consumer is the LLM.
  */
 import { bootstrapCandidates } from "./bootstrap.js";
+import { elapsedUsageMs, recordUsage } from "./stats.js";
 import { Effect, Exit, Option, Result } from "effect";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
@@ -316,6 +317,7 @@ export const contextDigest = (
 ): Effect.Effect<OpResult, never, EngramStore> =>
   capture(
     Effect.gen(function* () {
+      const started = performance.now();
       const store = yield* EngramStore;
       const root = yield* store.projectRoot();
       const resolved = resolveScopes(opts.scope ?? "both", root);
@@ -361,6 +363,14 @@ export const contextDigest = (
 
       const body = lines.join("\n");
       const text = footer === null ? applyCap(body) : capWithFooter(body, footer).text;
+      const bytes = page.items.length || omittedFiles > 0 ? Buffer.byteLength(text) : 0;
+      yield* recordUsage({
+        kind: "load",
+        source: "tool",
+        ms: elapsedUsageMs(started),
+        bytes,
+        outcome: bytes ? "loaded" : "empty",
+      });
       return ok(text, {
         total: page.total,
         offset: page.offset,
@@ -378,6 +388,7 @@ export const contextDigest = (
 export const searchOp = (opts: SearchOptions): Effect.Effect<OpResult, never, EngramStore> =>
   capture(
     Effect.gen(function* () {
+      const started = performance.now();
       const invalid = searchPaginationError(opts.offset ?? 0, opts.limit ?? DEFAULT_SEARCH_LIMIT);
       if (invalid) return err(invalid);
       const store = yield* EngramStore;
@@ -449,7 +460,14 @@ export const searchOp = (opts: SearchOptions): Effect.Effect<OpResult, never, En
       const body = count
         ? compose(count)
         : `${header}\n${ranked.length ? "(no matches on this page)" : "No matches. Broaden the query, or call engram_context for the digest."}`;
-      return ok(frameRecall(body), {
+      const text = frameRecall(body);
+      yield* recordUsage({
+        kind: "search",
+        source: "tool",
+        matches: ranked.length,
+        ms: elapsedUsageMs(started),
+      });
+      return ok(text, {
         schemaVersion: 1,
         query: opts.query,
         total: ranked.length,
@@ -628,6 +646,7 @@ export const showOp = (opts: ShowOptions): Effect.Effect<OpResult, never, Engram
         text = header + "(no body)";
       }
 
+      yield* recordUsage({ kind: "show", source: "tool" });
       return ok(applyCap(text), {
         id: m.id,
         scope: m.scope,

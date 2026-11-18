@@ -15,6 +15,7 @@
  */
 import { Console, Duration, Effect, Option } from "effect";
 import type { Console as ConsoleService } from "effect/Console";
+import { spawn } from "node:child_process";
 import process from "node:process";
 import chalk from "chalk";
 import {
@@ -23,10 +24,39 @@ import {
   HOOK_TIMEOUT_MS,
   TRUNCATION_MARKER,
 } from "@engram/harnesses/installer";
-import { autoContextOp } from "@engram/harnesses/shared";
+import {
+  autoContextOp,
+  elapsedUsageMs,
+  recordBootstrapUsage,
+  recordUsage,
+} from "@engram/harnesses/shared";
 
 export const HOOK_HOSTS = ["claude-code", "codex"] as const;
 export const HOOK_EVENTS = ["startup", "resume", "compact"] as const;
+export const HOOK_USAGE_COMMAND = "_record-hook-usage";
+const HOOK_USAGE_WAIT_MS = 250;
+
+// A pending Node filesystem request can keep a CLI process alive after its
+// Effect times out. Let a separate process finish the write and clean up its
+// lock while the hook returns the context to its host.
+const recordInChild: typeof recordUsage = (usage) =>
+  Effect.tryPromise(
+    () =>
+      new Promise<void>((resolve) => {
+        if (process.env.ENGRAM_STATS === "off" || !process.argv[1]) {
+          resolve();
+          return;
+        }
+        const child = spawn(
+          process.execPath,
+          [...process.execArgv, process.argv[1], HOOK_USAGE_COMMAND, JSON.stringify(usage)],
+          { stdio: "ignore", windowsHide: true },
+        );
+        child.once("exit", () => resolve());
+        child.once("error", () => resolve());
+        child.unref();
+      }),
+  ).pipe(Effect.timeout(HOOK_USAGE_WAIT_MS), Effect.ignore);
 
 export interface HookOptions {
   readonly host: string;
@@ -100,21 +130,22 @@ export const hookCommand = ({ host, event, timeoutMs = HOOK_TIMEOUT_MS }: HookOp
     const debug = Boolean(process.env[HOOK_DEBUG_ENV]);
     const buffered = bufferedConsole();
     let failure: string | null = null;
+    const started = performance.now();
     const digest = yield* autoContextOp().pipe(
       Effect.map((result) => {
         if (typeof result.details.error === "string") failure = result.details.error;
-        return result.text;
+        return result;
       }),
       Effect.provideService(Console.Console, buffered.console),
       Effect.timeoutOption(Duration.millis(timeoutMs)),
       Effect.catchDefect((d) => {
         failure = d instanceof Error ? d.message : String(d);
-        return Effect.succeedNone;
+        return Effect.succeedSome({ text: "", isError: false, details: { error: failure } });
       }),
     );
-    const text = Option.isSome(digest)
-      ? capToBytes(digest.value, HOOK_STDOUT_CAP_BYTES, TRUNCATION_MARKER)
-      : "";
+    const ms = elapsedUsageMs(started);
+    const result = Option.getOrUndefined(digest);
+    const text = capToBytes(result?.text ?? "", HOOK_STDOUT_CAP_BYTES, TRUNCATION_MARKER);
     // The trailing newline is part of the cap budget: injected stdout never
     // exceeds HOOK_STDOUT_CAP_BYTES bytes (the truncation marker ends with a
     // newline, so capped output is written as-is).
@@ -124,6 +155,7 @@ export const hookCommand = ({ host, event, timeoutMs = HOOK_TIMEOUT_MS }: HookOp
         Buffer.byteLength(withNewline, "utf8") <= HOOK_STDOUT_CAP_BYTES ? withNewline : text,
       );
     }
+
     if (debug) {
       const notes = `${buffered.stdout()}${buffered.stderr()}`;
       if (notes !== "") process.stderr.write(notes);
@@ -136,4 +168,5 @@ export const hookCommand = ({ host, event, timeoutMs = HOOK_TIMEOUT_MS }: HookOp
         );
       }
     }
+    yield* recordBootstrapUsage("hook", ms, result, text, recordInChild);
   }).pipe(Effect.catchDefect(() => Effect.void));
