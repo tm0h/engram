@@ -126,9 +126,10 @@ project rule / `.cursorrules` / `AGENTS.md`). The snippet tells the agent to:
   choices and their rationale),
 - use `--scope personal` for notes that must not be shared with the team.
 
-This manual flow is for generic harnesses and bots. The native Pi and
-OpenCode integrations below load the digest automatically at session start,
-so agents there should not duplicate the startup call.
+The native Pi integration loads a startup digest automatically. OpenCode
+loads relevant memory for the current request, with the digest available as a
+fallback. Agents can use the manual flow when automatic context is unavailable
+or they need more detail.
 
 ### 2. Harness-specific wiring
 
@@ -136,8 +137,8 @@ so agents there should not duplicate the startup call.
   command, a skill, and automatic session-start context loading. See
   [Pi extension](#pi-extension).
 - **OpenCode**: add `"plugin": ["engram-cli"]` to `opencode.json`. Ships five
-  native tools with typed, validated parameters plus experimental automatic
-  session-start context loading. See [OpenCode plugin](#opencode-plugin).
+  native tools with typed, validated parameters plus experimental contextual
+  recall. See [OpenCode plugin](#opencode-plugin).
 - **Claude Code**: `/plugin marketplace add tm0h/engram`, then
   `/plugin install engram@engram` (brings the skill and an `engram`
   launcher). Or simply drop the snippet above into `CLAUDE.md`. Without the
@@ -183,10 +184,10 @@ scope fallbacks, see
 The same `engram-cli` npm package is an
 [OpenCode](https://opencode.ai) plugin. Add it to `opencode.json` to give the
 agent the native `engram_context`, `engram_search`, `engram_show`, `engram_add`,
-and `engram_edit` tools, plus experimental automatic session-start context
-loading (best-effort through OpenCode's
-`experimental.chat.system.transform` hook). Successful adds and edits refresh
-the calling session's cached digest:
+and `engram_edit` tools. The experimental system transform injects relevant
+memory for the current request from the active workspace. When recall finds
+no strong match, the curated digest is available as a fallback. Successful
+adds and edits refresh cached context across sessions.
 
 ```json
 {
@@ -566,9 +567,10 @@ unchanged. Pagination runs after this ranking.
 
 ### Curated automatic startup context
 
-Pi, OpenCode, Claude Code and Codex startup/resume/compaction context uses a
-curated bootstrap by default. It selects active pinned memories, decisions with
-`importance` at least 3, and critical preferences with `importance` at least 4.
+Automatic startup, resume, and compaction context uses a curated bootstrap by
+default. OpenCode uses the same digest as its fallback for contextual recall.
+The digest selects active pinned memories, decisions with `importance` at least 3,
+and critical preferences with `importance` at least 4.
 Path-specific entries (`appliesTo`) are excluded unless explicitly enabled.
 Pinned entries come first, then importance descending; project scope and id break
 ties. Selection does not depend on file scan order or age. Ordinary notes and

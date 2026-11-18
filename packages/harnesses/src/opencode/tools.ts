@@ -43,10 +43,8 @@ interface OpenCodeToolContext {
 export const engramContextTool = {
   description:
     `Refresh the recorded memory digest for this workspace: decisions, pinned notes, gotchas, conventions. ` +
-    `A compact project digest is loaded into your context automatically at session start (experimental, ` +
-    `best-effort in OpenCode), so do not call this to duplicate that. Use it to refresh after entries ` +
-    `change, to page deeper, to recover when the automatic load failed or was disabled, or to load ` +
-    `context before starting feature work. ` +
+    `OpenCode can load relevant memory or a compact digest automatically for the current request. ` +
+    `Use this tool for an overview, additional pages, or when automatic context is unavailable. ` +
     `Returns compact one-line entries (id, type, title, tags) with decisions and pinned entries first; ` +
     `read a full entry with engram_show. Results are paginated - when truncated, the footer names the exact next call.`,
   args: {

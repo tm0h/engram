@@ -103,6 +103,48 @@ const evtCtx = (cwd: string) =>
     ui: { notify: () => {} },
   }) as never;
 
+const openCodeSession = async (directory: string, sessionID: string, text: string) => {
+  const model = { id: "test-model", providerID: "test-provider" };
+  const messageID = "user";
+  const hooks = await engramPlugin({
+    directory,
+    client: {
+      session: {
+        messages: async () => ({
+          data: [
+            {
+              info: {
+                role: "assistant",
+                sessionID,
+                parentID: messageID,
+                time: {},
+                path: { cwd: directory },
+                modelID: model.id,
+                providerID: model.providerID,
+              },
+              parts: [],
+            },
+          ],
+        }),
+        message: async () => ({
+          data: {
+            info: { role: "user", sessionID, id: messageID },
+            parts: [{ type: "text", sessionID, messageID, text }],
+          },
+        }),
+      },
+    },
+  } as unknown as Parameters<typeof engramPlugin>[0]);
+  const transform = hooks["experimental.chat.system.transform"]!;
+  const render = async () => {
+    const out = { system: ["BASE"] };
+    await transform({ sessionID, model } as Parameters<typeof transform>[0], out);
+    expect(out.system[0]).toBe("BASE");
+    return out.system;
+  };
+  return { render, tools: hooks.tool! };
+};
+
 /* -------------------------------- tests -------------------------------- */
 
 describe("legacy selection compatibility / shared auto-context", () => {
@@ -249,18 +291,13 @@ describe("PR1 acceptance / first-request delivery", () => {
 
   it("OpenCode: first request delivers; repeated requests stay at one block each", async () => {
     seed(tmp, "0001", { type: "decision", title: "Acceptance decision" });
-    const hooks = (await engramPlugin({
-      directory: tmp,
-      worktree: tmp,
-    } as never)) as Record<string, any>;
-    const transform = hooks["experimental.chat.system.transform"];
+    const { render } = await openCodeSession(tmp, "acc", "acceptance");
 
     for (let i = 0; i < 3; i++) {
-      const out = { system: ["BASE"] };
-      await transform({ sessionID: "acc", model: {} }, out);
-      expect(out.system[0]).toContain("Acceptance decision");
-      expect(occurrences(out.system[0])).toBe(1);
-      expect(out.system).toHaveLength(1);
+      const system = await render();
+      expect(system).toHaveLength(2);
+      expect(system[1]).toContain("Acceptance decision");
+      expect(occurrences(system.join("\n"))).toBe(1);
     }
   });
 
@@ -288,26 +325,21 @@ describe("PR1 acceptance / first-request delivery", () => {
     expect(piSecond.systemPrompt).toContain("Fresh acceptance entry");
     expect(occurrences(piSecond.systemPrompt)).toBe(1);
 
-    // OpenCode: same flow through the transform + tool map
-    const hooks = (await engramPlugin({
-      directory: tmp,
-      worktree: tmp,
-    } as never)) as Record<string, any>;
-    const transform = hooks["experimental.chat.system.transform"];
-    const out1 = { system: ["BASE"] };
-    await transform({ sessionID: "acc", model: {} }, out1);
-    expect(out1.system[0]).not.toContain("Fresh acceptance entry 2");
+    // OpenCode: the same request reloads recall after the add.
+    const { render, tools: ocTools } = await openCodeSession(tmp, "acc", "acceptance");
+    const beforeAdd = (await render()).join("\n");
+    expect(beforeAdd).toContain("Acceptance decision");
+    expect(beforeAdd).not.toContain("Fresh acceptance entry 2");
 
-    const added = await hooks.tool.engram_add.execute(
+    const added = await ocTools.engram_add.execute(
       { title: "Fresh acceptance entry 2", body: "b" },
-      { sessionID: "acc", directory: tmp },
+      { sessionID: "acc", directory: tmp } as never,
     );
-    expect(added.metadata.isError).toBe(false);
+    expect(added).toMatchObject({ metadata: { isError: false } });
 
-    const out2 = { system: ["BASE"] };
-    await transform({ sessionID: "acc", model: {} }, out2);
-    expect(out2.system[0]).toContain("Fresh acceptance entry 2");
-    expect(occurrences(out2.system[0])).toBe(1);
+    const afterAdd = (await render()).join("\n");
+    expect(afterAdd).toContain("Fresh acceptance entry 2");
+    expect(occurrences(afterAdd)).toBe(1);
   });
 
   it("both adapters reflect a successful edit on the next request", async () => {
@@ -340,26 +372,21 @@ describe("PR1 acceptance / first-request delivery", () => {
     expect(piSecond.systemPrompt).not.toContain("Editable decision");
     expect(occurrences(piSecond.systemPrompt)).toBe(1);
 
-    // OpenCode: same flow through the transform + tool map, session-local.
-    const hooks = (await engramPlugin({
+    // OpenCode: the same request reloads the edited memory.
+    const { render, tools: ocTools } = await openCodeSession(tmp, "acc-edit", "decision");
+    const beforeEdit = (await render()).join("\n");
+    expect(beforeEdit).toContain("Edited decision");
+    expect(beforeEdit).not.toContain("Edited decision 2");
+
+    const edited = await ocTools.engram_edit.execute({ id: "0001", title: "Edited decision 2" }, {
+      sessionID: "acc-edit",
       directory: tmp,
-      worktree: tmp,
-    } as never)) as Record<string, any>;
-    const transform = hooks["experimental.chat.system.transform"];
-    const out1 = { system: ["BASE"] };
-    await transform({ sessionID: "acc-edit", model: {} }, out1);
-    expect(out1.system[0]).not.toContain("Edited decision 2");
+    } as never);
+    expect(edited).toMatchObject({ metadata: { isError: false } });
 
-    const edited = await hooks.tool.engram_edit.execute(
-      { id: "0001", title: "Edited decision 2" },
-      { sessionID: "acc-edit", directory: tmp },
-    );
-    expect(edited.metadata.isError).toBe(false);
-
-    const out2 = { system: ["BASE"] };
-    await transform({ sessionID: "acc-edit", model: {} }, out2);
-    expect(out2.system[0]).toContain("Edited decision 2");
-    expect(occurrences(out2.system[0])).toBe(1);
+    const afterEdit = (await render()).join("\n");
+    expect(afterEdit).toContain("Edited decision 2");
+    expect(occurrences(afterEdit)).toBe(1);
   });
 });
 

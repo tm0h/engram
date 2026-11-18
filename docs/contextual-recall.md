@@ -2,7 +2,9 @@
 
 `contextualRecallOp` is a stateless, harness-neutral operation exported by
 `@engram/harnesses/shared`. Adapters inject its `text` only when nonempty.
-Pi and OpenCode lifecycle delivery are separate integrations.
+OpenCode delivers recall through its system transform. See the
+[OpenCode plugin guide](../packages/harnesses/src/opencode/README.md#automatic-context-experimental)
+for request resolution, fallback behavior, and cache invalidation.
 
 ```ts
 import { contextualRecallOp, runOpAtDirectory } from "@engram/harnesses/shared";
@@ -24,7 +26,7 @@ opt-out and `autoContextScope` setting apply. Default scope is project;
 `both` outside a project uses personal memory and records that fallback in
 structured diagnostics and every nonempty payload.
 
-After a successful startup injection, retain `autoContextOp`'s
+When an adapter delivers bootstrap alongside recall, retain `autoContextOp`'s
 `details.bootstrap` snapshot. It now includes `projectRoot` (`null` outside a
 project) and the actual `selected` identities. Pass those values only if the
 payload was actually delivered. Recall ignores a snapshot from another
