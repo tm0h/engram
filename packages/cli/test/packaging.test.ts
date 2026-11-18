@@ -288,7 +288,7 @@ describe("engram-cli packaging (pi extension)", () => {
     }
   });
 
-  it("shipped opencode plugin imports and registers tools + system transform", (ctx) => {
+  it("shipped opencode plugin delivers recall for the active turn and refreshes after writes", (ctx) => {
     if (!spawnOk) ctx.skip();
 
     run(["--filter", "engram-cli", "build"], repoRoot);
@@ -302,13 +302,45 @@ describe("engram-cli packaging (pi extension)", () => {
 
     // Import the package's exported ./server subpath exactly like opencode
     // resolves it (via exports["./server"], not the dist file path) so an
-    // invalid export mapping fails this test, and drive the plugin factory:
-    // tools + the experimental system transform must be present, and a
-    // transform over an empty store must be a no-op.
+    // invalid export mapping fails this test. Use separate initialization and
+    // turn directories with a fixture that mirrors the SDK's session endpoints.
     const script = `
+      import assert from "node:assert/strict";
+      import { mkdirSync, writeFileSync } from "node:fs";
+      import { join } from "node:path";
       const mod = await import("engram-cli/server");
-      if (typeof mod.default !== "function") throw new Error("default export is not a function");
-      const hooks = await mod.default({ directory: process.cwd() });
+      const init = process.cwd();
+      const active = join(init, "worktree");
+      const fixture = (directory) => {
+        mkdirSync(join(directory, ".engram", "engrams"), { recursive: true });
+        writeFileSync(join(directory, ".engram", "config.json"),
+          JSON.stringify({ version: 1, tracked: true, defaultType: "note" }));
+      };
+      fixture(init);
+      fixture(active);
+
+      const sessionID = "s1";
+      const model = { id: "model", providerID: "provider" };
+      let messageID = "user-1";
+      let prompt = "bluebird";
+      const client = { session: {
+        messages: async ({ path, query }) => {
+          assert.equal(path.id, sessionID);
+          assert.equal(query.limit, 1);
+          return { data: [{ info: {
+            role: "assistant", sessionID, parentID: messageID, time: {}, path: { cwd: active },
+            modelID: model.id, providerID: model.providerID,
+          }, parts: [] }] };
+        },
+        message: async ({ path }) => {
+          assert.deepEqual(path, { id: sessionID, messageID });
+          return { data: {
+            info: { role: "user", id: messageID, sessionID },
+            parts: [{ type: "text", text: prompt, sessionID, messageID }],
+          } };
+        },
+      } };
+      const hooks = await mod.default({ directory: init, client });
       const tools = Object.keys(hooks.tool ?? {}).sort();
       const expected = [
         "engram_add",
@@ -322,9 +354,41 @@ describe("engram-cli packaging (pi extension)", () => {
       if (typeof hooks["experimental.chat.system.transform"] !== "function")
         throw new Error("system transform missing");
       if (typeof hooks.event !== "function") throw new Error("event hook missing");
-      const out = { system: ["base"] };
-      await hooks["experimental.chat.system.transform"]({ sessionID: "s1" }, out);
-      if (out.system[0] !== "base") throw new Error("empty store must not inject: " + JSON.stringify(out));
+      const out = { system: ["base", "prior plugin"] };
+      const transform = hooks["experimental.chat.system.transform"];
+      const render = async () => {
+        await transform({ sessionID, model }, out);
+        assert.deepEqual(out.system.slice(0, 2), ["base", "prior plugin"]);
+        return out.system.slice(2).join("\\n");
+      };
+      assert.equal(await render(), "");
+
+      const add = async (directory, title, body) => {
+        const result = await hooks.tool.engram_add.execute({ title, body }, { directory, sessionID });
+        assert.equal(result.metadata?.isError, false, result.output);
+      };
+      await add(init, "Bluebird", "bluebird initialization memory");
+      await add(active, "Bluebird", "bluebird rollout advice");
+      await add(active, "Redfinch", "redfinch followup advice");
+
+      const first = await render();
+      assert.match(first, /bluebird rollout advice/);
+      assert.doesNotMatch(first, /initialization memory|redfinch followup advice/);
+      assert.equal(await render(), first);
+      assert.equal(first.split("<engram-memory>").length, 2);
+
+      messageID = "user-2";
+      prompt = "redfinch";
+      const next = await render();
+      assert.match(next, /redfinch followup advice/);
+      assert.doesNotMatch(next, /bluebird/);
+      assert.equal(next.split("<engram-memory>").length, 2);
+
+      await add(active, "Redfinch extra", "redfinch revised advice");
+      const refreshed = await render();
+      assert.match(refreshed, /redfinch revised advice/);
+      assert.equal(refreshed.split("<engram-memory>").length, 2);
+      assert.equal(out.system.length, 3);
       console.log("OK");
     `;
     const res = execFileSync(process.execPath, ["--input-type=module", "-e", script], {

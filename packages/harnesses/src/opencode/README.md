@@ -32,32 +32,25 @@ and write the same scopes as the CLI (`project` inside an initialized repo,
 `personal` otherwise). Each call resolves project memory from the active
 OpenCode session directory, so separate workspaces do not share project scope.
 
-## Automatic session context (experimental)
+## Automatic context (experimental)
 
-The plugin also injects a compact digest of this workspace's recorded memory
-(`<engram-memory>` block, curated pinned/important memories) into the system
-prompt of each session, before the first model request. Loading is lazy,
-per-session, and fail-open: disabled, empty, or unreadable memory leaves the
-prompt untouched and never breaks a session.
+OpenCode's `experimental.chat.system.transform` hook can add one
+`<engram-memory>` block per model request. Engram uses the active assistant
+turn's working directory and the user text from its parent message. Follow-up
+requests can retrieve different memories in the same session. The native
+tools use the directory supplied on each tool call.
 
-How it works and what to expect:
-
-- **Experimental seam**: injection uses OpenCode's
-  `experimental.chat.system.transform` hook, which is not yet part of the
-  documented public plugin API. Treat automatic loading as best-effort; if a
-  future OpenCode release changes or removes the hook, the tools (including
-  `engram_context` for manual loading) keep working.
-- **Directory semantics**: the digest is resolved from the directory OpenCode
-  passed when loading the plugin — the workspace the plugin was initialized
-  in. Tool calls still resolve memory from their own per-call session
-  directory, so subagent or worktree contexts read their own project scope.
-- **Per-session cache**: the digest loads once per session and is reapplied to
-  every model request in it. A successful `engram_add` invalidates only the
-  calling session's cache, so its next request reflects the new entry. Other
-  sessions keep their cached digest until it is dropped (session deletion or
-  cache eviction); call `engram_context` to read the latest digest manually.
-- **Bounded**: at most 25 entries and 4,800 characters by default; ids, types, titles,
-  and tags only — never full bodies.
+- Confident recall delivers up to five relevant entries with short excerpts,
+  capped at 4,096 characters and 8 KiB. On a weak match, the curated digest
+  can provide general project context. A request receives a single block,
+  and existing system entries are preserved.
+- The plugin caches the latest result per session for up to 30 seconds and
+  retains at most 100 sessions. An approved `engram_add` or `engram_edit`
+  clears the plugin's cache because sessions can share a project or personal
+  store. Session deletion clears that session's entry.
+- Automatic delivery leaves the prompt usable when the session or SDK data is
+  missing, retrieval fails, or automatic context is disabled. The native tools
+  remain available on hosts without the experimental hook.
 
 Configure it with the global config keys (user-level, not committed project
 policy):
@@ -68,8 +61,8 @@ engram config set autoContextScope both      # project (default) | personal | bo
 engram config set autoContextLimit 10        # entries per digest, 1..100 (default 25)
 ```
 
-If the automatic digest did not arrive (experimental hook changed, disabled,
-or load failed), call `engram_context` — it renders the same digest on demand.
+Use `engram_context` to read the workspace digest on demand and
+`engram_search` when you need more detailed recall.
 
 ## What you get
 
@@ -93,8 +86,8 @@ instead of throwing an opaque plugin error.
 
 ### Curated automatic startup context
 
-Pi, OpenCode, Claude Code and Codex startup/resume/compaction context uses a
-curated bootstrap by default. It selects active pinned memories, decisions with
+OpenCode's fallback digest uses the same curated selection as the automatic
+startup context in other integrations. It selects active pinned memories, decisions with
 `importance` at least 3, and critical preferences with `importance` at least 4.
 Path-specific entries (`appliesTo`) are excluded unless explicitly enabled.
 Pinned entries come first, then importance descending; project scope and id break
