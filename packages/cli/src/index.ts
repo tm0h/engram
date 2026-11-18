@@ -9,7 +9,7 @@
  *
  * Built with Effect; CLI dispatch via commander.
  */
-import { Command, InvalidArgumentError } from "commander";
+import { Command, InvalidArgumentError, Option as CommandOption } from "commander";
 import { Effect, Exit, Cause } from "effect";
 import chalk from "chalk";
 import process from "node:process";
@@ -30,6 +30,8 @@ import * as Inject from "./commands/inject.js";
 import * as Where from "./commands/where.js";
 import * as Dedupe from "./commands/dedupe.js";
 import * as Check from "./commands/check.js";
+import { doctorCommand } from "./commands/doctor.js";
+import { statsCommand } from "./commands/stats.js";
 // ENG-58 (WU-5 lane): user-level lifecycle hook installation and the
 // fail-open hook entry point. Cross-lane note: this file is shared with
 // WU-1; keep the registration append-only and minimal.
@@ -471,6 +473,23 @@ program
       }),
     ),
   );
+
+program
+  .command("doctor")
+  .description("Report local store, configuration, integration, and search health. Read-only.")
+  .option("--json", "Emit a single JSON report on stdout.")
+  .action((opts: { json?: boolean }) => run(doctorCommand(opts)));
+
+program
+  .command("stats")
+  .description("Inspect and manage local memory usage statistics.")
+  .option("--json", "Emit a single JSON report on stdout.")
+  .option("--clear", "Remove all stored usage statistics.")
+  .addOption(
+    new CommandOption("--disable", "Stop collecting usage statistics.").conflicts("enable"),
+  )
+  .option("--enable", "Resume collecting usage statistics.")
+  .action((opts: Parameters<typeof statsCommand>[0]) => run(statsCommand(opts)));
 
 program
   .command("install <target>")

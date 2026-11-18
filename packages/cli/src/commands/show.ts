@@ -3,6 +3,7 @@ import { Effect, Result } from "effect";
 import { EngramStore } from "@engram/core";
 import { resolveScope } from "@engram/core";
 import { renderFull } from "@engram/core";
+import { recordUsage } from "@engram/harnesses/shared";
 import { out } from "../io.js";
 
 export const showCommand = (id: string, opts: { scope?: string }) =>
@@ -22,4 +23,5 @@ export const showCommand = (id: string, opts: { scope?: string }) =>
         : yield* Effect.fail(tried.failure);
 
     yield* out(renderFull(mem));
+    yield* recordUsage({ kind: "show", source: "cli" });
   });

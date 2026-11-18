@@ -3,6 +3,7 @@ import type { Hooks, PluginInput } from "@opencode-ai/plugin";
 import { Effect, Option } from "effect";
 import { CONTEXTUAL_RECALL_LIMITS, contextualRecallOp } from "../shared/contextual-recall.js";
 import { autoContextOp } from "../shared/ops.js";
+import { elapsedUsageMs, recordBootstrapUsage } from "../shared/stats.js";
 import { runOpAtDirectory } from "../shared/run.js";
 
 export const MAX_SESSIONS = 100;
@@ -123,16 +124,20 @@ const loadContext: ContextLoader = async ({ directory, prompt }) => {
 
   // A confident recall replaces the digest for this request. Since no digest
   // is delivered with it, its rows do not need bootstrap deduplication.
-  const digest = autoContextOp().pipe(
-    Effect.timeoutOption(CONTEXTUAL_RECALL_LIMITS.timeoutMs),
-    Effect.map(
-      Option.match({
-        onNone: () => ({ text: "", isError: false, details: {} }),
-        onSome: (result) => result,
-      }),
-    ),
+  const started = performance.now();
+  const loaded = await runOpAtDirectory(
+    directory,
+    Effect.gen(function* () {
+      const digest = yield* autoContextOp().pipe(
+        Effect.timeoutOption(CONTEXTUAL_RECALL_LIMITS.timeoutMs),
+      );
+      const result = Option.getOrUndefined(digest);
+      const text = result?.text ?? "";
+      yield* recordBootstrapUsage("bootstrap", elapsedUsageMs(started), result, text);
+      return result ?? { text, isError: false, details: {} };
+    }),
   );
-  return (await runOpAtDirectory(directory, digest)).text;
+  return loaded.text;
 };
 
 interface SessionCache {

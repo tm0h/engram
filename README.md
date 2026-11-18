@@ -331,10 +331,54 @@ You can edit these by hand (they're just files), but never invent an id:
 | `engram context [options]`                                | Emit an agent-ready digest, optionally with full bodies or a focused query.                            |
 | `engram review [--scope personal\|project\|all] [--json]` | Find superseded, archived, expired, review-due, or broken-lineage entries.                             |
 | `engram check [--scope personal\|project\|all] [--json]`  | Check store integrity, configuration, lifecycle warnings, and secret-scan findings.                    |
+| `engram doctor [--json]`                                  | Diagnose store health, effective settings, managed integration assets, and index state.                |
+| `engram stats [--json] [--clear] [--disable\|--enable]`   | Summarize local memory usage, clear history, or change collection settings.                            |
 | `engram dedupe [--scope personal\|project]`               | Replace duplicate ids with fresh globally unique ids.                                                  |
 | `engram config [get\|set] [key] [value]`                  | Manage tracking, defaults, automatic context, and project or personal secret-scan policies.            |
 | `engram inject`                                           | Print generic agent instructions for a system prompt or project rule.                                  |
 | `engram where`                                            | Show resolved storage paths and the current default scope.                                             |
+
+### Local diagnostics and statistics
+
+Run `engram doctor` to see both project and personal stores. It distinguishes
+missing or unreadable stores, initialized empty stores, and stores with
+integrity errors. Advisory lifecycle warnings include affected files and repair
+hints. Configuration and automatic context have their own states, so disabled
+automatic context can appear alongside healthy stores. The report checks the
+five targets managed by `engram install` and the local Codex hooks setting.
+Integration states describe local files, and runtime reachability is unknown.
+Pi and OpenCode plugin registration is outside the installer scan. BM25
+builds its field statistics in memory on demand. Doctor is read-only
+and exits successfully after reporting, including when it finds problems. Use
+`engram check` when integrity errors should fail the command.
+
+`engram stats` summarizes recent use of the CLI and harnesses. Both commands
+support `--json` for one versioned report on stdout.
+
+| Metric                        | How it is counted                                                                                                                                                                                                                                                                                                    |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Loads                         | Each completed CLI context request, tool digest, automatic contextual recall, or startup digest attempt. An OpenCode fallback is a second load after recall. Provider retries and cached OpenCode blocks reuse the original retrieval.                                                                               |
+| Searches and zero-result rate | Each completed explicit CLI or tool search, including pagination calls. Zero-result rate divides searches with zero matches by all recorded searches. The total match count determines zero-result status even on an empty page. Focused context requests and automatic recall count as loads.                       |
+| Show after search             | Percentage of searches with matches followed by a successful show within five minutes on the same surface (CLI or tool). A show is paired once with the most recent search, and a zero-result search breaks the chain. The association uses only timestamps and operation categories across workspaces and sessions. |
+| Context bytes                 | UTF-8 payload size before the CLI transport newline. A warning-only payload contributes bytes, while a plain empty placeholder contributes zero. The average uses only loads with a payload.                                                                                                                         |
+| Latency                       | Average and maximum wall-clock milliseconds for recorded searches and load attempts. Timing covers retrieval and rendering where applicable and excludes statistics storage.                                                                                                                                         |
+| Candidate decisions           | Automatic recall counts ranked matches, weak matches, bootstrap duplicates, selected entries, and entries skipped by the result limit or payload budget. Startup digests count selections, applicable policy exclusions, and entries skipped by limit or budget.                                                     |
+
+Statistics stay in `~/.engram/stats/events.json`, separate from project memory.
+The file retains the newest 1,000 events in recording order, without a time
+expiry. Records contain only a local timestamp, operation category, counts, sizes,
+durations, and outcomes. All collection and reporting happen on the machine.
+
+Use `engram stats --disable` to stop collecting for the local account and
+`engram stats --enable` to resume. Set `ENGRAM_STATS=off` in a CLI or host
+environment to opt out for those processes regardless of the saved setting.
+`engram stats --clear` removes recorded events and preserves the collection
+setting. Use `engram stats --disable --clear` to stop collection and remove
+history together. Collection skips writes if the file is invalid or inaccessible
+or the write lock remains busy after a short retry. Use `--clear` to reset an
+invalid file. If a terminated writer leaves a stale lock and `--clear` reports
+that statistics are locked, stop active Engram CLI and harness processes,
+remove `~/.engram/stats/.lock`, then retry.
 
 ### Structured search
 

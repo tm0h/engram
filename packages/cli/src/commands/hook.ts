@@ -23,7 +23,7 @@ import {
   HOOK_TIMEOUT_MS,
   TRUNCATION_MARKER,
 } from "@engram/harnesses/installer";
-import { autoContextOp } from "@engram/harnesses/shared";
+import { autoContextOp, elapsedUsageMs, recordBootstrapUsage } from "@engram/harnesses/shared";
 
 export const HOOK_HOSTS = ["claude-code", "codex"] as const;
 export const HOOK_EVENTS = ["startup", "resume", "compact"] as const;
@@ -100,21 +100,22 @@ export const hookCommand = ({ host, event, timeoutMs = HOOK_TIMEOUT_MS }: HookOp
     const debug = Boolean(process.env[HOOK_DEBUG_ENV]);
     const buffered = bufferedConsole();
     let failure: string | null = null;
+    const started = performance.now();
     const digest = yield* autoContextOp().pipe(
       Effect.map((result) => {
         if (typeof result.details.error === "string") failure = result.details.error;
-        return result.text;
+        return result;
       }),
       Effect.provideService(Console.Console, buffered.console),
       Effect.timeoutOption(Duration.millis(timeoutMs)),
       Effect.catchDefect((d) => {
         failure = d instanceof Error ? d.message : String(d);
-        return Effect.succeedNone;
+        return Effect.succeedSome({ text: "", isError: false, details: { error: failure } });
       }),
     );
-    const text = Option.isSome(digest)
-      ? capToBytes(digest.value, HOOK_STDOUT_CAP_BYTES, TRUNCATION_MARKER)
-      : "";
+    const ms = elapsedUsageMs(started);
+    const result = Option.getOrUndefined(digest);
+    const text = capToBytes(result?.text ?? "", HOOK_STDOUT_CAP_BYTES, TRUNCATION_MARKER);
     // The trailing newline is part of the cap budget: injected stdout never
     // exceeds HOOK_STDOUT_CAP_BYTES bytes (the truncation marker ends with a
     // newline, so capped output is written as-is).
@@ -124,6 +125,7 @@ export const hookCommand = ({ host, event, timeoutMs = HOOK_TIMEOUT_MS }: HookOp
         Buffer.byteLength(withNewline, "utf8") <= HOOK_STDOUT_CAP_BYTES ? withNewline : text,
       );
     }
+    yield* recordBootstrapUsage("hook", ms, result, text);
     if (debug) {
       const notes = `${buffered.stdout()}${buffered.stderr()}`;
       if (notes !== "") process.stderr.write(notes);

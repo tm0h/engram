@@ -12,6 +12,7 @@ export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],
     environment: "node",
+    env: { ENGRAM_STATS: "off" },
     hookTimeout: 120000,
     testTimeout: 120000,
   },

@@ -81,6 +81,7 @@ export interface InstallOptions {
 const PROJECT_TARGETS = [GENERIC_TARGET, "cursor", "claude"] as const;
 
 /** The unknown-target message enumerates exactly these five (deny-case). */
+export const INSTALL_TARGETS = [...PROJECT_TARGETS, CLAUDE_CODE_TARGET, CODEX_TARGET];
 const TARGET_MENU = `${PROJECT_TARGETS.join(" | ")} | ${CLAUDE_CODE_TARGET} | ${CODEX_TARGET}`;
 
 type TargetModule =
@@ -97,7 +98,7 @@ type TargetModule =
 
 // All five targets are wired; the unknown-target message stays the
 // complete five-name menu (SPEC deny-case).
-const targetFor = (target: string): TargetModule | null => {
+export const targetFor = (target: string): TargetModule | null => {
   if (target === GENERIC_TARGET) {
     return { kind: "project", spec: genericSpec(), root: genericRoot };
   }
@@ -113,6 +114,30 @@ const targetFor = (target: string): TargetModule | null => {
   if (target === CODEX_TARGET) return { kind: "home", spec: codexSpec(), root: codexRoot };
   return null;
 };
+
+export const userInstallRoot = (
+  target: string,
+  derive: (home: string) => string,
+  home?: string,
+) => {
+  const envDir =
+    target === CODEX_TARGET
+      ? process.env.CODEX_HOME
+      : target === CLAUDE_CODE_TARGET
+        ? process.env.CLAUDE_CONFIG_DIR
+        : undefined;
+  return home !== undefined ? derive(home) : envDir || derive(os.homedir());
+};
+
+export const readCodexHooksFlag = (root: string) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem;
+    const path = yield* Path;
+    const config = path.join(root, "config.toml");
+    return codexHooksFlagState(
+      (yield* fs.exists(config)) ? yield* fs.readFileString(config) : null,
+    );
+  });
 
 /**
  * CLI output never advertises a force flag the install command does not
@@ -221,7 +246,6 @@ export const installCommand = (opts: InstallOptions) =>
       );
     }
     const fs = yield* FileSystem;
-    const path = yield* Path;
     // ENG-37 roots (SPEC decision 1): user-level targets keep the --home /
     // env-override / OS-home precedence; project targets root at the project
     // directory (--root, default cwd) and never consult --home or env dirs.
@@ -241,24 +265,7 @@ export const installCommand = (opts: InstallOptions) =>
         return yield* Effect.fail(new Error(`project root does not exist: ${root}`));
       }
     } else {
-      // Review P1d: respect the hosts' documented config-dir overrides.
-      // --home wins (explicit test/power-user override); otherwise CODEX_HOME
-      // and CLAUDE_CONFIG_DIR point at the config directory itself; otherwise
-      // the OS home default applies.
-      const envDir =
-        opts.target === CODEX_TARGET
-          ? process.env.CODEX_HOME
-          : opts.target === CLAUDE_CODE_TARGET
-            ? process.env.CLAUDE_CONFIG_DIR
-            : undefined;
-      // CODEX_HOME and CLAUDE_CONFIG_DIR point at the config directory itself,
-      // so they replace the derived root instead of nesting under it.
-      root =
-        opts.home !== undefined
-          ? t.root(opts.home)
-          : envDir !== undefined && envDir !== ""
-            ? envDir
-            : t.root(os.homedir());
+      root = userInstallRoot(opts.target, t.root, opts.home);
     }
     const scan = yield* scanAssets(root, t.spec);
     const verb = opts.uninstall ? "Uninstall" : "Install";
@@ -282,9 +289,7 @@ export const installCommand = (opts: InstallOptions) =>
         );
       }
       if (opts.target === CODEX_TARGET) {
-        const configPath = path.join(root, "config.toml");
-        const text = (yield* fs.exists(configPath)) ? yield* fs.readFileString(configPath) : null;
-        const flag = codexHooksFlagState(text);
+        const flag = yield* readCodexHooksFlag(root);
         extra.push(
           flag === "disabled"
             ? "codex hooks feature: explicitly disabled in config.toml (left untouched; hooks will not run)"
