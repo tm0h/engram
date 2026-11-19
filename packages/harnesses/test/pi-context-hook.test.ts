@@ -9,7 +9,8 @@ import type {
   SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
 import { projectConfigPath, projectEngramsDir } from "@engram/core";
-import type { OpResult } from "../src/shared/index.js";
+import type { AutomaticContextResult } from "../src/shared/automatic-compaction.js";
+import { frameRecall } from "../src/shared/recall-frame.js";
 import { registerAutoContext, type AutoContextLoader } from "../src/pi/context-hook.js";
 import engramExtension from "../src/pi/index.js";
 import { registerEngramCommand } from "../src/pi/commands.js";
@@ -63,9 +64,18 @@ const agentStart = (systemPrompt: string, prompt = "seeded"): BeforeAgentStartEv
   systemPromptOptions: {} as BeforeAgentStartEvent["systemPromptOptions"],
 });
 
-const okResult = (text: string): OpResult => ({ text, isError: false, details: {} });
+const payloadFor = (title: string) => frameRecall(`project/0001 note ${JSON.stringify(title)}`);
+const okResult = (title: string): AutomaticContextResult => ({
+  text: "",
+  isError: false,
+  details: {},
+  automatic: {
+    rows: title ? [{ id: "0001", scope: "project", type: "note", title, snippet: null }] : [],
+    maxChars: 4800,
+  },
+});
 
-const errResult = (): OpResult => ({
+const errResult = (): AutomaticContextResult => ({
   text: "",
   isError: false,
   details: { reason: "unavailable" },
@@ -76,10 +86,10 @@ const BASE = "You are a helpful coding agent.";
 const countOf = (s: string, needle: string): number => s.split(needle).length - 1;
 
 describe("Pi contextual recall", () => {
-  const payload = "<engram-memory>\ncontext\n</engram-memory>";
+  const payload = payloadFor("context");
 
   it("waits for the first prompt and uses its exact text and directory", async () => {
-    let resolve!: (result: OpResult) => void;
+    let resolve!: (result: AutomaticContextResult) => void;
     const load = vi.fn<AutoContextLoader>(
       () =>
         new Promise((done) => {
@@ -97,7 +107,7 @@ describe("Pi contextual recall", () => {
     const first = before(event, ctx);
     const repeated = before(event, ctx);
     expect(load).toHaveBeenCalledExactlyOnceWith("/other/project", event.prompt);
-    resolve(okResult(payload));
+    resolve(okResult("context"));
     for (const pending of [first, repeated]) {
       await expect(pending).resolves.toEqual({
         systemPrompt: event.systemPrompt + "\n\n" + payload,
@@ -105,10 +115,32 @@ describe("Pi contextual recall", () => {
     }
   });
 
+  it("fits each assembled prompt and respects Pi's prior context estimate", async () => {
+    const { pi, handlers } = fakePi();
+    const diagnostics = vi.fn();
+    registerAutoContext(pi, { load: async () => okResult("context"), onDiagnostics: diagnostics });
+    const before = handlers.get("before_agent_start")!;
+    const { ctx } = evtCtx();
+    const output = (await before(agentStart(BASE), ctx)) as { systemPrompt: string };
+    expect(output.systemPrompt).toBe(BASE + "\n\n" + payload);
+    expect(diagnostics).toHaveBeenLastCalledWith(expect.objectContaining({ window: "fallback" }));
+    await expect(before(agentStart(output.systemPrompt), ctx)).resolves.toBeUndefined();
+    expect(diagnostics).toHaveBeenLastCalledWith(
+      expect.objectContaining({ deduplicated: [{ scope: "project", id: "0001" }] }),
+    );
+    const crowded = {
+      ...ctx,
+      model: { contextWindow: 4096, maxTokens: 256 },
+      getContextUsage: () => ({ tokens: 3780, contextWindow: 4096, percent: 92 }),
+    } as ExtensionContext;
+    await expect(before(agentStart(BASE), crowded)).resolves.toBeUndefined();
+    await expect(before(agentStart(BASE), ctx)).resolves.toEqual(output);
+  });
+
   it.each(["startup", "reload", "new", "resume", "fork"] as const)(
     "discards in-flight reads on %s",
     async (reason) => {
-      let resolve!: (result: OpResult) => void;
+      let resolve!: (result: AutomaticContextResult) => void;
       const load = vi
         .fn<AutoContextLoader>()
         .mockImplementationOnce(
@@ -117,7 +149,7 @@ describe("Pi contextual recall", () => {
               resolve = done;
             }),
         )
-        .mockResolvedValue(okResult(payload));
+        .mockResolvedValue(okResult("context"));
       const { pi, handlers } = fakePi();
       registerAutoContext(pi, { load });
       const { ctx } = evtCtx();
@@ -135,7 +167,7 @@ describe("Pi contextual recall", () => {
   it.each(["directory", "query", "write"] as const)(
     "drops a pending result after a %s change",
     async (change) => {
-      let resolve!: (result: OpResult) => void;
+      let resolve!: (result: AutomaticContextResult) => void;
       const load = vi
         .fn<AutoContextLoader>()
         .mockImplementationOnce(
@@ -144,7 +176,7 @@ describe("Pi contextual recall", () => {
               resolve = done;
             }),
         )
-        .mockResolvedValue(okResult(payload));
+        .mockResolvedValue(okResult("context"));
       const { pi, handlers } = fakePi();
       const { invalidate } = registerAutoContext(pi, { load });
       const before = handlers.get("before_agent_start")!;
@@ -166,7 +198,7 @@ describe("Pi contextual recall", () => {
   it("checks the store again for each full prompt and skips oversized prompts", async () => {
     const load = vi
       .fn<AutoContextLoader>()
-      .mockResolvedValueOnce(okResult(payload))
+      .mockResolvedValueOnce(okResult("context"))
       .mockResolvedValue(okResult(""));
     const { pi, handlers } = fakePi();
     registerAutoContext(pi, { load });
@@ -303,7 +335,7 @@ describe("pi extension / auto-context integration", () => {
       systemPrompt?: string;
     };
 
-    expect(res.systemPrompt).toContain('"title":"Seeded decision","snippet":"body"');
+    expect(res.systemPrompt).toContain('project/0001 decision "Seeded decision" — "body"');
     expect(countOf(res.systemPrompt!, "<engram-memory>")).toBe(1);
     await expect(
       handlers.get("before_agent_start")!(agentStart(BASE, "volcano"), ctx),
@@ -404,7 +436,7 @@ describe("pi extension / auto-context integration", () => {
 
   it("invalidates reads only after successful tool and slash writes", async () => {
     const { pi, handlers, tools, commands } = fullFakePi();
-    let resolve!: (result: OpResult) => void;
+    let resolve!: (result: AutomaticContextResult) => void;
     const { invalidate } = registerAutoContext(pi, {
       load: () =>
         new Promise((done) => {
@@ -432,7 +464,9 @@ describe("pi extension / auto-context integration", () => {
     });
     await slash.handler("edit 9999 --title Missing", ctx);
     resolve(okResult("current"));
-    await expect(surviving).resolves.toEqual({ systemPrompt: BASE + "\n\ncurrent" });
+    await expect(surviving).resolves.toEqual({
+      systemPrompt: BASE + "\n\n" + payloadFor("current"),
+    });
 
     const beforeToolWrite = before(event, ctx);
     await expect(
@@ -459,9 +493,8 @@ describe("pi extension / auto-context integration", () => {
     await slash.handler("add Via slash -- body text", ctx);
     const added = (await before(event, ctx)) as { systemPrompt: string };
     expect(added.systemPrompt).toContain("Via slash");
-    const id = JSON.parse(
-      added.systemPrompt.split("\n").find((line) => line.startsWith('{"id"'))!,
-    ).id;
+    const id = /^project\/([a-z0-9]+) /m.exec(added.systemPrompt)?.[1];
+    expect(id).toBeDefined();
     await slash.handler(`edit ${id} --title "Edited slash"`, ctx);
     const edited = (await before(event, ctx)) as { systemPrompt: string };
     expect(edited.systemPrompt).toContain("Edited slash");

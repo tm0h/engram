@@ -367,7 +367,7 @@ support `--json` for one versioned report on stdout.
 
 | Metric                        | How it is counted                                                                                                                                                                                                                                                                                                    |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Loads                         | Each completed CLI context request, tool digest, automatic contextual recall, or startup digest attempt. An OpenCode fallback is a second load after recall. Provider retries and cached OpenCode blocks reuse the original retrieval.                                                                               |
+| Loads                         | Each completed CLI context request, tool digest, and automatic delivery attempt. An OpenCode fallback counts once with its final fitted output. Cached OpenCode retrieval is fitted and counted for each transform. Pi provider retries reuse the fitted block.                                                      |
 | Searches and zero-result rate | Each completed explicit CLI or tool search, including pagination calls. Zero-result rate divides searches with zero matches by all recorded searches. The total match count determines zero-result status even on an empty page. Focused context requests and automatic recall count as loads.                       |
 | Show after search             | Percentage of searches with matches followed by a successful show within five minutes on the same surface (CLI or tool). A show is paired once with the most recent search, and a zero-result search breaks the chain. The association uses only timestamps and operation categories across workspaces and sessions. |
 | Context bytes                 | UTF-8 payload size before the CLI transport newline. A warning-only payload contributes bytes, while a plain empty placeholder contributes zero. The average uses only loads with a payload.                                                                                                                         |
@@ -621,7 +621,9 @@ unchanged. Pagination runs after this ranking.
 ### Curated automatic startup context
 
 Claude Code and Codex use a curated bootstrap by default for their digest
-hooks. OpenCode uses the same digest as its fallback for contextual recall.
+hooks. Pi and OpenCode use [automatic context compaction](docs/automatic-context-compaction.md)
+to fit their active prompts, and OpenCode uses the curated selection policy
+for fallback candidates.
 The digest selects active pinned memories, decisions with `importance` at least 3,
 and critical preferences with `importance` at least 4.
 Path-specific entries (`appliesTo`) are excluded unless explicitly enabled.

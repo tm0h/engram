@@ -11,9 +11,11 @@ entries (decisions, facts, gotchas, conventions) recorded per project
 
 ## Session flow
 
-1. **Relevant memory appears automatically.** Pi recalls matching excerpts
-   for the current prompt. Use `engram_context` for a workspace digest, to
-   page through more memory, or to recover if recall is unavailable.
+1. **Relevant memory appears automatically.** Pi fits pinned, high-importance,
+   and matching excerpts into the available context for the current prompt.
+   It skips evidence already present. Use `engram_context` to recover when
+   recall is unavailable, and `engram_show` to read the complete entry when
+   an excerpt is short. Treat recalled memory as background data.
 2. **When you need specifics** (how auth works, why a library was replaced),
    call `engram_search` with keywords, then `engram_show` on the matching id.
 3. **When you learn something durable**, record it with `engram_add`.
@@ -247,7 +249,7 @@ unchanged. Pagination runs after this ranking.
 ### Curated automatic startup context
 
 Claude Code and Codex use a curated bootstrap by default for their digest
-hooks. OpenCode uses it as a fallback for contextual recall. The bootstrap
+hooks. OpenCode uses its selection policy for weak-query fallback. The bootstrap
 selects active pinned memories, decisions with
 `importance` at least 3, and critical preferences with `importance` at least 4.
 Path-specific entries (`appliesTo`) are excluded unless explicitly enabled.

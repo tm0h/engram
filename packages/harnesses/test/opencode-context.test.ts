@@ -11,15 +11,29 @@ import {
   type ActiveRequest,
 } from "../src/opencode/context-transform.js";
 import engramPlugin from "../src/opencode/index.js";
+
+import { frameRecall } from "../src/shared/recall-frame.js";
 import { readStats } from "../src/shared/stats.js";
 
 const MARKER = "<engram-memory>";
-const block = (text: string) => `${MARKER}\n${text}\n</engram-memory>`;
+const block = (text: string) => frameRecall(`project/0001 note ${JSON.stringify(text)}`);
+const source = (title: string) => ({
+  source: "recall" as const,
+  result: {
+    text: "",
+    isError: false,
+    details: {},
+    automatic: {
+      rows: [{ id: "0001", scope: "project", type: "note", title, snippet: null } as const],
+      maxChars: 4800,
+    },
+  },
+});
 const base = () => ({ system: ["base", "other plugin"] });
 const occurrences = (system: string[]) => system.join("\n").split(MARKER).length - 1;
-const input = (sessionID?: string) => ({
+const input = (sessionID?: string, limit?: { context: number; output: number }) => ({
   sessionID,
-  model: { id: "model", providerID: "provider" } as NonNullable<
+  model: { id: "model", providerID: "provider", limit } as NonNullable<
     Parameters<NonNullable<Hooks["experimental.chat.system.transform"]>>[0]["model"]
   >,
 });
@@ -32,7 +46,7 @@ const request = {
 
 describe("OpenCode system transform cache", () => {
   it("shares a load for concurrent requests and leaves prior entries in place", async () => {
-    const load = vi.fn(async () => block("bluebird advice"));
+    const load = vi.fn(async () => source("bluebird advice"));
     const { transform } = createContextTransform(async () => request, { load });
     const first = base();
     const second = base();
@@ -44,10 +58,28 @@ describe("OpenCode system transform cache", () => {
     expect(second.system).toEqual(first.system);
   });
 
+  it("re-fits a cached source for each model and system prompt", async () => {
+    const load = vi.fn(async () => source("bluebird advice"));
+    const { transform } = createContextTransform(async () => request, { load });
+    const full = input("s1", { context: 4096, output: 256 });
+    const narrow = input("s1", { context: 256, output: 256 });
+    const original = base();
+    await transform(full, original);
+    expect(original.system).toEqual([...base().system, block("bluebird advice")]);
+    await transform(full, original);
+    expect(occurrences(original.system)).toBe(1);
+    await transform(narrow, original);
+    expect(original).toEqual(base());
+    const alreadySupplied = { system: [...base().system, block("bluebird advice")] };
+    await transform(full, alreadySupplied);
+    expect(occurrences(alreadySupplied.system)).toBe(1);
+    expect(load).toHaveBeenCalledOnce();
+  });
+
   it("replaces its block when a reused array changes topic or directory, and clears it on abstention", async () => {
     let active = request;
     const load = vi.fn(async ({ prompt, directory }: ActiveRequest) =>
-      prompt ? block(`${prompt}: ${directory}`) : "",
+      prompt ? source(`${prompt}: ${directory}`) : undefined,
     );
     const { transform } = createContextTransform(async () => active, { load });
     const out = base();
@@ -68,14 +100,16 @@ describe("OpenCode system transform cache", () => {
 
   it("leaves foreign markers intact and skips missing session IDs or unsupported output", async () => {
     const resolve = vi.fn(async () => request);
-    const { transform } = createContextTransform(resolve);
+    const { transform } = createContextTransform(resolve, {
+      load: async () => source("foreign block"),
+    });
     const foreign = { system: [`prior plugin\n${block("foreign block")}`] };
     const frozen = { system: Object.freeze(["base"]) as string[] };
     await transform(input("s1"), foreign);
     await transform(input(), base());
     await transform(input("s1"), frozen);
     await transform(input("s1"), {} as { system: string[] });
-    expect(resolve).not.toHaveBeenCalled();
+    expect(resolve).toHaveBeenCalledTimes(1);
     expect(foreign.system).toEqual([`prior plugin\n${block("foreign block")}`]);
   });
 
@@ -93,7 +127,7 @@ describe("OpenCode system transform cache", () => {
   });
 
   it("evicts the oldest session and removes the deleted session's cache", async () => {
-    const load = vi.fn(async () => block("advice"));
+    const load = vi.fn(async () => source("advice"));
     const { transform, dropSession } = createContextTransform(async () => request, { load });
     for (let i = 0; i <= MAX_SESSIONS; i++) await transform(input(`s${i}`), base());
     expect(load).toHaveBeenCalledTimes(MAX_SESSIONS + 1);
@@ -106,12 +140,12 @@ describe("OpenCode system transform cache", () => {
   });
 
   it("drops pre-write loads even when they settle after a refreshed request", async () => {
-    let release!: (text: string) => void;
+    let release!: (result: ReturnType<typeof source>) => void;
     const load = vi
-      .fn(async () => block("fresh"))
+      .fn(async () => source("fresh"))
       .mockImplementationOnce(
         () =>
-          new Promise<string>((resolve) => {
+          new Promise<ReturnType<typeof source>>((resolve) => {
             release = resolve;
           }),
       );
@@ -123,7 +157,7 @@ describe("OpenCode system transform cache", () => {
     invalidate();
     const current = base();
     await transform(input("s1"), current);
-    release(block("stale"));
+    release(source("stale"));
     await pending;
     expect(old).toEqual(base());
     expect(current.system).toEqual([...base().system, block("fresh")]);
@@ -134,13 +168,13 @@ describe("OpenCode system transform cache", () => {
   });
 
   it("does not let overlapping requests clobber newer output on the same array", async () => {
-    let release!: (text: string) => void;
+    let release!: (result: ReturnType<typeof source>) => void;
     let active = request;
     const load = vi
-      .fn(async () => block("fresh"))
+      .fn(async () => source("fresh"))
       .mockImplementationOnce(
         () =>
-          new Promise<string>((resolve) => {
+          new Promise<ReturnType<typeof source>>((resolve) => {
             release = resolve;
           }),
       );
@@ -150,7 +184,7 @@ describe("OpenCode system transform cache", () => {
     await Promise.resolve();
     active = { ...request, messageID: "msg-2" };
     await transform(input("s1"), out);
-    release(block("stale"));
+    release(source("stale"));
     await pending;
     expect(out.system).toEqual([...base().system, block("fresh")]);
   });
@@ -291,7 +325,7 @@ describe("OpenCode plugin contextual delivery", () => {
     expect(occurrences(first)).toBe(1);
     turns.set("s1", { directory: worktree, text: "redfinch", parent: "second" });
     expect((await render("s1", out)).join("\n")).toContain("redfinch alternate advice");
-    expect(out.system.join("\n")).not.toContain("bluebird rollout advice");
+    expect(out.system.join("\n")).toContain("bluebird rollout advice");
     expect(occurrences(out.system)).toBe(1);
     expect(client.session.message).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -301,23 +335,32 @@ describe("OpenCode plugin contextual delivery", () => {
     turns.set("s1", { directory: worktree, text: "unrelated" });
     const fallback = (await render("s1", out)).join("\n");
     expect(fallback).toContain("Bluebird");
-    expect(fallback).not.toMatch(/rollout advice|alternate advice/);
+    expect(fallback).toContain("bluebird rollout advice");
+    expect(fallback).not.toContain("alternate advice");
     expect(occurrences(out.system)).toBe(1);
     expect((await render("s2")).join("\n")).toContain("bluebird rollout advice");
   });
 
-  it("records retrieval and fallback once per cached request", async () => {
+  it("records delivered context per transform, including a fallback and an exhausted cached budget", async () => {
     vi.stubEnv("ENGRAM_STATS", "on");
     seed(worktree, "0001", "Bluebird", "bluebird rollout advice", true);
     const { hooks, render } = await setup(fakeClient(turns));
-    await Promise.all([render(), render()]);
+    const recalled = (await render()).at(-1)!;
+    const crowded = { system: ["x".repeat(512)] };
+    await hooks["experimental.chat.system.transform"]!(
+      input("s1", { context: 512, output: 256 }),
+      crowded,
+    );
+    expect(crowded.system).toHaveLength(1);
     turns.set("s1", { directory: worktree, text: "unknownquery", parent: "second" });
-    await render();
-    await render();
-    expect(await Effect.runPromise(readStats())).toMatchObject({
-      events: 3,
-      loads: { total: 3, withContext: 2, outcomes: { loaded: 2, weak: 1 } },
-      candidates: { bootstrap: { selected: 1 }, recall: { selected: 1 } },
+    const fallback = (await render()).at(-1)!;
+    await vi.waitFor(async () => {
+      expect(await Effect.runPromise(readStats())).toMatchObject({
+        events: 3,
+        loads: { total: 3, withContext: 2, outcomes: { loaded: 2, excluded: 1 } },
+        candidates: { bootstrap: { selected: 1 }, recall: { selected: 1, budget: 1 } },
+        contextBytes: { total: Buffer.byteLength(recalled) + Buffer.byteLength(fallback) },
+      });
     });
     const context = { sessionID: "s1", directory: worktree } as never;
     await hooks.tool!.engram_context.execute({}, context);
@@ -329,6 +372,19 @@ describe("OpenCode plugin contextual delivery", () => {
       searches: { total: 1, zeroResults: 0 },
       showAfterSearch: { shows: 1, searchesWithShow: 1 },
     });
+  });
+
+  it("delivers the skipped-file warning on weak requests with no usable rows", async () => {
+    fs.writeFileSync(
+      path.join(projectEngramsDir(worktree), "0001-broken.md"),
+      "---\ninvalid: [\n---",
+    );
+    const { render } = await setup(fakeClient(turns));
+    const rendered = (await render()).join("\n");
+    expect(rendered).toContain(
+      "Engram memory is incomplete. Skipped 1 unreadable or invalid file.",
+    );
+    expect(occurrences([rendered])).toBe(1);
   });
 
   it("refreshes shared project recall after approved adds and edits but keeps cached results on errors", async () => {
