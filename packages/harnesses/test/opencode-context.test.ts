@@ -11,15 +11,23 @@ import {
   type ActiveRequest,
 } from "../src/opencode/context-transform.js";
 import engramPlugin from "../src/opencode/index.js";
-import type { AutomaticContext } from "../src/shared/automatic-compaction.js";
+
 import { frameRecall } from "../src/shared/recall-frame.js";
 import { readStats } from "../src/shared/stats.js";
 
 const MARKER = "<engram-memory>";
 const block = (text: string) => frameRecall(`project/0001 note ${JSON.stringify(text)}`);
-const source = (title: string): AutomaticContext => ({
-  rows: [{ id: "0001", scope: "project", type: "note", title, snippet: null }],
-  maxChars: 4800,
+const source = (title: string) => ({
+  source: "recall" as const,
+  result: {
+    text: "",
+    isError: false,
+    details: {},
+    automatic: {
+      rows: [{ id: "0001", scope: "project", type: "note", title, snippet: null } as const],
+      maxChars: 4800,
+    },
+  },
 });
 const base = () => ({ system: ["base", "other plugin"] });
 const occurrences = (system: string[]) => system.join("\n").split(MARKER).length - 1;
@@ -132,12 +140,12 @@ describe("OpenCode system transform cache", () => {
   });
 
   it("drops pre-write loads even when they settle after a refreshed request", async () => {
-    let release!: (result: AutomaticContext) => void;
+    let release!: (result: ReturnType<typeof source>) => void;
     const load = vi
       .fn(async () => source("fresh"))
       .mockImplementationOnce(
         () =>
-          new Promise<AutomaticContext>((resolve) => {
+          new Promise<ReturnType<typeof source>>((resolve) => {
             release = resolve;
           }),
       );
@@ -160,13 +168,13 @@ describe("OpenCode system transform cache", () => {
   });
 
   it("does not let overlapping requests clobber newer output on the same array", async () => {
-    let release!: (result: AutomaticContext) => void;
+    let release!: (result: ReturnType<typeof source>) => void;
     let active = request;
     const load = vi
       .fn(async () => source("fresh"))
       .mockImplementationOnce(
         () =>
-          new Promise<AutomaticContext>((resolve) => {
+          new Promise<ReturnType<typeof source>>((resolve) => {
             release = resolve;
           }),
       );
@@ -333,18 +341,26 @@ describe("OpenCode plugin contextual delivery", () => {
     expect((await render("s2")).join("\n")).toContain("bluebird rollout advice");
   });
 
-  it("records retrieval and fallback once per cached request", async () => {
+  it("records delivered context per transform, including a fallback and an exhausted cached budget", async () => {
     vi.stubEnv("ENGRAM_STATS", "on");
     seed(worktree, "0001", "Bluebird", "bluebird rollout advice", true);
     const { hooks, render } = await setup(fakeClient(turns));
-    await Promise.all([render(), render()]);
+    const recalled = (await render()).at(-1)!;
+    const crowded = { system: ["x".repeat(512)] };
+    await hooks["experimental.chat.system.transform"]!(
+      input("s1", { context: 512, output: 256 }),
+      crowded,
+    );
+    expect(crowded.system).toHaveLength(1);
     turns.set("s1", { directory: worktree, text: "unknownquery", parent: "second" });
-    await render();
-    await render();
-    expect(await Effect.runPromise(readStats())).toMatchObject({
-      events: 3,
-      loads: { total: 3, withContext: 2, outcomes: { loaded: 2, weak: 1 } },
-      candidates: { bootstrap: { selected: 1 }, recall: { selected: 1 } },
+    const fallback = (await render()).at(-1)!;
+    await vi.waitFor(async () => {
+      expect(await Effect.runPromise(readStats())).toMatchObject({
+        events: 3,
+        loads: { total: 3, withContext: 2, outcomes: { loaded: 2, excluded: 1 } },
+        candidates: { bootstrap: { selected: 1 }, recall: { selected: 1, budget: 1 } },
+        contextBytes: { total: Buffer.byteLength(recalled) + Buffer.byteLength(fallback) },
+      });
     });
     const context = { sessionID: "s1", directory: worktree } as never;
     await hooks.tool!.engram_context.execute({}, context);
@@ -356,6 +372,19 @@ describe("OpenCode plugin contextual delivery", () => {
       searches: { total: 1, zeroResults: 0 },
       showAfterSearch: { shows: 1, searchesWithShow: 1 },
     });
+  });
+
+  it("delivers the skipped-file warning on weak requests with no usable rows", async () => {
+    fs.writeFileSync(
+      path.join(projectEngramsDir(worktree), "0001-broken.md"),
+      "---\ninvalid: [\n---",
+    );
+    const { render } = await setup(fakeClient(turns));
+    const rendered = (await render()).join("\n");
+    expect(rendered).toContain(
+      "Engram memory is incomplete. Skipped 1 unreadable or invalid file.",
+    );
+    expect(occurrences([rendered])).toBe(1);
   });
 
   it("refreshes shared project recall after approved adds and edits but keeps cached results on errors", async () => {

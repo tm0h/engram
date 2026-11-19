@@ -4,6 +4,7 @@ import { lstat, mkdir, open, rename, rm, rmdir, writeFile } from "node:fs/promis
 import path from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { globalRoot } from "@engram/core";
+import type { AutomaticContextDiagnostics } from "./automatic-compaction.js";
 import type { OpResult } from "./types.js";
 
 const RECORD_TIMEOUT_MS = 150;
@@ -306,6 +307,47 @@ export const recordRecallUsage = (ms: number, result: OpResult) => {
     }),
   });
 };
+
+/** Count a single fitted delivery. Only aggregate sizes and counts are persisted. */
+export function recordAutomaticContextUsage(
+  source: "recall" | "bootstrap",
+  ms: number,
+  result: OpResult,
+  text = "",
+  diagnostics?: AutomaticContextDiagnostics,
+) {
+  const { reason, error, enabled } = result.details;
+  const ranked = (result.details.rankedCount as number | undefined) ?? 0;
+  const confident = (result.details.confidentCount as number | undefined) ?? 0;
+  const bootstrap = result.details.bootstrap as { excluded: Record<string, number> } | undefined;
+  const requested = reason ?? (error ? "unavailable" : enabled === false ? "disabled" : "empty");
+  const outcome = text
+    ? "loaded"
+    : diagnostics?.omitted.length || diagnostics?.deduplicated.length || requested === "selected"
+      ? "excluded"
+      : (requested as Outcome);
+  return recordUsage({
+    kind: "load",
+    source,
+    ms,
+    bytes: Buffer.byteLength(text),
+    outcome,
+    ...(diagnostics && {
+      decisions: {
+        ...emptyDecisions(),
+        ranked,
+        weak: ranked - confident,
+        selected: diagnostics.selected.length,
+        duplicate: diagnostics.deduplicated.length,
+        limited: diagnostics.omitted.filter(({ reason }) => reason === "limit").length,
+        budget: diagnostics.omitted.filter(({ reason }) => reason === "budget").length,
+        inactive: bootstrap?.excluded.inactive ?? 0,
+        scoped: bootstrap?.excluded.scoped ?? 0,
+        uncurated: bootstrap?.excluded.uncurated ?? 0,
+      },
+    }),
+  });
+}
 
 function summarize(state: DataState, collection: Collection, events: History["events"] = []) {
   const loads = { total: 0, withContext: 0, outcomes: {} as Partial<Record<Outcome, number>> };

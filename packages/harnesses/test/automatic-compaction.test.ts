@@ -86,3 +86,28 @@ it("honors an entry cap after deduplication and reports both causes of omission"
     compactAutomaticContext(source, { ...input, system: [`Do not: ${critical.snippet}`] }).text,
   ).toContain("project/0001");
 });
+
+it.each([
+  'project/0001 preference "Deployment s…"',
+  'project/0001 preference "Deployment safety" — "Use app…"',
+])("delivers missing evidence after an earlier shortened row: %s", (earlier) => {
+  const result = compactAutomaticContext(
+    { rows: [critical], maxChars: 4800 },
+    { harness: "pi", system: [earlier], prompt: "Deploy" },
+  );
+  expect(result.text).toContain(critical.snippet);
+  expect(result.diagnostics.deduplicated).toEqual([]);
+});
+
+it("budgets the incomplete-store warning even with no usable rows", () => {
+  const source = { rows: [], maxChars: 4800, omittedFiles: 1 };
+  const input = { harness: "opencode" as const, system: ["base"], prompt: "Find memory" };
+  const result = compactAutomaticContext(source, input);
+  expect(result.text).toContain(
+    "Engram memory is incomplete. Skipped 1 unreadable or invalid file.",
+  );
+  expect(result.text).toMatch(/<\/engram-memory>$/);
+  expect(result.diagnostics.used).toBe(countContextTokens(result.text) + 18);
+  expect(result.diagnostics.selected).toEqual([]);
+  expect(compactAutomaticContext(source, { ...input, inputLimit: 180 }).text).toBe("");
+});

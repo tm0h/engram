@@ -151,13 +151,20 @@ const retrieve = (opts: ContextualRecallOptions, automatic: boolean) =>
         duplicateCount++;
         continue;
       }
-      const baselineFull = selected.length >= CONTEXTUAL_RECALL_LIMITS.results;
-      const needsCandidate = automatic && relevant.size < CONTEXTUAL_RECALL_LIMITS.results;
-      if (baselineFull) limitedCount++;
-      if (baselineFull && !needsCandidate) continue;
+      if (automatic) {
+        if (relevant.size < CONTEXTUAL_RECALL_LIMITS.results) {
+          relevant.set(
+            m,
+            automaticMemory(m, matchingSnippet(m.body, query) ?? openingSnippet(m.body)),
+          );
+        }
+        continue;
+      }
+      if (selected.length >= CONTEXTUAL_RECALL_LIMITS.results) {
+        limitedCount++;
+        continue;
+      }
       const snippet = matchingSnippet(m.body, query) ?? openingSnippet(m.body);
-      if (needsCandidate) relevant.set(m, automaticMemory(m, snippet));
-      if (baselineFull) continue;
       const row = recallData(
         JSON.stringify({
           id: m.id,
@@ -193,7 +200,16 @@ const retrieve = (opts: ContextualRecallOptions, automatic: boolean) =>
           isError: false,
           details: { ...details, reason: "selected", selected },
         }
-      : empty(!hasQuery ? "empty-query" : confidentCount ? "excluded" : "weak", details);
+      : empty(
+          relevant.size
+            ? "selected"
+            : !hasQuery
+              ? "empty-query"
+              : confidentCount
+                ? "excluded"
+                : "weak",
+          details,
+        );
     if (!automatic) return result;
     const now = Date.now();
     const critical = eligible
@@ -255,6 +271,6 @@ export const contextualRecallOp = (
       : Option.isNone(exit.value) || elapsedMs >= CONTEXTUAL_RECALL_LIMITS.timeoutMs
         ? empty("timeout")
         : exit.value.value;
-    yield* recordRecallUsage(Math.round(elapsedMs), result);
+    if (!automatic) yield* recordRecallUsage(Math.round(elapsedMs), result);
     return { ...result, details: { schemaVersion: 1, ...result.details, elapsedMs } };
   });

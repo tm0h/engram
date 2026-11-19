@@ -17,8 +17,8 @@ Both charge the complete memory wrapper, its trust instruction, quoted and
 escaped rows, and row separators. The output reserve defaults to 256 when the
 model exposes a context limit without a usable output limit. If no usable
 limit is available, the injection allowance is capped at 2,048 units.
-A block that cannot fit any entry is skipped. Budgets apply to the injection
-and host-visible inputs. History, tool schemas, and provider serialization
+An incomplete-store warning can be delivered by itself when it fits. Budgets
+apply to the injection and host-visible inputs. History, tool schemas, and provider serialization
 outside these hooks can affect the provider's full-request token count.
 
 ## Selection and fallback
@@ -53,6 +53,7 @@ independently of compaction and recalculate fit against the live prompt.
 the method, headroom source, effective and used units, selected, deduplicated,
 omitted and truncated scoped IDs, and counts for skipped files and candidate
 windows. These records contain no titles, excerpts, or prompt text.
+`engram stats` counts fitted deliveries and their UTF-8 payload sizes.
 
 ## Paired evaluation
 

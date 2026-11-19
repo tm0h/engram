@@ -4,12 +4,12 @@ import { Effect, Option } from "effect";
 import {
   compactAutomaticContext,
   reportAutomaticContext,
-  type AutomaticContext,
+  type AutomaticContextResult,
   type AutomaticContextDiagnostics,
 } from "../shared/automatic-compaction.js";
 import { CONTEXTUAL_RECALL_LIMITS, contextualRecallOp } from "../shared/contextual-recall.js";
 import { autoContextOp } from "../shared/ops.js";
-import { elapsedUsageMs, recordBootstrapUsage } from "../shared/stats.js";
+import { elapsedUsageMs, recordAutomaticContextUsage } from "../shared/stats.js";
 import { runOpAtDirectory } from "../shared/run.js";
 
 export const MAX_SESSIONS = 100;
@@ -29,7 +29,11 @@ type RequestResolver = (
   sessionID: string,
   model: RequestModel,
 ) => Promise<ActiveRequest | undefined>;
-type ContextLoader = (request: ActiveRequest) => Promise<AutomaticContext | undefined>;
+interface ContextLoad {
+  readonly source: "recall" | "bootstrap";
+  readonly result: AutomaticContextResult;
+}
+type ContextLoader = (request: ActiveRequest) => Promise<ContextLoad | undefined>;
 
 const validId = (id: unknown): id is string =>
   typeof id === "string" && id.length > 0 && id.length <= MAX_ID_CHARS;
@@ -127,42 +131,52 @@ const loadContext: ContextLoader = async ({ directory, prompt }) => {
     directory,
     contextualRecallOp({ prompt, intent: "task" }, true),
   );
-  if (recall.details.reason !== "weak" && recall.details.reason !== "empty-query")
-    return recall.automatic;
+  const recalled = { source: "recall" as const, result: recall };
+  if (recall.details.reason !== "weak" && recall.details.reason !== "empty-query") return recalled;
 
   // The fallback adds title-only bootstrap rows after critical excerpts.
-  const started = performance.now();
   const loaded = await runOpAtDirectory(
     directory,
-    Effect.gen(function* () {
-      const digest = yield* autoContextOp(true).pipe(
-        Effect.timeoutOption(CONTEXTUAL_RECALL_LIMITS.timeoutMs),
-      );
-      const result = Option.getOrUndefined(digest);
-      const text = result?.text ?? "";
-      yield* recordBootstrapUsage("bootstrap", elapsedUsageMs(started), result, text);
-      return result ?? { text, isError: false, details: {}, automatic: undefined };
-    }),
+    autoContextOp(true).pipe(
+      Effect.timeoutOption(CONTEXTUAL_RECALL_LIMITS.timeoutMs),
+      Effect.map(
+        Option.getOrElse((): AutomaticContextResult => ({
+          text: "",
+          isError: false,
+          details: { reason: "timeout" },
+        })),
+      ),
+    ),
   );
-  if (loaded.details.enabled === false) return;
-  if (!loaded.automatic) return recall.automatic;
+  if (
+    loaded.details.enabled === false ||
+    (!loaded.automatic &&
+      !recall.automatic?.rows.length &&
+      !recall.automatic?.omittedFiles &&
+      (loaded.details.error || loaded.details.reason === "timeout"))
+  ) {
+    return { source: "bootstrap", result: loaded };
+  }
+  if (!loaded.automatic) return recalled;
   const source = loaded.automatic;
   const critical = recall.automatic?.rows ?? [];
   const ids = new Set(critical.map(({ scope, id }) => `${scope}/${id}`));
   return {
-    ...source,
-    outsideCandidateWindow:
-      (source.outsideCandidateWindow ?? 0) + (recall.automatic?.outsideCandidateWindow ?? 0),
-    rows: [...critical, ...source.rows.filter(({ scope, id }) => !ids.has(`${scope}/${id}`))],
+    source: "bootstrap",
+    result: {
+      ...loaded,
+      automatic: {
+        ...source,
+        outsideCandidateWindow:
+          (source.outsideCandidateWindow ?? 0) + (recall.automatic?.outsideCandidateWindow ?? 0),
+        rows: [...critical, ...source.rows.filter(({ scope, id }) => !ids.has(`${scope}/${id}`))],
+      },
+    },
   };
 };
 
 interface SessionCache {
-  context?: {
-    request: ActiveRequest;
-    until: number;
-    source: Promise<AutomaticContext | undefined>;
-  };
+  context?: { request: ActiveRequest; until: number; load: Promise<ContextLoad | undefined> };
 }
 
 interface OutputState {
@@ -217,14 +231,16 @@ export function createContextTransform(
         context.request.messageID !== request.messageID ||
         context.request.prompt !== request.prompt
       ) {
-        const source = (async () => load(request))().catch(() => undefined);
-        context = { request, until: now + CACHE_MS, source };
+        const pending = (async () => load(request))().catch(() => undefined);
+        context = { request, until: now + CACHE_MS, load: pending };
         cache.context = context;
       }
 
-      const source = await context.source;
-      if (!source?.rows.length && cache.context === context) cache.context = undefined;
-      if (!source) return;
+      const delivery = await context.load;
+      const source = delivery?.result.automatic;
+      if (!source?.rows.length && !source?.omittedFiles && cache.context === context)
+        cache.context = undefined;
+      if (!delivery) return;
       // A deletion, write, or reused output can race a read. Its old promise
       // may finish, but it cannot inject into a newer request's output.
       if (
@@ -233,6 +249,12 @@ export function createContextTransform(
         output.system !== system
       )
         return;
+      if (!source) {
+        Effect.runFork(
+          recordAutomaticContextUsage(delivery.source, elapsedUsageMs(now), delivery.result),
+        );
+        return;
+      }
       const limit: { context?: number; input?: number; output?: number } | undefined =
         input.model?.limit;
       const { text, diagnostics } = compactAutomaticContext(source, {
@@ -244,9 +266,19 @@ export function createContextTransform(
         output: limit?.output,
       });
       onDiagnostics(diagnostics);
-      if (!text) return;
-      system.push(text);
-      state.injection = text;
+      if (text) {
+        system.push(text);
+        state.injection = text;
+      }
+      Effect.runFork(
+        recordAutomaticContextUsage(
+          delivery.source,
+          elapsedUsageMs(now),
+          delivery.result,
+          text,
+          diagnostics,
+        ),
+      );
     } catch {
       // An unavailable SDK or unsupported hook shape leaves the model usable.
     }

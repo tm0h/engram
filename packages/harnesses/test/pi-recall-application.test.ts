@@ -210,11 +210,12 @@ it("improves configuration proposals over static bootstrap in Pi print and JSON 
         expect(score).toBe(delivery === "recall" ? 3 : 1);
       }
     }
-    const stats = await Effect.runPromise(readStats());
-    expect(stats).toMatchObject({
-      events: 6,
-      loads: { total: 6, withContext: 4, outcomes: { loaded: 4, weak: 2 } },
-      candidates: { recall: { selected: 4 } },
+    await vi.waitFor(async () => {
+      expect(await Effect.runPromise(readStats())).toMatchObject({
+        events: 6,
+        loads: { total: 6, withContext: 6, outcomes: { loaded: 6 } },
+        candidates: { recall: { selected: 12 } },
+      });
     });
   } finally {
     vi.unstubAllEnvs();

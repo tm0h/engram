@@ -1,5 +1,5 @@
 import process from "node:process";
-import type { Engram } from "@engram/core";
+import { incompleteMemoryWarning, type Engram } from "@engram/core";
 import { HOOK_DEBUG_ENV } from "../installer/constants.js";
 import { CONTEXT_TOKEN_METHOD, countContextTokens } from "./context-budget.js";
 import type { OpResult } from "./types.js";
@@ -104,7 +104,7 @@ export function compactAutomaticContext(source: AutomaticContext, input: PromptB
     Math.min(source.maxChars, hasWindow ? inputCeiling - existing : policy.unknownWindowAllowance),
   );
   const overhead = (system.length ? separatorCost : 0) + policy.envelope;
-  const frameCost = countContextTokens(frameRecall(""));
+  let frameCost = countContextTokens(frameRecall(""));
   const selected: ReturnType<typeof provenance>[] = [];
   const omitted: (ReturnType<typeof provenance> & { reason: "budget" | "limit" })[] = [];
   const truncated: ReturnType<typeof provenance>[] = [];
@@ -113,9 +113,17 @@ export function compactAutomaticContext(source: AutomaticContext, input: PromptB
   const suppliedLines = new Set(
     [...system, prompt].flatMap((part) => part.split("\n").map((line) => line.trim())),
   );
-  const suppliedPrefixes = [...suppliedLines]
-    .filter((line) => /^(project|personal)\//.test(line) && line.endsWith('…"'))
-    .map((line) => line.slice(0, -2));
+  if (source.omittedFiles) {
+    const warning = incompleteMemoryWarning(source.omittedFiles);
+    const cost = countContextTokens(warning);
+    if (
+      !system.some((part) => part.split("\n").includes(warning)) &&
+      overhead + frameCost + cost <= effective
+    ) {
+      rows.push(warning);
+      frameCost += cost;
+    }
+  }
   const maxEntries = source.maxEntries ?? AUTOMATIC_CANDIDATE_LIMIT;
   const seen = new Set<string>();
   let used = overhead + frameCost;
@@ -141,9 +149,6 @@ export function compactAutomaticContext(source: AutomaticContext, input: PromptB
       seen.has(key) ||
       suppliedLines.has(complete) ||
       suppliedLines.has(legacyRow) ||
-      suppliedPrefixes.some(
-        (prefix) => prefix.startsWith(`${key} `) && complete.startsWith(prefix),
-      ) ||
       (snippet && !snippet.startsWith("…") && !snippet.endsWith("…") && suppliedLines.has(snippet))
     ) {
       deduplicated.push(identity);
