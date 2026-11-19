@@ -446,6 +446,8 @@ it("documents bounded matching snippets and direct related context in both skill
     "packages/harnesses/claude/skills/engram/SKILL.md",
   ]) {
     const skill = fs.readFileSync(path.join(repoRoot, file), "utf8");
+    expect(skill).toContain("engram context --tokens 4000");
+    expect(skill).toContain('{"tokens":4000}');
     expect(skill).toContain("related <id>");
     expect(skill).toContain("240");
     expect(skill).toContain("superseded by");

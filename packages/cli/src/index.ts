@@ -37,7 +37,7 @@ import { statsCommand } from "./commands/stats.js";
 // WU-1; keep the registration append-only and minimal.
 import * as Install from "./commands/install.js";
 import * as Hook from "./commands/hook.js";
-import { recordHookUsageArgument } from "@engram/harnesses/shared";
+import { MIN_CONTEXT_TOKENS, recordHookUsageArgument } from "@engram/harnesses/shared";
 import { installEpipeGuard } from "./io.js";
 
 // ENG-39: a piped consumer closing stdout/stderr early (e.g. `| head`) must
@@ -400,6 +400,11 @@ program
   .option("--full", "Include full bodies of every engram.")
   .option("-n, --limit <n>", "Max engrams.", (v: string) => parseInt(v, 10))
   .option("--all", "Include inactive entries (superseded, archived, expired).")
+  .option(
+    "--tokens <count>",
+    `Budget the complete digest using Engram's token accounting (minimum ${MIN_CONTEXT_TOKENS}).`,
+  )
+  .addHelpText("after", "\nExample: engram context --tokens 4000")
   .action((opts: Record<string, string | number | boolean | undefined>) =>
     run(
       Context.contextCommand({
@@ -407,6 +412,7 @@ program
         query: opts.query as string | undefined,
         full: Boolean(opts.full),
         limit: opts.limit as number | undefined,
+        tokens: opts.tokens as string | undefined,
         all: Boolean(opts.all),
       }),
     ),

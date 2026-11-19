@@ -123,6 +123,17 @@ fi
 engram list --all | grep -F "Legacy release endpoint"
 engram context | grep -F "Use the release database"
 engram context --query release | grep -F "Release checks use an isolated database."
+engram context --help | grep -F "engram context --tokens 4000"
+engram context --tokens 512 --query release > "$run_root/context.txt"
+grep -F "Release checks use an isolated database." "$run_root/context.txt"
+[[ $(wc -c < "$run_root/context.txt") -le 512 ]] || fail "context exceeded its byte budget"
+for budget in invalid 512.5 0 -1 511 9007199254740992; do
+  if engram context --tokens "$budget" > "$run_root/context.txt" 2> "$run_root/context.err"; then
+    fail "context accepted invalid token budget: $budget"
+  fi
+  [[ ! -s "$run_root/context.txt" ]] || fail "invalid token budget produced context"
+  grep -Eq "positive safe integer|at least 512" "$run_root/context.err"
+done
 engram inject | grep -F "engram context"
 
 step "BM25 query syntax and pagination"

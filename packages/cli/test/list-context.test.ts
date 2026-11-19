@@ -134,6 +134,81 @@ describe("list and context integrity warnings", () => {
       }),
     );
 
+  it("budgets stdout including the newline, prioritizes across scopes, and reserves warnings", async () => {
+    await addProject("Ordinary project note");
+    seedBroken(projectEngramsDir(tmp), "0001-broken.md");
+    const shared = {
+      title: "Budget test",
+      tags: [],
+      pinned: false,
+      aliases: [],
+      author: undefined,
+    } as const;
+    await run(
+      Effect.gen(function* () {
+        const store = yield* EngramStore;
+        yield* store.add(
+          "project",
+          {
+            ...shared,
+            title: "Important project decision",
+            type: "decision",
+            importance: 3,
+            body: "Important implementation.",
+          },
+          NOSCAN,
+        );
+        yield* store.add(
+          "personal",
+          {
+            ...shared,
+            title: "Pinned personal",
+            type: "note",
+            pinned: true,
+            body: "𐐀界🧠".repeat(200),
+          },
+          NOSCAN,
+        );
+        yield* store.add(
+          "personal",
+          {
+            ...shared,
+            title: "Archived private entry",
+            type: "note",
+            status: "archived",
+            body: "Historical implementation.",
+          },
+          NOSCAN,
+        );
+      }),
+    );
+    await run(contextCommand({ scope: "all", tokens: 512, full: true }));
+    const first = output();
+    expect(Buffer.byteLength(first + "\n")).toBeLessThanOrEqual(512);
+    expect(first).toBe(Buffer.from(first).toString("utf8"));
+    expect(first).toContain("skipped files: 1");
+    expect(first).toContain("Pinned personal");
+    expect(first).toContain("… [truncated]");
+    expect(first).not.toContain("Ordinary project note");
+    expect(first).not.toContain("Archived private entry");
+    outLines.length = 0;
+    await run(contextCommand({ scope: "all", tokens: 512, full: true }));
+    expect(output()).toBe(first);
+    outLines.length = 0;
+    await run(
+      contextCommand({
+        scope: "all",
+        tokens: 4000,
+        query: "body:implementation",
+        all: true,
+        limit: 1,
+      }),
+    );
+    expect(output()).toContain("Historical implementation.");
+    expect(output()).toContain("Important implementation.");
+    expect(output()).not.toContain("Pinned personal");
+  });
+
   /* ------------------------------ list ------------------------------ */
 
   it("list returns valid entries when one sibling is malformed", async () => {
@@ -315,6 +390,13 @@ describe("list and context integrity warnings", () => {
     };
     const normalize = (s: string): string => s.replace(/\d+/g, "#");
     expect(normalize(dupBlock(three))).toBe(normalize(dupBlock(two)));
+
+    seedBroken(projectEngramsDir(tmp), "0004-broken.md");
+    outLines = [];
+    await run(contextCommand({ tokens: 512 }));
+    expect(output()).toContain("skipped files: 1; duplicate ids: 3");
+    expect(output()).not.toContain("0001-a.md");
+    expect(Buffer.byteLength(output() + "\n")).toBeLessThanOrEqual(512);
   });
 });
 

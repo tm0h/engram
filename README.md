@@ -56,7 +56,7 @@ engram add --title "Use pnpm, not npm" --type preference --tags tooling \
 
 # 3. See what's recorded
 engram list
-engram context            # agent-ready digest (paste into a session)
+engram context --tokens 4000  # bounded digest to paste into a session
 
 # 4. Search and validate it
 engram search "tag:tooling"
@@ -308,7 +308,7 @@ space.
 Hand-edited files are validated on read: malformed entries never disappear
 silently. `engram list` stays fail-open but prints one bounded warning to
 stderr for skipped files, and `engram context` (plus the automatic digest)
-prepends the same warning to its output. Run `engram check` for the exact
+prepends a bounded warning to its output. Run `engram check` for the exact
 paths, machine-readable codes, and repair hints.
 
 You can edit these by hand (they're just files), but never invent an id:
@@ -328,7 +328,7 @@ You can edit these by hand (they're just files), but never invent an id:
 | `engram links <id> [options]`                             | Show the link graph around one entry: outgoing related plus incoming backlinks, exact ids, same scope. |
 | `engram edit <id> [content]`                              | Replace selected fields or edit the entry interactively.                                               |
 | `engram remove <id> [-y]`                                 | Delete an entry.                                                                                       |
-| `engram context [options]`                                | Emit an agent-ready digest, optionally with full bodies or a focused query.                            |
+| `engram context [options]`                                | Emit an agent-ready digest with an optional token budget, full bodies, or a focused query.             |
 | `engram review [--scope personal\|project\|all] [--json]` | Find superseded, archived, expired, review-due, or broken-lineage entries.                             |
 | `engram check [--scope personal\|project\|all] [--json]`  | Check store integrity, configuration, lifecycle warnings, and secret-scan findings.                    |
 | `engram doctor [--json]`                                  | Diagnose store health, effective settings, managed integration assets, and index state.                |
@@ -337,6 +337,16 @@ You can edit these by hand (they're just files), but never invent an id:
 | `engram config [get\|set] [key] [value]`                  | Manage tracking, defaults, automatic context, and project or personal secret-scan policies.            |
 | `engram inject`                                           | Print generic agent instructions for a system prompt or project rule.                                  |
 | `engram where`                                            | Show resolved storage paths and the current default scope.                                             |
+
+### Budgeted context
+
+`engram context --tokens 4000` fits the entire digest in 4,000 units under
+Engram's conservative `utf8-nfkd-bytes-v1` accounting. The minimum is 512.
+Combine the budget with `--scope`, `--query`, `--full`, `--limit`, or
+`--all` as needed. Pi and OpenCode also accept a numeric `tokens` argument
+on `engram_context`. See the [context budget contract and tokenizer
+comparison](https://github.com/tm0h/engram/blob/main/docs/context-token-budget.md) for the exact counting rules
+and flag interactions.
 
 ### Local diagnostics and statistics
 

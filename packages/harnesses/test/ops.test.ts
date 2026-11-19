@@ -26,6 +26,7 @@ import {
   linksOp,
   relatedOp,
 } from "../src/shared/ops.js";
+import { countContextTokens } from "../src/shared/context-budget.js";
 import type { EditOptions } from "../src/shared/types.js";
 
 /* ------------------------------ helpers ------------------------------ */
@@ -71,6 +72,7 @@ const seed = (root: string, id: string, over: Partial<EngramInput>): string => {
     "updated: 2026-08-16T10:00:00.000Z",
     `author: ${JSON.stringify(i.author ?? "Tester")}`,
     ...(i.pinned ? ["pinned: true"] : []),
+    ...(i.importance !== undefined ? [`importance: ${i.importance}`] : []),
     ...(i.status !== undefined ? [`status: ${i.status}`] : []),
     ...(i.related !== undefined ? [`related: ${JSON.stringify(i.related)}`] : []),
     ...(i.supersedes !== undefined ? [`supersedes: ${JSON.stringify(i.supersedes)}`] : []),
@@ -157,6 +159,62 @@ describe("shared ops / contextDigest", () => {
     expect(page2.details).toMatchObject({ total: 30, nextOffset: null });
     expect(page2.text).toContain("Entry 30");
     expect(page2.text).not.toContain("Entry 24");
+  });
+
+  it("accounts for UTF-8 and the expansion of Unicode compatibility characters", () => {
+    expect(countContextTokens("Aé𐐀ﷺ\n")).toBe(1 + 3 + 4 + 33 + 1);
+    expect(countContextTokens("Ⅷ")).toBe(4);
+  });
+
+  it("keeps critical preferences ahead of uncurated decisions and resumes at the overflowing entry", async () => {
+    seed(tmp, "0001", { title: "Unrated decision", type: "decision" });
+    seed(tmp, "0002", { title: "Preserve original paths", type: "preference", importance: 4 });
+    seed(tmp, "0003", { title: "Long note " + "x".repeat(9000) });
+    seed(tmp, "0004", { title: "Later note" });
+    const options = { scope: "project", tokens: 512 } as const;
+    const head = await run(contextDigest(options));
+    expect(head.text.indexOf("Preserve original paths")).toBeGreaterThan(-1);
+    expect(head.text.indexOf("Unrated decision")).toBeGreaterThan(
+      head.text.indexOf("Preserve original paths"),
+    );
+    expect(head.text).not.toContain("Long note");
+    expect(head.details).toMatchObject({
+      nextOffset: 2,
+      budget: { used: countContextTokens(head.text), shown: 2, omitted: 2, truncated: 0 },
+    });
+
+    const next = await run(contextDigest({ ...options, tokens: 10_000, offset: 2 }));
+    expect(next.text).toContain("Long note");
+    expect(next.details).toMatchObject({
+      nextOffset: 3,
+      budget: { requested: 10_000, effective: 8192, shown: 1, truncated: 1 },
+    });
+    expect(countContextTokens(next.text)).toBeLessThanOrEqual(8192);
+  });
+
+  it("budgets the full text and resumes after the last rendered entry", async () => {
+    seed(tmp, "0001", { title: "🧠".repeat(300), pinned: true });
+    seed(tmp, "0002", { title: "Inactive pin", pinned: true, status: "archived" });
+    seedPersonal(home, "0003", { title: "Next memory" });
+    const options = { tokens: 512, scope: "both", limit: 2 } as const;
+    const first = await run(contextDigest(options));
+    expect(first.isError).toBe(false);
+    expect(Buffer.byteLength(first.text)).toBeLessThanOrEqual(512);
+    expect(first.text).toBe(Buffer.from(first.text).toString("utf8"));
+    expect(first.text).toContain("… [truncated]");
+    expect(first.text).toContain(
+      'engram_context({"offset":1,"scope":"both","limit":2,"tokens":512})',
+    );
+    expect(first.details).toMatchObject({
+      total: 2,
+      nextOffset: 1,
+      budget: { method: "utf8-nfkd-bytes-v1", requested: 512, shown: 1, omitted: 1, truncated: 1 },
+    });
+    const second = await run(contextDigest({ ...options, offset: 1 }));
+    expect(second.details.nextOffset).toBeNull();
+    expect(second.text).toContain("Next memory");
+    expect(second.text).not.toContain("0001");
+    expect((await run(contextDigest({ tokens: 511 }))).text).toContain("at least 512");
   });
 
   it("scope both renders a section per scope", async () => {

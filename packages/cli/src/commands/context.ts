@@ -1,13 +1,19 @@
 /** `engram context` — emit an agent-ready digest for injection. */
 import { Effect, Option } from "effect";
 import chalk from "chalk";
-import { EngramStore } from "@engram/core";
+import { EngramStore, type Engram } from "@engram/core";
 import { incompleteMemoryWarning, renderContext, scopesToQuery } from "@engram/core";
 import { searchEngrams } from "@engram/core";
 import { findProjectRoot } from "@engram/core";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
-import { elapsedUsageMs, recordUsage } from "@engram/harnesses/shared";
+import {
+  contextTokenError,
+  elapsedUsageMs,
+  prioritizeContext,
+  recordUsage,
+  renderBudgetedContext,
+} from "@engram/harnesses/shared";
 import { out } from "../io.js";
 
 export interface ContextOptions {
@@ -15,6 +21,7 @@ export interface ContextOptions {
   readonly query?: string;
   readonly full?: boolean;
   readonly limit?: number;
+  readonly tokens?: string | number;
   /** ENG-17 R13: re-include inactive entries (superseded, archived, expired). */
   readonly all?: boolean;
 }
@@ -26,6 +33,14 @@ const buildContextDigest = (opts: ContextOptions) =>
     // Output is meant for machine/agent consumption → force plain text.
     chalk.level = 0;
 
+    const tokens = opts.tokens === undefined ? undefined : Number(opts.tokens);
+    if (tokens !== undefined) {
+      const invalid = contextTokenError(
+        typeof opts.tokens === "string" && !/^-?\d+$/.test(opts.tokens) ? NaN : tokens,
+      );
+      if (invalid) return yield* Effect.fail(new Error(invalid));
+    }
+
     const store = yield* EngramStore;
     const fs = yield* FileSystem;
     const path = yield* Path;
@@ -34,7 +49,9 @@ const buildContextDigest = (opts: ContextOptions) =>
     const scopes = scopesToQuery(opts.scope, projectRootOpt);
 
     const blocks: string[] = [];
-    const duplicateIds: Array<{ id: string; files: ReadonlyArray<string> }> = [];
+    const candidates: Engram[] = [];
+    const now = Date.now();
+    let duplicateIds = 0;
     let omitted = 0;
     let first = true;
     for (const scope of scopes) {
@@ -42,21 +59,16 @@ const buildContextDigest = (opts: ContextOptions) =>
       // the bounded warning below is what the agent sees instead.
       const scanned = yield* store.scan(scope);
       omitted += scanned.omittedFiles;
-      duplicateIds.push(...scanned.duplicateIds);
-      let engrams = scanned.entries;
-      // Ids must be unique; surface duplicates loudly but bounded (this
-      // digest is what agents read at session start).
-      if (opts.query) {
-        engrams = searchEngrams(engrams, opts.query, opts.limit, {
-          includeInactive: opts.all === true,
-        }).map((r) => r.engram);
-      } else {
-        // ENG-17 R3: the no-query path routes through searchEngrams too, so
-        // the digest excludes inactive entries by default (previously it
-        // kept the raw scan entries when no numeric limit was given).
-        engrams = searchEngrams(engrams, undefined, opts.limit, {
-          includeInactive: opts.all === true,
-        }).map((r) => r.engram);
+      duplicateIds += scanned.duplicateIds.length;
+      const engrams = searchEngrams(
+        scanned.entries,
+        opts.query,
+        tokens === undefined ? opts.limit : undefined,
+        { includeInactive: opts.all === true, now },
+      ).map((r) => r.engram);
+      if (tokens !== undefined) {
+        for (const entry of engrams) candidates.push(entry);
+        continue;
       }
       if (!engrams.length) continue;
       const rendered = renderContext(engrams, {
@@ -73,6 +85,31 @@ const buildContextDigest = (opts: ContextOptions) =>
       blocks.push(rendered);
     }
 
+    if (tokens !== undefined) {
+      const ranked = prioritizeContext(candidates);
+      let selected = ranked;
+      if (opts.limit !== undefined) {
+        const withinLimit = new Set(
+          scopes.flatMap((scope) =>
+            ranked.filter((entry) => entry.scope === scope).slice(0, opts.limit),
+          ),
+        );
+        selected = ranked.filter((entry) => withinLimit.has(entry));
+      }
+      const { text } = renderBudgetedContext(selected, {
+        tokens,
+        scopes,
+        query: Boolean(opts.query),
+        full: opts.full,
+        personalOnly: opts.scope === "all" && root === null,
+        omittedFiles: omitted,
+        duplicateIds,
+        limited: ranked.length - selected.length,
+        trailingNewline: true,
+      });
+      return { text, hasPayload: selected.length > 0 || omitted > 0 || duplicateIds > 0 };
+    }
+
     // Bounded, cap-protected preamble, prepended so it can never be cut by
     // downstream truncation: the incomplete-memory warning first (stdout,
     // because agents may ignore stderr), then duplicate visibility that stays
@@ -80,11 +117,9 @@ const buildContextDigest = (opts: ContextOptions) =>
     // unbounded offender set.
     const preamble: string[] = [];
     if (omitted > 0) preamble.push(incompleteMemoryWarning(omitted));
-    if (duplicateIds.length > 0) {
+    if (duplicateIds > 0) {
       preamble.push(
-        `# WARNING: duplicate engram ids (${duplicateIds.length} ${
-          duplicateIds.length === 1 ? "id" : "ids"
-        })\n` +
+        `# WARNING: duplicate engram ids (${duplicateIds} ${duplicateIds === 1 ? "id" : "ids"})\n` +
           "Multiple files claim the same id, so `engram show <id>` cannot resolve them. " +
           "Run `engram check --scope all` for exact paths, or `engram dedupe` to renumber.",
       );
