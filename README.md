@@ -621,7 +621,9 @@ unchanged. Pagination runs after this ranking.
 ### Curated automatic startup context
 
 Claude Code and Codex use a curated bootstrap by default for their digest
-hooks. OpenCode uses the same digest as its fallback for contextual recall.
+hooks. Pi and OpenCode use [automatic context compaction](docs/automatic-context-compaction.md)
+to fit their active prompts, and OpenCode uses the curated selection policy
+for fallback candidates.
 The digest selects active pinned memories, decisions with `importance` at least 3,
 and critical preferences with `importance` at least 4.
 Path-specific entries (`appliesTo`) are excluded unless explicitly enabled.

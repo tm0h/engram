@@ -1,6 +1,12 @@
 import { isAbsolute } from "node:path";
 import type { Hooks, PluginInput } from "@opencode-ai/plugin";
 import { Effect, Option } from "effect";
+import {
+  compactAutomaticContext,
+  reportAutomaticContext,
+  type AutomaticContext,
+  type AutomaticContextDiagnostics,
+} from "../shared/automatic-compaction.js";
 import { CONTEXTUAL_RECALL_LIMITS, contextualRecallOp } from "../shared/contextual-recall.js";
 import { autoContextOp } from "../shared/ops.js";
 import { elapsedUsageMs, recordBootstrapUsage } from "../shared/stats.js";
@@ -10,7 +16,6 @@ export const MAX_SESSIONS = 100;
 const MAX_ID_CHARS = 256;
 const CACHE_MS = 30_000;
 const SDK_TIMEOUT_MS = 500;
-const MARKER = "<engram-memory>";
 
 export interface ActiveRequest {
   readonly directory: string;
@@ -24,7 +29,7 @@ type RequestResolver = (
   sessionID: string,
   model: RequestModel,
 ) => Promise<ActiveRequest | undefined>;
-type ContextLoader = (request: ActiveRequest) => Promise<string>;
+type ContextLoader = (request: ActiveRequest) => Promise<AutomaticContext | undefined>;
 
 const validId = (id: unknown): id is string =>
   typeof id === "string" && id.length > 0 && id.length <= MAX_ID_CHARS;
@@ -118,30 +123,46 @@ export const resolveActiveRequest =
     );
 
 const loadContext: ContextLoader = async ({ directory, prompt }) => {
-  const recall = await runOpAtDirectory(directory, contextualRecallOp({ prompt, intent: "task" }));
-  if (recall.text) return recall.text;
-  if (recall.details.reason !== "weak" && recall.details.reason !== "empty-query") return "";
+  const recall = await runOpAtDirectory(
+    directory,
+    contextualRecallOp({ prompt, intent: "task" }, true),
+  );
+  if (recall.details.reason !== "weak" && recall.details.reason !== "empty-query")
+    return recall.automatic;
 
-  // A confident recall replaces the digest for this request. Since no digest
-  // is delivered with it, its rows do not need bootstrap deduplication.
+  // The fallback adds title-only bootstrap rows after critical excerpts.
   const started = performance.now();
   const loaded = await runOpAtDirectory(
     directory,
     Effect.gen(function* () {
-      const digest = yield* autoContextOp().pipe(
+      const digest = yield* autoContextOp(true).pipe(
         Effect.timeoutOption(CONTEXTUAL_RECALL_LIMITS.timeoutMs),
       );
       const result = Option.getOrUndefined(digest);
       const text = result?.text ?? "";
       yield* recordBootstrapUsage("bootstrap", elapsedUsageMs(started), result, text);
-      return result ?? { text, isError: false, details: {} };
+      return result ?? { text, isError: false, details: {}, automatic: undefined };
     }),
   );
-  return loaded.text;
+  if (loaded.details.enabled === false) return;
+  if (!loaded.automatic) return recall.automatic;
+  const source = loaded.automatic;
+  const critical = recall.automatic?.rows ?? [];
+  const ids = new Set(critical.map(({ scope, id }) => `${scope}/${id}`));
+  return {
+    ...source,
+    outsideCandidateWindow:
+      (source.outsideCandidateWindow ?? 0) + (recall.automatic?.outsideCandidateWindow ?? 0),
+    rows: [...critical, ...source.rows.filter(({ scope, id }) => !ids.has(`${scope}/${id}`))],
+  };
 };
 
 interface SessionCache {
-  context?: { request: ActiveRequest; until: number; text: Promise<string> };
+  context?: {
+    request: ActiveRequest;
+    until: number;
+    source: Promise<AutomaticContext | undefined>;
+  };
 }
 
 interface OutputState {
@@ -150,7 +171,13 @@ interface OutputState {
 
 export function createContextTransform(
   resolve: RequestResolver,
-  { load = loadContext }: { load?: ContextLoader } = {},
+  {
+    load = loadContext,
+    onDiagnostics = reportAutomaticContext,
+  }: {
+    load?: ContextLoader;
+    onDiagnostics?: (diagnostics: AutomaticContextDiagnostics) => void;
+  } = {},
 ) {
   const sessions = new Map<string, SessionCache>();
   const outputs = new WeakMap<string[], OutputState>();
@@ -168,7 +195,7 @@ export function createContextTransform(
       const state: OutputState = {};
       outputs.set(system, state);
       const sessionID = input?.sessionID;
-      if (!validId(sessionID) || system.some((part) => part.includes(MARKER))) return;
+      if (!validId(sessionID)) return;
 
       let cache = sessions.get(sessionID);
       if (!cache) {
@@ -190,25 +217,34 @@ export function createContextTransform(
         context.request.messageID !== request.messageID ||
         context.request.prompt !== request.prompt
       ) {
-        const text = (async () => load(request))().catch(() => "");
-        context = { request, until: now + CACHE_MS, text };
+        const source = (async () => load(request))().catch(() => undefined);
+        context = { request, until: now + CACHE_MS, source };
         cache.context = context;
       }
 
-      const text = await context.text;
-      if (!text) {
-        if (cache.context === context) cache.context = undefined;
-        return;
-      }
+      const source = await context.source;
+      if (!source?.rows.length && cache.context === context) cache.context = undefined;
+      if (!source) return;
       // A deletion, write, or reused output can race a read. Its old promise
       // may finish, but it cannot inject into a newer request's output.
       if (
         sessions.get(sessionID) !== cache ||
         outputs.get(system) !== state ||
-        output.system !== system ||
-        system.some((part) => part.includes(MARKER))
+        output.system !== system
       )
         return;
+      const limit: { context?: number; input?: number; output?: number } | undefined =
+        input.model?.limit;
+      const { text, diagnostics } = compactAutomaticContext(source, {
+        harness: "opencode",
+        system,
+        prompt: request.prompt,
+        contextWindow: limit?.context,
+        inputLimit: limit?.input,
+        output: limit?.output,
+      });
+      onDiagnostics(diagnostics);
+      if (!text) return;
       system.push(text);
       state.injection = text;
     } catch {

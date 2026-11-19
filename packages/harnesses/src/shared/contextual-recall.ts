@@ -2,6 +2,9 @@ import { Duration, Effect, Exit, Option } from "effect";
 import {
   ConfigRepo,
   DEFAULT_AUTO_CONTEXT_SCOPE,
+  DEFAULT_AUTO_CONTEXT_MAX_CHARS,
+  DEFAULT_AUTO_CONTEXT_LIMIT,
+  effectiveStatus,
   EngramStore,
   contextualQuery,
   prepareContextualEvidence,
@@ -13,6 +16,11 @@ import {
   type Engram,
   type Scope,
 } from "@engram/core";
+import {
+  AUTOMATIC_CANDIDATE_LIMIT,
+  automaticMemory,
+  type AutomaticContextResult,
+} from "./automatic-compaction.js";
 import { frameRecall, recallData } from "./recall-frame.js";
 import { PERSONAL_ONLY_NOTE } from "./degraded.js";
 import { recordRecallUsage } from "./stats.js";
@@ -67,12 +75,13 @@ const empty = (reason: string, details: Record<string, unknown> = {}): OpResult 
   details: { ...details, reason, selected: [] },
 });
 
-const retrieve = (opts: ContextualRecallOptions) =>
+const retrieve = (opts: ContextualRecallOptions, automatic: boolean) =>
   Effect.gen(function* () {
     if (!validInput(opts)) return empty("invalid-input");
     const query = contextualQuery(opts.prompt);
     // Do not turn empty/punctuation-only prompts into recency retrieval.
-    if (!/[\p{L}\p{N}]/u.test(query)) return empty("empty-query");
+    const hasQuery = /[\p{L}\p{N}]/u.test(query);
+    if (!hasQuery && !automatic) return empty("empty-query");
     const cfg = yield* ConfigRepo;
     const global = yield* cfg.loadGlobal();
     if (global.autoContext !== "on") return empty("disabled");
@@ -105,15 +114,18 @@ const retrieve = (opts: ContextualRecallOptions) =>
         opts.activePaths?.some((p) => m.appliesTo!.some((pattern) => pathApplies(pattern, p))),
     );
     // One global ranking over the path union; never concatenate per-path rankings.
-    const ranked = searchEngrams(eligible, opts.prompt, undefined, {
-      explain: true,
-      literal: true,
-    });
+    const ranked = hasQuery
+      ? searchEngrams(eligible, opts.prompt, undefined, {
+          explain: true,
+          literal: true,
+        })
+      : [];
     const delivered =
       opts.bootstrap?.projectRoot === Option.getOrNull(root)
         ? new Set(opts.bootstrap.selected.map((m) => `${m.scope}:${m.id}`))
         : new Set<string>();
     const rows: string[] = [];
+    const relevant = new Map<Engram, ReturnType<typeof automaticMemory>>();
     const selected: { id: string; scope: Scope }[] = [];
     const ranking: Record<string, unknown>[] = [];
     let duplicateCount = 0;
@@ -139,17 +151,20 @@ const retrieve = (opts: ContextualRecallOptions) =>
         duplicateCount++;
         continue;
       }
-      if (selected.length >= CONTEXTUAL_RECALL_LIMITS.results) {
-        limitedCount++;
-        continue;
-      }
+      const baselineFull = selected.length >= CONTEXTUAL_RECALL_LIMITS.results;
+      const needsCandidate = automatic && relevant.size < CONTEXTUAL_RECALL_LIMITS.results;
+      if (baselineFull) limitedCount++;
+      if (baselineFull && !needsCandidate) continue;
+      const snippet = matchingSnippet(m.body, query) ?? openingSnippet(m.body);
+      if (needsCandidate) relevant.set(m, automaticMemory(m, snippet));
+      if (baselineFull) continue;
       const row = recallData(
         JSON.stringify({
           id: m.id,
           scope: m.scope,
           type: m.type,
           title: m.title.slice(0, 256),
-          snippet: matchingSnippet(m.body, query) ?? openingSnippet(m.body),
+          snippet,
         }),
       );
       const text = frameRecall(header + [...rows, row].join("\n"));
@@ -172,13 +187,51 @@ const retrieve = (opts: ContextualRecallOptions) =>
       limitedCount,
       intent: opts.intent,
     };
-    return selected.length
+    const result = selected.length
       ? {
           text: frameRecall(header + rows.join("\n")),
           isError: false,
           details: { ...details, reason: "selected", selected },
         }
-      : empty(confidentCount ? "excluded" : "weak", details);
+      : empty(!hasQuery ? "empty-query" : confidentCount ? "excluded" : "weak", details);
+    if (!automatic) return result;
+    const now = Date.now();
+    const critical = eligible
+      .filter(
+        (entry) =>
+          (entry.pinned || (entry.importance ?? 0) >= 4) &&
+          effectiveStatus(entry, now) === "active",
+      )
+      .sort(
+        (a, b) =>
+          Number(b.pinned) - Number(a.pinned) ||
+          (b.importance ?? 0) - (a.importance ?? 0) ||
+          Number(relevant.has(b)) - Number(relevant.has(a)) ||
+          (a.scope === b.scope ? 0 : a.scope === "project" ? -1 : 1) ||
+          a.id.localeCompare(b.id),
+      );
+    const curated = new Set(critical);
+    const limit = global.autoContextLimit ?? DEFAULT_AUTO_CONTEXT_LIMIT;
+    return {
+      ...result,
+      automatic: {
+        rows: [
+          ...critical
+            .slice(0, AUTOMATIC_CANDIDATE_LIMIT)
+            .map(
+              (entry) => relevant.get(entry) ?? automaticMemory(entry, openingSnippet(entry.body)),
+            ),
+          ...[...relevant].filter(([entry]) => !curated.has(entry)).map(([, row]) => row),
+        ],
+        maxEntries: limit,
+        outsideCandidateWindow:
+          Math.max(0, critical.length - AUTOMATIC_CANDIDATE_LIMIT) +
+          Math.max(0, confidentCount - duplicateCount - relevant.size),
+        maxChars: global.autoContextMaxChars ?? DEFAULT_AUTO_CONTEXT_MAX_CHARS,
+        omittedFiles,
+        personalOnly,
+      },
+    };
   });
 
 /** Automatic recall fails open on ordinary failures and internal timeout, while
@@ -186,11 +239,12 @@ const retrieve = (opts: ContextualRecallOptions) =>
  * A final monotonic-clock check also discards synchronous ranking overruns. */
 export const contextualRecallOp = (
   opts: ContextualRecallOptions,
-): Effect.Effect<OpResult, never, EngramStore | ConfigRepo> =>
+  automatic = false,
+): Effect.Effect<AutomaticContextResult, never, EngramStore | ConfigRepo> =>
   Effect.gen(function* () {
     const started = performance.now();
     const exit = yield* Effect.exit(
-      retrieve(opts).pipe(
+      retrieve(opts, automatic).pipe(
         Effect.timeoutOption(Duration.millis(CONTEXTUAL_RECALL_LIMITS.timeoutMs)),
       ),
     );

@@ -40,10 +40,11 @@ turn's working directory and the user text from its parent message. Follow-up
 requests can retrieve different memories in the same session. The native
 tools use the directory supplied on each tool call.
 
-- Confident recall delivers up to five relevant entries with short excerpts,
-  capped at 4,096 characters and 8 KiB. On a weak match, the curated digest
-  can provide general project context. A request receives a single block,
-  and existing system entries are preserved.
+- Pinned and high-importance memories take priority, followed by up to five
+  confident query matches. When the query is weak, the bootstrap policy can
+  provide title-only context. Engram fits each block to the model headroom
+  and global context cap, skips evidence already in the active prompt, and
+  keeps each excerpt tied to its scope and ID.
 - The plugin caches the latest result per session for up to 30 seconds and
   retains at most 100 sessions. An approved `engram_add` or `engram_edit`
   clears the plugin's cache because sessions can share a project or personal
@@ -51,6 +52,8 @@ tools use the directory supplied on each tool call.
 - Automatic delivery leaves the prompt usable when the session or SDK data is
   missing, retrieval fails, or automatic context is disabled. The native tools
   remain available on hosts without the experimental hook.
+
+See the [automatic context budget and evaluation](../../../../docs/automatic-context-compaction.md).
 
 Configure it with the global config keys (user-level, not committed project
 policy):
@@ -86,7 +89,7 @@ instead of throwing an opaque plugin error.
 
 ### Curated automatic startup context
 
-OpenCode's fallback digest uses the same curated selection as the automatic
+OpenCode's fallback uses the same curated selection as the automatic
 startup context in other integrations. It selects active pinned memories, decisions with
 `importance` at least 3, and critical preferences with `importance` at least 4.
 Path-specific entries (`appliesTo`) are excluded unless explicitly enabled.
@@ -104,15 +107,15 @@ injected text.
 
 Global settings:
 
-| Key                          | Default   | Meaning                                      |
-| ---------------------------- | --------- | -------------------------------------------- |
-| `autoContext`                | `on`      | Enable automatic context                     |
-| `autoContextScope`           | `project` | `project`, `personal`, or `both`             |
-| `autoContextLimit`           | `25`      | Entry ceiling, 1–100                         |
-| `autoContextSelection`       | `curated` | `curated` or legacy decision/pin grouping    |
-| `autoContextMaxChars`        | `4800`    | Entire payload budget, 2048–8192 characters  |
-| `autoContextIncludeScoped`   | `off`     | Explicitly allow path-specific entries       |
-| `autoContextIncludeInactive` | `off`     | Explicitly allow historical/inactive entries |
+| Key                          | Default   | Meaning                                                 |
+| ---------------------------- | --------- | ------------------------------------------------------- |
+| `autoContext`                | `on`      | Enable automatic context                                |
+| `autoContextScope`           | `project` | `project`, `personal`, or `both`                        |
+| `autoContextLimit`           | `25`      | Entry ceiling, 1–100                                    |
+| `autoContextSelection`       | `curated` | `curated` or legacy decision/pin grouping               |
+| `autoContextMaxChars`        | `4800`    | Maximum estimated units for a complete block, 2048–8192 |
+| `autoContextIncludeScoped`   | `off`     | Explicitly allow path-specific entries                  |
+| `autoContextIncludeInactive` | `off`     | Explicitly allow historical/inactive entries            |
 
 Use `engram config set autoContextMaxChars 6000` to change the budget, or
 `engram config set autoContextSelection legacy` for the former selection order.

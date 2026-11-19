@@ -1,3 +1,8 @@
+import {
+  AUTOMATIC_CANDIDATE_LIMIT,
+  automaticMemory,
+  type AutomaticContextResult,
+} from "./automatic-compaction.js";
 import { RECALL_PREFIX, RECALL_SUFFIX, recallData, frameRecall } from "./recall-frame.js";
 /**
  * Harness-agnostic engram operations. Every op returns an infallible
@@ -1289,7 +1294,9 @@ const assembleAutoPayload = (
 };
 
 /** Automatic-context core; failures flow to `autoContextOp`'s fail-open exit. */
-const autoContextImpl = (): Effect.Effect<OpResult, unknown, EngramStore | ConfigRepo> =>
+const autoContextImpl = (
+  automatic: boolean,
+): Effect.Effect<AutomaticContextResult, unknown, EngramStore | ConfigRepo> =>
   Effect.gen(function* () {
     const store = yield* EngramStore;
     const cfg = yield* ConfigRepo;
@@ -1494,6 +1501,20 @@ const autoContextImpl = (): Effect.Effect<OpResult, unknown, EngramStore | Confi
     );
     return {
       text: payload.text,
+      ...(automatic
+        ? {
+            automatic: {
+              rows: flat
+                .slice(0, AUTOMATIC_CANDIDATE_LIMIT)
+                .map((entry) => automaticMemory(entry, null)),
+              maxEntries: limit,
+              outsideCandidateWindow: Math.max(0, flat.length - AUTOMATIC_CANDIDATE_LIMIT),
+              maxChars,
+              personalOnly,
+              omittedFiles,
+            },
+          }
+        : {}),
       isError: false,
       details: {
         ...base,
@@ -1516,9 +1537,15 @@ const autoContextImpl = (): Effect.Effect<OpResult, unknown, EngramStore | Confi
  * omitted when the setting itself could not be read). Adapters inject
  * `text` verbatim when non-empty; nothing here should be logged.
  */
-export const autoContextOp = (): Effect.Effect<OpResult, never, EngramStore | ConfigRepo> =>
-  Effect.gen(function* () {
-    const exit = yield* Effect.exit(autoContextImpl());
+export function autoContextOp(): Effect.Effect<OpResult, never, EngramStore | ConfigRepo>;
+export function autoContextOp(
+  automatic: true,
+): Effect.Effect<AutomaticContextResult, never, EngramStore | ConfigRepo>;
+export function autoContextOp(
+  automatic = false,
+): Effect.Effect<AutomaticContextResult, never, EngramStore | ConfigRepo> {
+  return Effect.gen(function* () {
+    const exit = yield* Effect.exit(autoContextImpl(automatic));
     if (Exit.isSuccess(exit)) return exit.value;
     // Fiber interruption is not a load failure: re-interrupt so callers see
     // the cancellation (timeouts/aborts) instead of a successful empty
@@ -1530,3 +1557,4 @@ export const autoContextOp = (): Effect.Effect<OpResult, never, EngramStore | Co
       : "automatic context load failed";
     return { text: "", isError: false, details: { loaded: false, error: message } };
   });
+}

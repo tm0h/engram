@@ -190,13 +190,13 @@ it("improves configuration proposals over static bootstrap in Pi print and JSON 
           expect(captured[1]).toBe(captured[0]); // retry
           expect(captured[0]).toContain("orchid_ttl=604800");
           expect(captured[2]).toContain("cedar_retries=3");
-          expect(captured[2]).not.toContain("orchid_ttl=");
+          expect(captured[2]).toContain("orchid_ttl="); // pinned across topics
           for (const prompt of captured.slice(0, 3)) {
             expect(prompt).toContain("Project base");
             expect(prompt).toContain("Earlier extension");
             expect(prompt.match(/<engram-memory>/g)).toHaveLength(1);
           }
-          expect(captured[3]).not.toContain("<engram-memory>");
+          expect(captured[3]).toContain("<engram-memory>"); // weak query still gets pins
         }
 
         const responses = host.session.state.messages
