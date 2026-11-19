@@ -282,6 +282,14 @@ files; missing new settings use the defaults above. Both selection modes obey
 the eligibility toggles and output caps. Manual `engram context` and search
 pagination are unchanged. Exact token accounting is a separate capability.
 
+### Budgeted manual context
+
+Use `engram context --tokens 4000` for a bounded manual digest. In Pi or
+OpenCode, pass `{"tokens":4000}` to `engram_context`. The minimum is 512.
+Engram uses conservative, versioned accounting for the digest text, including
+headers and truncation notices. Use `engram show <id>` or `engram_show` to
+read a complete entry when the digest truncates it.
+
 ### Matching snippets and related context
 
 Search summaries include a deterministic body snippet of at most 240 characters,

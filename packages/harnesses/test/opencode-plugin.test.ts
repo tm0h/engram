@@ -116,7 +116,7 @@ describe("engram opencode plugin / registration", () => {
 
   it("schemas expose the expected params", async () => {
     const tools = await loadTools();
-    expect(Object.keys(tools.engram_context.args)).toEqual(["scope", "limit", "offset"]);
+    expect(Object.keys(tools.engram_context.args)).toEqual(["scope", "limit", "offset", "tokens"]);
     expect(
       z
         .object(tools.engram_search.args as Record<string, z.ZodType>)
@@ -184,6 +184,14 @@ describe("engram opencode plugin / tool execution", () => {
     const res = await execute(tools.engram_context, {});
     expect(res.output).toContain("Use pnpm catalogs");
     expect(res.metadata).toMatchObject({ total: 1, isError: false });
+
+    const bounded = await execute(tools.engram_context, { tokens: 512 });
+    expect(bounded.output).toContain("Use pnpm catalogs");
+    expect(bounded.metadata).toMatchObject({
+      total: 1,
+      isError: false,
+      budget: { requested: 512, used: Buffer.byteLength(bounded.output), shown: 1 },
+    });
   });
 
   it("resolves project scope from the tool context directory, not process.cwd()", async () => {

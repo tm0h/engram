@@ -25,8 +25,9 @@ import {
   searchOp,
   showOp,
 } from "../shared/ops.js";
+import { MIN_CONTEXT_TOKENS } from "../shared/context-budget.js";
 import { runOpAtDirectory } from "../shared/run.js";
-import type { ScopeFilter } from "../shared/types.js";
+import type { ContextOptions, ScopeFilter } from "../shared/types.js";
 import { toOpencodeResult } from "./result.js";
 
 const scopeFilter = (description: string) =>
@@ -59,11 +60,14 @@ export const engramContextTool = {
       .optional()
       .describe(`Max entries per page. Default ${DEFAULT_CONTEXT_LIMIT}.`),
     offset: z.number().int().min(0).optional().describe("0-based page offset for pagination."),
+    tokens: z
+      .number()
+      .int()
+      .min(MIN_CONTEXT_TOKENS)
+      .optional()
+      .describe("Budget the digest text using Engram's versioned token accounting."),
   },
-  async execute(
-    args: { scope?: ScopeFilter; limit?: number; offset?: number },
-    context: OpenCodeToolContext,
-  ) {
+  async execute(args: ContextOptions, context: OpenCodeToolContext) {
     return toOpencodeResult(
       "Engram Context",
       await runOpAtDirectory(context.directory, contextDigest(args)),

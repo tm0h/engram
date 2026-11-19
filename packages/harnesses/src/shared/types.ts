@@ -30,6 +30,7 @@ export interface ContextOptions {
   readonly scope?: ScopeFilter;
   readonly limit?: number;
   readonly offset?: number;
+  readonly tokens?: number;
 }
 
 export interface SearchOptions {

@@ -125,6 +125,7 @@ describe("engram extension / registration", () => {
       "scope",
       "limit",
       "offset",
+      "tokens",
     ]);
     expect(Object.keys(byName.get("engram_search")!.parameters.properties!)).toContain("query");
     expect(Object.keys(byName.get("engram_search")!.parameters.properties!)).toContain("explain");
@@ -222,6 +223,11 @@ describe("engram extension / tool execution", () => {
     expect(res.content[0].type).toBe("text");
     expect(res.content[0].text).toContain("Use pnpm catalogs");
     expect(res.details).toMatchObject({ total: 1 });
+
+    const bounded = (await tool.execute("call-2", { tokens: 512 })) as typeof res;
+    expect(bounded.isError).toBe(false);
+    expect(bounded.content[0].text).toContain("Use pnpm catalogs");
+    expect(bounded.details).toMatchObject({ budget: { requested: 512, shown: 1 } });
   });
 
   it("engram_add writes, then engram_context lists the new entry", async () => {

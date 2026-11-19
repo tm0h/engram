@@ -23,6 +23,7 @@ import {
   searchOp,
   showOp,
 } from "../shared/ops.js";
+import { MIN_CONTEXT_TOKENS } from "../shared/context-budget.js";
 import { runOp, toToolResult } from "./run.js";
 
 const scopeFilter = (description: string) =>
@@ -59,6 +60,13 @@ export const engramContextTool = {
     offset: Type.Optional(
       Type.Integer({ minimum: 0, description: "0-based page offset for pagination." }),
     ),
+    tokens: Type.Optional(
+      Type.Integer({
+        minimum: MIN_CONTEXT_TOKENS,
+        maximum: Number.MAX_SAFE_INTEGER,
+        description: "Budget the digest text using Engram's versioned token accounting.",
+      }),
+    ),
   }),
   async execute(_id: string, params: any) {
     return toToolResult(
@@ -67,6 +75,7 @@ export const engramContextTool = {
           scope: params.scope,
           limit: params.limit,
           offset: params.offset,
+          tokens: params.tokens,
         }),
       ),
     );

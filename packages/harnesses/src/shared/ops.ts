@@ -8,6 +8,7 @@ import { RECALL_PREFIX, RECALL_SUFFIX, recallData, frameRecall } from "./recall-
  * Rendering is plain text (no ANSI): the primary consumer is the LLM.
  */
 import { bootstrapCandidates } from "./bootstrap.js";
+import { contextTokenError, prioritizeContext, renderBudgetedContext } from "./context-budget.js";
 import { elapsedUsageMs, recordUsage } from "./stats.js";
 import { Effect, Exit, Option, Result } from "effect";
 import { FileSystem } from "effect/FileSystem";
@@ -318,6 +319,12 @@ export const contextDigest = (
   capture(
     Effect.gen(function* () {
       const started = performance.now();
+      const tokens = opts.tokens;
+      if (tokens !== undefined) {
+        const invalid =
+          contextTokenError(tokens) ?? searchPaginationError(opts.offset ?? 0, opts.limit);
+        if (invalid) return err(invalid);
+      }
       const store = yield* EngramStore;
       const root = yield* store.projectRoot();
       const resolved = resolveScopes(opts.scope ?? "both", root);
@@ -329,10 +336,13 @@ export const contextDigest = (
       // only cuts the tail) and mirrored in structured details.
       let omittedFiles = 0;
       let diagnosticCount = 0;
+      let duplicateIds = 0;
+      const now = Date.now();
       for (const scope of resolved.scopes) {
         const scanned = yield* store.scan(scope);
         omittedFiles += scanned.omittedFiles;
         diagnosticCount += scanned.diagnostics.length;
+        duplicateIds += scanned.duplicateIds.length;
         sections.push({
           scope,
           /* ENG-17 R3: the tool-facing digest excludes inactive entries by
@@ -340,30 +350,61 @@ export const contextDigest = (
            * `expires`), via the core helper. ordered() semantics apply to
            * what remains; warnings and caps are unchanged. showOp/get by id
            * stay status-blind. */
-          items: ordered(scanned.entries.filter((m) => effectiveStatus(m) === "active")),
+          items: ordered(scanned.entries.filter((m) => effectiveStatus(m, now) === "active")),
         });
       }
       const flat = sections.flatMap((s) => s.items);
-      const page = paginate(flat, opts.offset ?? 0, opts.limit ?? DEFAULT_CONTEXT_LIMIT);
-
-      const lines = digestLines(sections, flat, page, root, resolved.personalOnly);
-      if (!flat.length) lines.push("No engrams in scope yet.");
-      if (omittedFiles > 0) lines.unshift(incompleteMemoryWarning(omittedFiles));
-
-      const from = page.offset + 1;
-      const to = page.offset + page.items.length;
-      let footer: string | null = null;
-      if (page.nextOffset !== null && page.items.length > 0) {
-        const nextParams: Record<string, unknown> = { offset: page.nextOffset };
+      const page = paginate(
+        tokens === undefined ? flat : prioritizeContext(flat),
+        opts.offset ?? 0,
+        opts.limit ?? DEFAULT_CONTEXT_LIMIT,
+      );
+      const nextCall = (offset: number) => {
+        const nextParams: Record<string, unknown> = { offset };
         if (opts.scope !== undefined) nextParams.scope = opts.scope;
         if (opts.limit !== undefined) nextParams.limit = opts.limit;
-        const nextCall = `engram_context(${JSON.stringify(nextParams)})`;
-        footer = `${pageFooter({ from, to, total: page.total, nextOffset: page.nextOffset, nextCall })}; use engram_show({"id":"…"}) to read one`;
-      }
+        if (tokens !== undefined) nextParams.tokens = tokens;
+        return `engram_context(${JSON.stringify(nextParams)})`;
+      };
+      const bounded =
+        tokens === undefined
+          ? undefined
+          : renderBudgetedContext(page.items, {
+              tokens,
+              maxTokens: MAX_RESULT_CHARS,
+              scopes: resolved.scopes,
+              personalOnly: resolved.personalOnly,
+              omittedFiles,
+              duplicateIds,
+              pagination: { offset: page.offset, total: page.total, nextCall },
+            });
+      let text: string;
+      if (bounded) {
+        text = bounded.text;
+      } else {
+        const lines = digestLines(sections, flat, page, root, resolved.personalOnly);
+        if (!flat.length) lines.push("No engrams in scope yet.");
+        if (omittedFiles > 0) lines.unshift(incompleteMemoryWarning(omittedFiles));
 
-      const body = lines.join("\n");
-      const text = footer === null ? applyCap(body) : capWithFooter(body, footer).text;
-      const bytes = page.items.length || omittedFiles > 0 ? Buffer.byteLength(text) : 0;
+        const body = lines.join("\n");
+        text =
+          page.nextOffset === null
+            ? applyCap(body)
+            : capWithFooter(
+                body,
+                `${pageFooter({
+                  from: page.offset + 1,
+                  to: page.offset + page.items.length,
+                  total: page.total,
+                  nextOffset: page.nextOffset,
+                  nextCall: nextCall(page.nextOffset),
+                })}; use engram_show({"id":"…"}) to read one`,
+              ).text;
+      }
+      const bytes =
+        page.items.length || omittedFiles > 0 || (bounded && duplicateIds > 0)
+          ? Buffer.byteLength(text)
+          : 0;
       yield* recordUsage({
         kind: "load",
         source: "tool",
@@ -375,7 +416,8 @@ export const contextDigest = (
         total: page.total,
         offset: page.offset,
         limit: page.limit,
-        nextOffset: page.nextOffset,
+        nextOffset: bounded ? bounded.nextOffset : page.nextOffset,
+        ...(bounded ? { budget: bounded.budget, duplicateIds } : {}),
         personalOnly: resolved.personalOnly,
         memoryIncomplete: omittedFiles > 0,
         omittedFiles,
