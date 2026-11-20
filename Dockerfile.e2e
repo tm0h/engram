@@ -33,7 +33,11 @@ RUN mkdir -p /opt/engram-package/install-warm \
     --store-dir /opt/pnpm-store
 
 USER root
+# Supply the packaged Pi extension with the same host peers used by workspace tests.
 RUN npm install --global --prefix /opt/engram /opt/engram-package/engram-cli-*.tgz \
+  && mkdir -p /opt/engram/lib/node_modules/@earendil-works \
+  && ln -s /workspace/packages/harnesses/node_modules/@earendil-works/pi-ai /opt/engram/lib/node_modules/@earendil-works/pi-ai \
+  && ln -s /workspace/packages/harnesses/node_modules/typebox /opt/engram/lib/node_modules/typebox \
   && rm -rf /opt/engram-package
 
 ENV PNPM_CONFIG_OFFLINE=true

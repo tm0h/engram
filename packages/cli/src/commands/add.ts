@@ -35,6 +35,7 @@ export interface AddOptions extends LifecycleValueFlags {
   readonly importance?: string;
   /** ENG-15: explicit per-write override for a blocking scan policy. */
   readonly allowSecrets?: boolean;
+  readonly confirmWrite?: boolean;
 }
 
 const checkType = (t?: string): Effect.Effect<EngramType | undefined, InvalidTypeError> => {
@@ -166,6 +167,7 @@ export const addCommand = (opts: AddOptions) =>
         sourceRef: lifecycle.sourceRef,
       },
       scan,
+      { confirmWrite: opts.confirmWrite },
     );
 
     yield* out(chalk.green("✓ Added ") + chalk.bold(`[${mem.id}]`) + ` ${mem.title}`);

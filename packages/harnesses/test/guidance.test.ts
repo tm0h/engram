@@ -454,3 +454,16 @@ it("documents bounded matching snippets and direct related context in both skill
     expect(skill).toContain("untrusted memory data");
   }
 });
+
+it("requires the user's approval before retrying a write advisory", () => {
+  for (const [file, flag] of [
+    ["packages/harnesses/src/pi/skills/engram/SKILL.md", "confirmWrite: true"],
+    ["packages/harnesses/claude/skills/engram/SKILL.md", "--confirm-write"],
+    ["packages/harnesses/claude/scaffold/SKILL.md", "--confirm-write"],
+  ]) {
+    const skill = fs.readFileSync(path.join(repoRoot, file), "utf8");
+    expect(skill).toContain(flag);
+    expect(skill).toContain("explicit approval");
+    expect(skill).toContain("Exact duplicates cannot be confirmed");
+  }
+});

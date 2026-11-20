@@ -237,7 +237,9 @@ describe("engram add/edit aliases flags", () => {
     expect(readEntry(addedId()).data.aliases).toEqual(["from editor"]);
 
     // absent/blank line -> no aliases
-    openEditorMock.mockImplementationOnce(() => Effect.succeed(edited({ aliases: undefined })));
+    openEditorMock.mockImplementationOnce(() =>
+      Effect.succeed(edited({ title: "Blank add", aliases: undefined })),
+    );
     await run(addCommand({ title: "Blank add" }));
     expect(readEntry(addedId()).raw).not.toMatch(/^aliases:/m);
   });

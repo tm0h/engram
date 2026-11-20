@@ -84,6 +84,7 @@ export interface AddOptions {
   readonly sourceRef?: string;
   /** ENG-15: explicit per-write override for a blocking scan policy. */
   readonly allowSecrets?: boolean;
+  readonly confirmWrite?: boolean;
 }
 
 /** Edit an existing engram (see EngramPatch for the exact contract).
@@ -117,6 +118,7 @@ export interface EditOptions {
   readonly sourceRef?: string | null;
   /** ENG-15: explicit per-write override for a blocking scan policy. */
   readonly allowSecrets?: boolean;
+  readonly confirmWrite?: boolean;
 }
 
 export interface InitOptions {

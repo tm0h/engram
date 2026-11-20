@@ -10,6 +10,10 @@ entries (decisions, facts, gotchas, conventions) recorded per project
 (committed under `.engram/`, team-wide) or personally (this machine only,
 `~/.engram`). The `engram` command is on your PATH because you installed `engram-cli`. If it is ever missing, run `sh "${CLAUDE_SKILL_DIR}/bin/engram" <args>` instead of a bare `engram` command.
 
+If add or edit reports a likely duplicate or possible conflict, show the
+user the scoped IDs and wait for explicit approval before retrying with
+`--confirm-write`. Exact duplicates cannot be confirmed.
+
 ## Session flow
 
 1. **At the start of a session or feature**, load the digest manually —

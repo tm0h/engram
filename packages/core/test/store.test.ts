@@ -101,6 +101,21 @@ describe("EngramStore / project scope", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
+  it.live("rejects exact duplicates across concurrent adds and never rewrites the winner", () =>
+    Effect.gen(function* () {
+      const store = yield* EngramStore;
+      const writes = yield* Effect.all(
+        [1, 2].map(() => Effect.result(store.add("project", input(), NOSCAN))),
+        { concurrency: "unbounded" },
+      );
+      expect(writes.filter(Result.isSuccess)).toHaveLength(1);
+      expect(writes.filter(Result.isFailure).map((result) => result.failure)).toMatchObject([
+        { _tag: "WriteAdvisoryError", candidates: [{ kind: "exact_duplicate", scope: "project" }] },
+      ]);
+      expect(yield* store.list("project")).toHaveLength(1);
+    }).pipe(Effect.provide(StoreLive)),
+  );
+
   it.live("add -> list -> get -> remove", () =>
     Effect.gen(function* () {
       const store = yield* EngramStore;

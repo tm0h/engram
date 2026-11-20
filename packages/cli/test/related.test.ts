@@ -314,7 +314,9 @@ describe("engram add/edit related flags", () => {
         related: [],
       }),
     );
-    openEditorMock.mockReturnValue(Effect.succeed(edited({ related: ["0001"] })));
+    openEditorMock.mockReturnValue(
+      Effect.succeed(edited({ title: "Empty list three", body: "Body", related: ["0001"] })),
+    );
     await run(editCommand("0003", {}));
     expect(readEntry("0003").data.related).toEqual(["0001"]);
     await run(editCommand("0003", { clearRelated: true, content: "Cleared" }));

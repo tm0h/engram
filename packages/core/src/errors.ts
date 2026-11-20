@@ -3,6 +3,7 @@
  * channel and are formatted into friendly CLI messages at the edge.
  */
 import { Data } from "effect";
+import type { WriteCandidate } from "./write-advisory.js";
 
 export class ProjectNotInitializedError extends Data.TaggedError("ProjectNotInitializedError")<{
   readonly cwd: string;
@@ -61,6 +62,25 @@ export class SecretScanBlockedError extends Data.TaggedError("SecretScanBlockedE
   }>;
 }> {}
 
+export class WriteAdvisoryError extends Data.TaggedError("WriteAdvisoryError")<{
+  readonly candidates: ReadonlyArray<WriteCandidate>;
+}> {}
+
+export function formatWriteAdvisory(error: WriteAdvisoryError, confirmation: string): string {
+  const reasons = {
+    exact_duplicate: "Exact duplicate (same title and body)",
+    likely_duplicate: "Likely duplicate (similar title or tags and body)",
+    possible_conflict: "Possible active conflict (same subject, different preference or decision)",
+  };
+  const lines = error.candidates.map(({ kind, scope, id }) => `${reasons[kind]}: ${scope}:${id}`);
+  if (!error.candidates.some(({ kind }) => kind === "exact_duplicate")) {
+    lines.push(
+      `Review these entries. If the proposed memory is distinct, retry with ${confirmation}.`,
+    );
+  }
+  return lines.join("\n");
+}
+
 /** Union of all expected domain errors. */
 export type DomainError =
   | ProjectNotInitializedError
@@ -72,7 +92,8 @@ export type DomainError =
   | FrontmatterParseError
   | ConfigError
   | IntegrityCheckFailedError
-  | SecretScanBlockedError;
+  | SecretScanBlockedError
+  | WriteAdvisoryError;
 
 /** Render a domain error to a human-friendly string. */
 export function formatDomainError(err: DomainError): string {
@@ -112,6 +133,8 @@ export function formatDomainError(err: DomainError): string {
       return err.message;
     case "IntegrityCheckFailedError":
       return err.message;
+    case "WriteAdvisoryError":
+      return formatWriteAdvisory(err, "--confirm-write");
     case "SecretScanBlockedError":
       return (
         `Write blocked by the secret scanner (policy: ${err.policy}) for "${err.file}".\n` +

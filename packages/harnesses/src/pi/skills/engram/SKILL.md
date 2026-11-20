@@ -9,6 +9,12 @@ This workspace has shared, git-native memory. Engrams are plain Markdown
 entries (decisions, facts, gotchas, conventions) recorded per project
 (committed, team-wide) or personally (this machine only, `~/.engram`).
 
+If add or edit reports a likely duplicate or possible conflict, show the user
+the scoped IDs and wait for explicit approval before retrying with
+`confirmWrite: true` in the tool. In the slash command, place `--confirm-write`
+before the title for add, or among the field flags for edit.
+Exact duplicates cannot be confirmed.
+
 ## Session flow
 
 1. **Relevant memory appears automatically.** Pi fits pinned, high-importance,
