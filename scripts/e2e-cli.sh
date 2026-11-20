@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+audit_source=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 cd /workspace
 
 step() {
@@ -710,6 +711,48 @@ engram show "$overlap_id" | grep -F "rotate signing certificates."
 engram show "$unrelated_id" | grep -F "emit task latency metrics."
 engram check --json | parse_json 'value.ok === true'
 cd "$project_root"
+
+retrieval_audit() (
+  local scenario=$1
+  local fixture_home="$run_root/retrieval-home-$scenario"
+  local collection=off
+  mkdir "$fixture_home"
+  if [[ "$scenario" == stats ]]; then collection=on; fi
+  env HOME="$fixture_home" ENGRAM_STATS="$collection" \
+    node "$audit_source/e2e-retrieval.mjs" "$scenario" "$run_root/retrieval-$scenario"
+)
+
+step "Packaged search lifecycle ranking and diversification"
+retrieval_audit ranking
+
+step "Packaged Pi and OpenCode curated startup"
+retrieval_audit startup
+
+step "Packaged Pi and OpenCode active-turn recall"
+retrieval_audit recall
+
+step "Packaged Pi and OpenCode manual token budgets"
+retrieval_audit manual
+
+step "Packaged Pi and OpenCode automatic compaction"
+ENGRAM_DEBUG=1 retrieval_audit compaction 2>"$run_root/compaction.err"
+node --input-type=module - "$run_root/compaction.err" <<'JS'
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+const rows = readFileSync(process.argv[2], "utf8").trim().split("\n").map((line) => JSON.parse(line));
+assert.equal(rows.length, 6);
+for (const harness of ["pi", "opencode"]) {
+  const [wide, tight, empty] = rows.filter((row) => row.harness === harness);
+  assert.ok([wide, tight, empty].every((row) => row.event === "engram.automatic-context"));
+  assert.ok(tight.used > 0 && tight.used <= tight.effective && tight.used < wide.used);
+  assert.ok(tight.omitted.some(({ reason }) => reason === "budget"));
+  assert.equal(tight.deduplicated.length, 1);
+  assert.equal(empty.used, 0);
+}
+JS
+
+step "Packaged Pi and OpenCode automatic usage statistics"
+retrieval_audit stats
 
 step "Packaged Pi and OpenCode write advisories"
 adapter_root="$run_root/adapter-advisories"
