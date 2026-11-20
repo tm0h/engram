@@ -1,0 +1,40 @@
+{
+  "id": "personal-remember",
+  "messages": [
+    {
+      "id": "m1",
+      "origin": "user",
+      "text": "Remember my preference across projects: when summarizing a patch, put the changed behavior first and use short headings."
+    },
+    {
+      "id": "m2",
+      "origin": "assistant",
+      "text": "I opened the diff for this task."
+    }
+  ],
+  "existingMemory": [],
+  "expected": [
+    {
+      "id": "patch-summary-style",
+      "title": "Patch summary style",
+      "body": "Put changed behavior first and use short headings in patch summaries.",
+      "type": "preference",
+      "scope": "personal",
+      "signal": "remember",
+      "evidence": [
+        {
+          "messageId": "m1",
+          "origin": "user"
+        }
+      ],
+      "conflicts": []
+    }
+  ],
+  "rejected": [
+    {
+      "messageId": "m2",
+      "reason": "progress",
+      "rationale": "Opening the diff is specific to this task."
+    }
+  ]
+}

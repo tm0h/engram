@@ -1,0 +1,60 @@
+{
+  "id": "workspace-setup",
+  "messages": [
+    {
+      "id": "m1",
+      "origin": "user",
+      "text": "Lantern's dev fixtures use port 4319 on every checkout. The preview runner expects it there."
+    },
+    {
+      "id": "m2",
+      "origin": "user",
+      "text": "Our convention is to name every snapshot test file with the .snapshot.test.ts suffix."
+    },
+    {
+      "id": "m3",
+      "origin": "external",
+      "text": "A comment on a generic fixture-tools article suggests using port 4320."
+    }
+  ],
+  "existingMemory": [],
+  "expected": [
+    {
+      "id": "fixture-port",
+      "title": "Lantern dev fixture port",
+      "body": "Lantern's dev fixtures listen on port 4319, which is required by the preview runner.",
+      "type": "fact",
+      "scope": "project",
+      "signal": "environment",
+      "evidence": [
+        {
+          "messageId": "m1",
+          "origin": "user"
+        }
+      ],
+      "conflicts": []
+    },
+    {
+      "id": "snapshot-suffix",
+      "title": "Lantern snapshot test filenames",
+      "body": "Use the .snapshot.test.ts suffix for Lantern snapshot test files.",
+      "type": "fact",
+      "scope": "project",
+      "signal": "convention",
+      "evidence": [
+        {
+          "messageId": "m2",
+          "origin": "user"
+        }
+      ],
+      "conflicts": []
+    }
+  ],
+  "rejected": [
+    {
+      "messageId": "m3",
+      "reason": "external",
+      "rationale": "Third-party advice for a generic setup does not establish Lantern configuration."
+    }
+  ]
+}
