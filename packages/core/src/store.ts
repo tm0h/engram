@@ -26,6 +26,8 @@ import { Context, Effect, Layer, Option, Result, Schedule } from "effect";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
 import { PlatformError } from "effect/PlatformError";
+import { writeAtomicFile } from "./atomic-file.js";
+import type { PendingCandidate } from "./pending-store.js";
 import type { Engram, EngramInput, EngramPatch, Scope, Frontmatter } from "./domain.js";
 import { SUPPORTED_ENTRY_SCHEMA_VERSION } from "./domain.js";
 import {
@@ -45,11 +47,12 @@ import type { DuplicateIdClaim, StoreDiagnostic, StoreScan } from "./integrity.j
 import { globalEngramsDir, projectEngramsDir } from "./paths.js";
 import { findProjectRoot } from "./location.js";
 import { evaluateScan, scanContent } from "./secrets.js";
-import type { ScanEvaluation, SecretFinding, SecretPolicy } from "./secrets.js";
+import type { ScanEvaluation, SecretPolicy } from "./secrets.js";
 import {
   nowISO,
   slugify,
   newId,
+  pendingApprovalId,
   parseEntryFilename,
   parseTimestamp,
   normalizeAliases,
@@ -84,6 +87,14 @@ export interface ScannedWrite extends Engram {
   readonly scan: ScanEvaluation;
 }
 
+export type PendingApproval =
+  | { readonly id: string; readonly status: "ready"; readonly markdown: string }
+  | {
+      readonly id: string;
+      readonly status: "published" | "already_published";
+      readonly markdown: string;
+    };
+
 /** The shape of the EngramStore service. (Methods require nothing — the
  * implementation captures FileSystem/Path at build time.) */
 export interface EngramStoreShape {
@@ -117,6 +128,17 @@ export interface EngramStoreShape {
     | SecretScanBlockedError
     | WriteAdvisoryError
     | ValidationError
+  >;
+  /** Check while holding the candidate lock, before changing the queue file. */
+  readonly assertPendingEditable: (
+    candidate: PendingCandidate,
+  ) => Effect.Effect<void, StoreError | ValidationError>;
+  readonly approvePending: (
+    candidate: PendingCandidate,
+    options: WriteOptions & { readonly expectedMarkdown?: string },
+  ) => Effect.Effect<
+    PendingApproval,
+    StoreError | SecretScanBlockedError | WriteAdvisoryError | ValidationError
   >;
   readonly update: (
     scope: Scope,
@@ -798,13 +820,11 @@ const makeEngramStoreLive = (
         return Effect.fail(new WriteAdvisoryError({ candidates }));
       };
 
-      const add: EngramStoreShape["add"] = (scope, input, scan, options = {}) =>
+      const prepareAdd = (scope: Scope, input: EngramInput, now: string, probeId: string) =>
         Effect.gen(function* () {
           const dir = yield* dirForScope(scope);
-          const now = nowISO();
           const title = input.title.trim();
           const slug = slugify(title);
-          const probeId = newId();
           const probeFile = path.join(dir, `${probeId}-${slug}.md`);
 
           /* ENG-46: aliases normalize and validate BEFORE any filesystem side
@@ -852,11 +872,106 @@ const makeEngramStoreLive = (
             path: file,
           });
 
+          return { dir, slug, buildCandidate, candidate: buildCandidate(probeId, probeFile) };
+        });
+
+      const hasPendingPublication = (scanned: StoreScan, candidateId: string, id: string) => {
+        const existing = scanned.entries.find((entry) => entry.id === id);
+        if (
+          scanned.duplicateIds.some((claim) => claim.id === id) ||
+          (existing !== undefined && existing.sourceRef !== candidateId)
+        ) {
+          return Effect.fail(
+            new ValidationError({
+              message:
+                "The canonical approval ID is already in use. Run engram check and resolve the ID conflict.",
+            }),
+          );
+        }
+        return Effect.succeed(existing !== undefined);
+      };
+
+      const assertPendingEditable: EngramStoreShape["assertPendingEditable"] = (candidate) =>
+        Effect.gen(function* () {
+          const id = pendingApprovalId(candidate.id, Date.parse(candidate.created));
+          const scanned = yield* scanStore(candidate.scope);
+          if (yield* hasPendingPublication(scanned, candidate.id, id)) {
+            return yield* Effect.fail(
+              new ValidationError({
+                message: `This candidate was already published. Retry approval to finish queue cleanup. Use engram edit on canonical memory ${id} to revise it.`,
+              }),
+            );
+          }
+        });
+
+      const approvePending: EngramStoreShape["approvePending"] = (pending, options) =>
+        Effect.gen(function* () {
+          const { scope, created, provenanceClass } = pending;
+          const id = pendingApprovalId(pending.id, Date.parse(created));
+          const { candidate, dir } = yield* prepareAdd(
+            scope,
+            {
+              ...pending.proposed,
+              pinned: false,
+              author: undefined,
+              aliases: [],
+              sourceType: provenanceClass,
+              sourceRef: pending.id,
+            },
+            created,
+            id,
+          );
+          const markdown = serialize(candidate);
+          const validateAndPublish = Effect.gen(function* () {
+            const scanned = yield* scanStore(scope);
+            // A prior write may have succeeded before queue cleanup. The ID
+            // and source reference survive ordinary edits and retitles.
+            if (yield* hasPendingPublication(scanned, pending.id, id)) {
+              return { id, status: "already_published", markdown } as const;
+            }
+
+            yield* scanGate(candidate, candidate.path, { policy: "block", allowSecrets: false });
+            yield* validateCandidate(candidate, candidate.path);
+            yield* admitWrite(candidate, scanned.entries, options);
+            if (options.expectedMarkdown === undefined) {
+              return { id, status: "ready", markdown } as const;
+            }
+            if (options.expectedMarkdown !== markdown) {
+              return yield* Effect.fail(
+                new ValidationError({
+                  message: "The proposed Markdown changed. Preview it again before approving.",
+                }),
+              );
+            }
+
+            yield* writeAtomicFile(dir, path.basename(candidate.path), markdown).pipe(
+              Effect.provideService(FileSystem, fs),
+              Effect.provideService(Path, path),
+            );
+            return { id, status: "published", markdown } as const;
+          });
+
+          if (options.expectedMarkdown === undefined) return yield* validateAndPublish;
+          yield* fs.makeDirectory(dir, { recursive: true });
+          return yield* withWriteLock(dir, validateAndPublish);
+        });
+
+      const add: EngramStoreShape["add"] = (scope, input, scan, options = {}) =>
+        Effect.gen(function* () {
+          const now = nowISO();
+          const probeId = newId();
+          const { candidate, dir, slug, buildCandidate } = yield* prepareAdd(
+            scope,
+            input,
+            now,
+            probeId,
+          );
+          const probeFile = candidate.path;
+
           /* ENG-15 N1: scan BEFORE any filesystem side effect (including
            * creating the store directory itself), so a blocked write - a
            * blocked first write especially - leaves the filesystem
            * untouched. Each attempt below re-scans its exact candidate. */
-          const candidate = buildCandidate(probeId, probeFile);
           yield* scanGate(candidate, probeFile, scan);
           yield* validateCandidate(candidate, probeFile);
 
@@ -1472,6 +1587,8 @@ const makeEngramStoreLive = (
         scan: scanStore,
         get,
         add,
+        approvePending,
+        assertPendingEditable,
         update,
         remove,
         dedupe,

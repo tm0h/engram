@@ -25,6 +25,7 @@ import * as Edit from "./commands/edit.js";
 import * as Remove from "./commands/remove.js";
 import * as Context from "./commands/context.js";
 import * as Review from "./commands/review.js";
+import { pendingCommand } from "./commands/pending.js";
 import * as Config from "./commands/configCmd.js";
 import * as Inject from "./commands/inject.js";
 import * as Where from "./commands/where.js";
@@ -438,6 +439,47 @@ program
       }),
     ),
   );
+
+const pending = program.command("pending").description("Review local pending memory candidates.");
+
+pending
+  .command("list")
+  .description("List pending memory candidates.")
+  .option("-s, --scope <scope>", "personal | project | all")
+  .option("--json", "Emit a versioned JSON result.")
+  .action((opts) => run(pendingCommand("list", [], opts)));
+
+for (const action of ["show", "edit", "approve", "reject"] as const) {
+  const descriptions = {
+    show: "Inspect proposals, provenance and capture hints.",
+    edit: "Apply one proposal patch to the specified candidates.",
+    approve: "Preview and publish pending candidates as canonical memories.",
+    reject: "Discard the specified pending candidates.",
+  };
+  const command = pending
+    .command(`${action} <ids...>`)
+    .description(descriptions[action])
+    .option("-s, --scope <scope>", "personal | project")
+    .option("--json", "Emit a versioned JSON result.")
+    .action((ids, opts) => run(pendingCommand(action, ids, opts)));
+  if (action === "edit") {
+    command
+      .option("--patch <json>", "Patch title, type, tags or body.")
+      .addOption(new CommandOption("--stdin", "Read a JSON patch from stdin.").conflicts("patch"));
+  }
+  if (action === "approve") {
+    command
+      .option("--yes", "Approve without an interactive prompt.")
+      .addOption(
+        new CommandOption("--dry-run", "Preview exact Markdown without writing.").conflicts("yes"),
+      )
+      .option("--expect <revision>", "With --yes and one ID, require the revision from --dry-run.")
+      .option(
+        "--confirm-write",
+        "Allow a likely duplicate or possible conflict after reviewing it.",
+      );
+  }
+}
 
 program
   .command("config [action] [key] [value]")
