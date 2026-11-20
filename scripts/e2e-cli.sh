@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+audit_source=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 cd /workspace
 
 step() {
@@ -51,6 +52,7 @@ expected_version=$(node -p "require('./packages/cli/package.json').version")
 
 step "Repository gate"
 pnpm check
+pnpm exec tsc -p "$audit_source/tsconfig.json"
 pnpm test
 pnpm --filter @engram/core benchmark
 pnpm --filter engram-cli build
@@ -803,6 +805,35 @@ engram show "$overlap_id" | grep -F "rotate signing certificates."
 engram show "$unrelated_id" | grep -F "emit task latency metrics."
 engram check --json | parse_json 'value.ok === true'
 cd "$project_root"
+
+retrieval_audit() (
+  local scenario=$1
+  local fixture_home="$run_root/retrieval-home-$scenario"
+  local collection=off
+  mkdir "$fixture_home"
+  if [[ "$scenario" == stats ]]; then collection=on; fi
+  env HOME="$fixture_home" ENGRAM_STATS="$collection" \
+    node "$audit_source/e2e-retrieval.ts" "$scenario" "$run_root/retrieval-$scenario"
+)
+
+step "Packaged search lifecycle ranking and diversification"
+retrieval_audit ranking
+
+step "Packaged Pi and OpenCode curated startup"
+retrieval_audit startup
+
+step "Packaged Pi and OpenCode active-turn recall"
+retrieval_audit recall
+
+step "Packaged Pi and OpenCode manual token budgets"
+retrieval_audit manual
+
+step "Packaged Pi and OpenCode automatic compaction"
+ENGRAM_DEBUG=1 retrieval_audit compaction 2>"$run_root/compaction.err"
+node "$audit_source/e2e-retrieval.ts" diagnostics "$run_root/compaction.err"
+
+step "Packaged Pi and OpenCode automatic usage statistics"
+retrieval_audit stats
 
 step "Packaged Pi and OpenCode write advisories"
 adapter_root="$run_root/adapter-advisories"
