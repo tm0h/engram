@@ -35,6 +35,7 @@ import {
   findGitRoot,
   findProjectRoot,
   formatDomainError,
+  formatWriteAdvisory,
   incompleteMemoryWarning,
   normalizeAliases,
   projectEngramsDir,
@@ -908,7 +909,10 @@ export const linksOp = (opts: LinksOptions) => graphOp(opts);
 export const relatedOp = (opts: LinksOptions) => graphOp(opts, true);
 
 /** Record a new engram. Defaults mirror the CLI: project scope, config type/author. */
-export const addOp = (opts: AddOptions): Effect.Effect<OpResult, never, EngramStore | ConfigRepo> =>
+export const addOp = (
+  opts: AddOptions,
+  confirmation = "confirmWrite: true",
+): Effect.Effect<OpResult, never, EngramStore | ConfigRepo> =>
   capture(
     Effect.gen(function* () {
       const store = yield* EngramStore;
@@ -982,10 +986,14 @@ export const addOp = (opts: AddOptions): Effect.Effect<OpResult, never, EngramSt
             sourceRef: opts.sourceRef,
           },
           scan,
+          { confirmWrite: opts.confirmWrite },
         ),
       );
       if (Result.isFailure(attempted)) {
         const e = attempted.failure;
+        if (e._tag === "WriteAdvisoryError") {
+          return err(formatWriteAdvisory(e, confirmation), { candidates: e.candidates });
+        }
         if (isSecretScanBlocked(e)) {
           return err(
             `Write blocked by the secret scanner (policy: ${e.policy}): ${
@@ -1041,6 +1049,7 @@ type PatchDraft = { -readonly [K in keyof EngramPatch]?: EngramPatch[K] };
  * except the ENG-15 scan policy, which is always resolved per write. */
 export const editOp = (
   opts: EditOptions,
+  confirmation = "confirmWrite: true",
 ): Effect.Effect<OpResult, never, EngramStore | ConfigRepo> =>
   capture(
     Effect.gen(function* () {
@@ -1103,9 +1112,14 @@ export const editOp = (
       patch.sourceRef = opts.sourceRef;
 
       const scan = yield* resolveScan(cfg, scope, root, opts.allowSecrets);
-      const attempted = yield* Effect.result(store.update(scope, opts.id, patch, scan));
+      const attempted = yield* Effect.result(
+        store.update(scope, opts.id, patch, scan, { confirmWrite: opts.confirmWrite }),
+      );
       if (Result.isFailure(attempted)) {
         const e = attempted.failure;
+        if (e._tag === "WriteAdvisoryError") {
+          return err(formatWriteAdvisory(e, confirmation), { candidates: e.candidates });
+        }
         if (isSecretScanBlocked(e)) {
           return err(
             `Write blocked by the secret scanner (policy: ${e.policy}): ${

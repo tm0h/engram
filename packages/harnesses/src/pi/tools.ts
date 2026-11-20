@@ -244,6 +244,9 @@ export const engramAddTool = {
           'Alternate names for this entry, e.g. ["pg", "postgres row level security"]. The store trims, lowercases, and deduplicates them (first occurrence wins); the whole set is replaced. Optional.',
       }),
     ),
+    confirmWrite: Type.Optional(
+      Type.Boolean({ description: "Proceed after the user reviews and accepts a write advisory." }),
+    ),
     allowSecrets: Type.Optional(
       Type.Boolean({
         description:
@@ -270,6 +273,7 @@ export const engramAddTool = {
           related: params.related,
           aliases: params.aliases,
           allowSecrets: params.allowSecrets,
+          confirmWrite: params.confirmWrite,
         }),
       ),
     );
@@ -370,6 +374,9 @@ export const engramEditTool = {
         },
       ),
     ),
+    confirmWrite: Type.Optional(
+      Type.Boolean({ description: "Proceed after the user reviews and accepts a write advisory." }),
+    ),
     allowSecrets: Type.Optional(
       Type.Boolean({
         description:
@@ -398,6 +405,7 @@ export const engramEditTool = {
           related: params.related,
           aliases: params.aliases,
           allowSecrets: params.allowSecrets,
+          confirmWrite: params.confirmWrite,
         }),
       ),
     );

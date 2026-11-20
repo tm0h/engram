@@ -37,7 +37,7 @@ const HELP = [
   "  /engram related <id>     lifecycle lineage + explicit links (exact id)",
   "  /engram links <id>       link graph: outgoing related + incoming backlinks (exact id)",
   "      flags: --scope project|personal   --offset n   --limit n (max " + MAX_LINKS_LIMIT + ")",
-  "  /engram add <title> -- <body>   record an entry",
+  "  /engram add [--confirm-write] <title> -- <body>   record an entry",
   "      flags: --type decision|fact|preference|note|issue|context",
   "             --scope project|personal   --tags a,b   --aliases a,b   --pinned",
   "             --status active|superseded|archived   --supersedes <id>",
@@ -47,7 +47,7 @@ const HELP = [
   "  /engram edit <id> [flags] [-- <body>]   edit an entry (unique prefixes work)",
   "      flags: --title <title>   --type decision|fact|preference|note|issue|context",
   "             --tags a,b   --aliases a,b   --scope project|personal   --pinned | --no-pinned",
-  "             --author <name>",
+  "             --author <name>   --confirm-write",
   "             --status active|superseded|archived   --supersedes <id>",
   "             --review-after <ts>   --expires <ts>",
   "             --source-type conversation|file|url|command|other",
@@ -68,6 +68,7 @@ interface ParsedAdd {
   tags?: string[];
   aliases?: ReadonlyArray<string>;
   pinned?: boolean;
+  confirmWrite?: boolean;
   status?: Status;
   supersedes?: string;
   reviewAfter?: string;
@@ -80,7 +81,11 @@ const parseAddError = (error: string): { ok: false; error: string } => ({ ok: fa
 
 function parseAdd(rest: string): ParsedAdd | { ok: false; error: string } {
   const parsed: ParsedAdd = { title: "", body: "" };
-  let work = ` ${rest} `;
+  // The confirmation flag comes first so a flag-looking phrase in a title
+  // or body can never turn an ordinary write into a confirmed one.
+  const confirmation = /^--confirm-write\s+/.exec(rest);
+  parsed.confirmWrite = confirmation !== null;
+  let work = ` ${confirmation === null ? rest : rest.slice(confirmation[0].length)} `;
   const flag = (name: string): string | null => {
     const m = work.match(new RegExp(`\\s${name}\\s+([^\\s]+)`));
     if (!m) return null;
@@ -172,6 +177,7 @@ interface ParsedEdit {
   aliases?: ReadonlyArray<string> | null;
   body?: string;
   pinned?: boolean;
+  confirmWrite?: boolean;
   author?: string;
   status?: Status | null;
   supersedes?: string | null;
@@ -255,6 +261,7 @@ const FLAG_SPELLINGS = new Set([
   "--pinned",
   "--no-pinned",
   "--author",
+  "--confirm-write",
   ...LIFECYCLE_FLAG_PAIRS.flatMap((p) => [p.value, p.clear]),
 ]);
 
@@ -313,6 +320,9 @@ function parseEdit(rest: string): ParsedEdit | { ok: false; error: string } {
       continue;
     }
     switch (t.raw) {
+      case "--confirm-write":
+        parsed.confirmWrite = true;
+        continue;
       case "--title": {
         const v = nextValue();
         if (v === null) return parseEditError("Missing value for --title.");
@@ -546,10 +556,13 @@ async function dispatch(
       return;
     }
     if (!parsed.title) {
-      notify("Usage: /engram add <title> -- <body> [--type X] [--scope Y] [--tags a,b]", "error");
+      notify(
+        "Usage: /engram add [--confirm-write] <title> -- <body> [--type X] [--scope Y] [--tags a,b]",
+        "error",
+      );
       return;
     }
-    const r = await runOp(addOp(parsed));
+    const r = await runOp(addOp(parsed, "--confirm-write before the title"));
     notify(r.text, r.isError ? "error" : "info");
     if (!r.isError) onWriteSuccess?.();
     return;
@@ -565,7 +578,7 @@ async function dispatch(
       notify(parsed.error, "error");
       return;
     }
-    const r = await runOp(editOp(parsed));
+    const r = await runOp(editOp(parsed, "--confirm-write"));
     notify(r.text, r.isError ? "error" : "info");
     if (!r.isError) onWriteSuccess?.();
     return;

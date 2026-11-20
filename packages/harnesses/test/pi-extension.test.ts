@@ -149,6 +149,7 @@ describe("engram extension / registration", () => {
       "sourceRef",
       "related",
       "aliases",
+      "confirmWrite",
       "allowSecrets",
     ]);
     expect(Object.keys(byName.get("engram_edit")!.parameters.properties!)).toEqual([
@@ -168,6 +169,7 @@ describe("engram extension / registration", () => {
       "sourceRef",
       "related",
       "aliases",
+      "confirmWrite",
       "allowSecrets",
     ]);
     // ENG-15: allowSecrets validates as a strict boolean

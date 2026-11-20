@@ -22,7 +22,7 @@
  *   <markdown body>
  */
 import { metadataErrors, normalizeMetadata } from "./retrieval-metadata.js";
-import { Context, Effect, Layer, Option, Result } from "effect";
+import { Context, Effect, Layer, Option, Result, Schedule } from "effect";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
 import { PlatformError } from "effect/PlatformError";
@@ -36,7 +36,10 @@ import {
   IntegrityCheckFailedError,
   ProjectNotInitializedError,
   SecretScanBlockedError,
+  WriteAdvisoryError,
+  ValidationError,
 } from "./errors.js";
+import { findWriteCandidates } from "./write-advisory.js";
 import { compareDiagnostics } from "./integrity.js";
 import type { DuplicateIdClaim, StoreDiagnostic, StoreScan } from "./integrity.js";
 import { globalEngramsDir, projectEngramsDir } from "./paths.js";
@@ -71,6 +74,10 @@ export interface ScanOptions {
   readonly allowSecrets: boolean;
 }
 
+export interface WriteOptions {
+  readonly confirmWrite?: boolean;
+}
+
 /** ENG-15: a write through the scanned boundary returns the stored entry
  * plus the safe (redacted) scan outcome for that exact write. */
 export interface ScannedWrite extends Engram {
@@ -98,20 +105,34 @@ export interface EngramStoreShape {
     scope: Scope,
     input: EngramInput,
     scan: ScanOptions,
+    options?: WriteOptions,
   ) => Effect.Effect<
     ScannedWrite,
     /* ENG-17: establishing supersedes marks the predecessor via `update`, so
      * the id-resolution errors `update` can surface belong here too. */
-    StoreError | EngramNotFoundError | AmbiguousIdError | DuplicateIdError | SecretScanBlockedError
+    | StoreError
+    | EngramNotFoundError
+    | AmbiguousIdError
+    | DuplicateIdError
+    | SecretScanBlockedError
+    | WriteAdvisoryError
+    | ValidationError
   >;
   readonly update: (
     scope: Scope,
     id: string,
     patch: EngramPatch,
     scan: ScanOptions,
+    options?: WriteOptions,
   ) => Effect.Effect<
     ScannedWrite,
-    StoreError | EngramNotFoundError | AmbiguousIdError | DuplicateIdError | SecretScanBlockedError
+    | StoreError
+    | EngramNotFoundError
+    | AmbiguousIdError
+    | DuplicateIdError
+    | SecretScanBlockedError
+    | WriteAdvisoryError
+    | ValidationError
   >;
   readonly remove: (
     scope: Scope,
@@ -444,7 +465,7 @@ const makeEngramStoreLive = (
        * the store directory itself fails the Effect: validity cannot be
        * established then. Cross-file checks (duplicate ids) run afterwards,
        * over partial values so a file with one bad field still participates. */
-      const scan: EngramStoreShape["scan"] = (scope) =>
+      const scanStore: EngramStoreShape["scan"] = (scope) =>
         Effect.gen(function* () {
           const dir = yield* dirForScope(scope);
           if (!(yield* fs.exists(dir))) {
@@ -639,12 +660,11 @@ const makeEngramStoreLive = (
         });
 
       /** Compatibility view: just the valid entries (see `scan`). */
-      const list: EngramStoreShape["list"] = (scope) => Effect.map(scan(scope), (s) => s.entries);
+      const list: EngramStoreShape["list"] = (scope) =>
+        Effect.map(scanStore(scope), (s) => s.entries);
 
-      const get: EngramStoreShape["get"] = (scope, id) =>
+      const getFromScan = (scanned: StoreScan, id: string) =>
         Effect.gen(function* () {
-          const scanned = yield* scan(scope);
-
           // A duplicated id must never resolve to a single claimant, even
           // when only some claimants are valid entries: `update` and `remove`
           // build on `get`, so picking one would silently mutate past a
@@ -695,8 +715,11 @@ const makeEngramStoreLive = (
               .join("; ");
             return yield* Effect.fail(new FrontmatterParseError({ file, message: detail }));
           }
-          return yield* Effect.fail(new EngramNotFoundError({ id, scope }));
+          return yield* Effect.fail(new EngramNotFoundError({ id, scope: scanned.scope }));
         });
+
+      const get: EngramStoreShape["get"] = (scope, id) =>
+        Effect.flatMap(scanStore(scope), (scanned) => getFromScan(scanned, id));
 
       /* ENG-15 R1: internal lifecycle marking introduces no user content, so
        * it bypasses scanning through this explicit internal option. It is a
@@ -728,7 +751,54 @@ const makeEngramStoreLive = (
           : Effect.succeed(evaluation);
       };
 
-      const add: EngramStoreShape["add"] = (scope, input, scan) =>
+      // The lock covers the read, admission decision and write, including
+      // lifecycle marking. It lives in the scope directory so separate CLI
+      // processes and adapters using that directory share the same boundary.
+      const withWriteLock = <A, E>(dir: string, write: Effect.Effect<A, E>) => {
+        const lock = path.join(dir, ".write-lock");
+        const acquire = fs.makeDirectory(lock).pipe(
+          Effect.retry({
+            times: 80,
+            schedule: Schedule.spaced("25 millis"),
+            while: isAlreadyExists,
+          }),
+          Effect.mapError((error) =>
+            isAlreadyExists(error)
+              ? new ValidationError({
+                  message: `Memory store is busy. Retry the write. If all writers have stopped, remove the stale lock directory "${lock}".`,
+                })
+              : error,
+          ),
+        );
+        return Effect.acquireUseRelease(
+          acquire,
+          () => write,
+          () => fs.remove(lock, { recursive: true }),
+        );
+      };
+
+      const admitWrite = (
+        candidate: Engram,
+        entries: ReadonlyArray<Engram>,
+        options: WriteOptions,
+        previous?: Engram,
+        supersededId?: string,
+      ) => {
+        const candidates = findWriteCandidates(
+          candidate,
+          entries,
+          Date.now(),
+          previous,
+          supersededId,
+        );
+        if (candidates.length === 0) return Effect.void;
+        if (options.confirmWrite === true && candidates[0].kind !== "exact_duplicate") {
+          return Effect.void;
+        }
+        return Effect.fail(new WriteAdvisoryError({ candidates }));
+      };
+
+      const add: EngramStoreShape["add"] = (scope, input, scan, options = {}) =>
         Effect.gen(function* () {
           const dir = yield* dirForScope(scope);
           const now = nowISO();
@@ -786,81 +856,94 @@ const makeEngramStoreLive = (
            * creating the store directory itself), so a blocked write - a
            * blocked first write especially - leaves the filesystem
            * untouched. Each attempt below re-scans its exact candidate. */
-          yield* scanGate(buildCandidate(probeId, probeFile), probeFile, scan);
+          const candidate = buildCandidate(probeId, probeFile);
+          yield* scanGate(candidate, probeFile, scan);
+          yield* validateCandidate(candidate, probeFile);
 
           yield* fs.makeDirectory(dir, { recursive: true });
 
-          /* ENG-17 R1/R5: a supersedes claim is hard-validated before any
-           * file is written, so rejections leave the store byte-identical.
-           * The probe id (shared with the ENG-15 pre-directory scan) seeds
-           * only the cycle walk and the error file context; a fresh id
-           * cannot appear in any stored chain, and the real candidate's
-           * self-reference check runs in validateCandidate. */
-          if (input.supersedes !== undefined) {
-            yield* validateSupersedesEstablish(scope, probeId, input.supersedes, probeFile);
-          }
+          return yield* withWriteLock(
+            dir,
+            Effect.gen(function* () {
+              /* ENG-17 R1/R5: a supersedes claim is hard-validated before any
+               * file is written, so rejections leave the store byte-identical.
+               * The probe id (shared with the ENG-15 pre-directory scan) seeds
+               * only the cycle walk and the error file context; a fresh id
+               * cannot appear in any stored chain, and the real candidate's
+               * self-reference check runs in validateCandidate. */
+              if (input.supersedes !== undefined) {
+                yield* validateSupersedesEstablish(scope, probeId, input.supersedes, probeFile);
+              }
 
-          /**
-           * Ids are globally unique by construction (see `newId`), so no scan
-           * or shared counter is needed — different machines, sessions, and CI
-           * runs can record concurrently and merged branches can never collide
-           * on id. The exclusive `wx` write is belt-and-braces: it never
-           * overwrites an existing file and retries with a fresh id on the
-           * (astronomically unlikely) exact-filename race.
-           */
-          const writeWith = (
-            id: string,
-          ): Effect.Effect<ScannedWrite, StoreError | SecretScanBlockedError> => {
-            const file = path.join(dir, `${id}-${slug}.md`);
-            const engram = buildCandidate(id, file);
-            return Effect.flatMap(scanGate(engram, file, scan), (evaluation) =>
-              Effect.flatMap(validateCandidate(engram, file), () =>
-                Effect.as(fs.writeFileString(file, serialize(engram), { flag: "wx" }), {
-                  ...engram,
-                  scan: evaluation,
-                }),
-              ),
-            );
-          };
+              yield* admitWrite(
+                candidate,
+                yield* list(scope),
+                options,
+                undefined,
+                input.supersedes,
+              );
 
-          const attempt = (
-            tries: number,
-          ): Effect.Effect<ScannedWrite, StoreError | SecretScanBlockedError> =>
-            Effect.flatMap(Effect.result(writeWith(newId())), (r) =>
-              Result.isSuccess(r)
-                ? Effect.succeed(r.success)
-                : tries <= 0 || !isAlreadyExists(r.failure)
-                  ? Effect.fail(r.failure)
-                  : attempt(tries - 1),
-            );
+              /**
+               * Ids are globally unique by construction (see `newId`), so no shared
+               * counter is needed. The exclusive `wx` write never
+               * overwrites an existing file and retries with a fresh id on the
+               * (astronomically unlikely) exact-filename race.
+               */
+              const writeWith = (
+                id: string,
+              ): Effect.Effect<ScannedWrite, StoreError | SecretScanBlockedError> => {
+                const file = path.join(dir, `${id}-${slug}.md`);
+                const engram = buildCandidate(id, file);
+                return Effect.flatMap(scanGate(engram, file, scan), (evaluation) =>
+                  Effect.flatMap(validateCandidate(engram, file), () =>
+                    Effect.as(fs.writeFileString(file, serialize(engram), { flag: "wx" }), {
+                      ...engram,
+                      scan: evaluation,
+                    }),
+                  ),
+                );
+              };
 
-          const added = yield* attempt(5);
-          if (input.supersedes === undefined) return added;
-          /* ENG-17 R1: establishing supersedes marks the predecessor
-           * superseded as part of the same logical operation: either the new
-           * entry exists AND the predecessor is marked, or nothing is
-           * written. The predecessor's `updated` bumps to the operation
-           * time, matching the store's existing convention for metadata
-           * edits via update(). Atomicity is surfaced-failure rollback (R2):
-           * a failed marking write is compensated by removing the just-
-           * written entry file, and the compensation result is inspected —
-           * a failed cleanup surfaces an incomplete-rollback error naming
-           * both failures (review fix). A hard crash between the two writes
-           * can still leave the new entry without the marking; cross-process
-           * concurrency is check-then-act and out of scope (R8). */
-          const marked = yield* Effect.result(
-            update(scope, input.supersedes, { status: "superseded" }, INTERNAL_MARK_SCAN),
+              const attempt = (
+                tries: number,
+              ): Effect.Effect<ScannedWrite, StoreError | SecretScanBlockedError> =>
+                Effect.flatMap(Effect.result(writeWith(newId())), (r) =>
+                  Result.isSuccess(r)
+                    ? Effect.succeed(r.success)
+                    : tries <= 0 || !isAlreadyExists(r.failure)
+                      ? Effect.fail(r.failure)
+                      : attempt(tries - 1),
+                );
+
+              const added = yield* attempt(5);
+              if (input.supersedes === undefined) return added;
+              /* ENG-17 R1: establishing supersedes marks the predecessor
+               * superseded as part of the same logical operation: either the new
+               * entry exists AND the predecessor is marked, or nothing is
+               * written. The predecessor's `updated` bumps to the operation
+               * time, matching the store's existing convention for metadata
+               * edits via update(). Atomicity is surfaced-failure rollback (R2):
+               * a failed marking write is compensated by removing the just-
+               * written entry file, and the compensation result is inspected —
+               * a failed cleanup surfaces an incomplete-rollback error naming
+               * both failures (review fix). A hard crash between the two writes
+               * can still leave the new entry without the marking; the scope lock
+               * serializes other local add and edit operations. */
+              const marked = yield* Effect.result(
+                writeUpdate(scope, input.supersedes, { status: "superseded" }, INTERNAL_MARK_SCAN),
+              );
+              if (Result.isFailure(marked)) {
+                const cleanup = yield* rollbackStep(
+                  added.path,
+                  `the new entry file "${added.path}"`,
+                  marked.failure,
+                  fs.remove(added.path, { force: true }),
+                );
+                return yield* Effect.fail(cleanup ?? marked.failure);
+              }
+              return added;
+            }),
           );
-          if (Result.isFailure(marked)) {
-            const cleanup = yield* rollbackStep(
-              added.path,
-              `the new entry file "${added.path}"`,
-              marked.failure,
-              fs.remove(added.path, { force: true }),
-            );
-            return yield* Effect.fail(cleanup ?? marked.failure);
-          }
-          return added;
         });
 
       /** ENG-17 R5: a supersedes claim must resolve to an exact, valid,
@@ -884,7 +967,7 @@ const makeEngramStoreLive = (
               reject(`supersedes self-reference: "${entryId}" cannot supersede itself`),
             );
           }
-          const scanned = yield* scan(scope);
+          const scanned = yield* scanStore(scope);
           const claimed = scanned.duplicateIds.find((c) => c.id === targetId);
           if (claimed !== undefined) {
             return yield* Effect.fail(
@@ -971,9 +1054,28 @@ const makeEngramStoreLive = (
           return target;
         });
 
-      const update: EngramStoreShape["update"] = (scope, id, patch, scan) =>
+      const update: EngramStoreShape["update"] = (scope, id, patch, scan, options = {}) =>
         Effect.gen(function* () {
-          const mem = yield* get(scope, id);
+          const dir = yield* dirForScope(scope);
+          // Preserve missing-entry errors for an uncreated personal store.
+          if (!(yield* fs.exists(dir))) {
+            return yield* Effect.fail(new EngramNotFoundError({ id, scope }));
+          }
+          return yield* withWriteLock(dir, writeUpdate(scope, id, patch, scan, options));
+        });
+
+      // A missing options argument is reserved for marking a predecessor
+      // under the enclosing writer's lock.
+      const writeUpdate = (
+        scope: Scope,
+        id: string,
+        patch: EngramPatch,
+        scan: ScanOptions,
+        options?: WriteOptions,
+      ): ReturnType<EngramStoreShape["update"]> =>
+        Effect.gen(function* () {
+          const scanned = yield* scanStore(scope);
+          const mem = yield* getFromScan(scanned, id);
           const instruction = patch.supersedes;
 
           /* ENG-17 R1 transition table for `supersedes`:
@@ -1083,6 +1185,9 @@ const makeEngramStoreLive = (
            * (including the supersedes marking below), so a blocked edit
            * leaves storage byte-identical. */
           const evaluation = yield* scanGate(next, file, scan);
+          if (options !== undefined) {
+            yield* admitWrite(next, scanned.entries, options, mem, target?.id);
+          }
 
           if (target !== undefined) {
             /* ENG-17 R1: establishing the link marks the predecessor
@@ -1108,7 +1213,7 @@ const makeEngramStoreLive = (
             // original path (no rename)
             const entryBefore = yield* fs.readFileString(mem.path);
             const marked = yield* Effect.result(
-              update(scope, target.id, { status: "superseded" }, INTERNAL_MARK_SCAN),
+              writeUpdate(scope, target.id, { status: "superseded" }, INTERNAL_MARK_SCAN),
             );
             if (Result.isFailure(marked)) return yield* Effect.fail(marked.failure);
             const wrote = yield* Effect.result(
@@ -1195,7 +1300,7 @@ const makeEngramStoreLive = (
       const dedupe: EngramStoreShape["dedupe"] = (scope) =>
         Effect.gen(function* () {
           const dir = yield* dirForScope(scope);
-          const scanned = yield* scan(scope);
+          const scanned = yield* scanStore(scope);
           // A partially readable store must not be rewritten, and repairs
           // need a complete integrity view: error-severity diagnostics other
           // than the duplicate ids `dedupe` itself repairs block the rewrite.
@@ -1364,7 +1469,7 @@ const makeEngramStoreLive = (
         projectRoot,
         dirForScope,
         list,
-        scan,
+        scan: scanStore,
         get,
         add,
         update,

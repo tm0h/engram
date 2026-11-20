@@ -44,6 +44,7 @@ export interface EditOptions extends LifecycleValueFlags, LifecycleClearFlags {
   readonly clearAliases?: boolean;
   /** ENG-15: explicit per-write override for a blocking scan policy. */
   readonly allowSecrets?: boolean;
+  readonly confirmWrite?: boolean;
 }
 
 const checkType = (t?: string): Effect.Effect<EngramType | undefined, InvalidTypeError> => {
@@ -275,7 +276,9 @@ export const editCommand = (id: string, opts: EditOptions) =>
     }
 
     const scan = yield* resolveScanOptions(cfg, scope, projectRoot, Boolean(opts.allowSecrets));
-    const updated = yield* store.update(scope, mem.id, patch, scan);
+    const updated = yield* store.update(scope, mem.id, patch, scan, {
+      confirmWrite: opts.confirmWrite,
+    });
     yield* out(chalk.green("✓ Updated ") + chalk.bold(`[${updated.id}]`) + ` ${updated.title}`);
     yield* out(chalk.gray(`  ${updated.path}`));
     yield* reportScanOutcome(updated.scan);

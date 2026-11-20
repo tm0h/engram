@@ -58,6 +58,7 @@ const DOMAIN_TAGS = new Set([
   "ConfigError",
   "IntegrityCheckFailedError",
   "SecretScanBlockedError",
+  "WriteAdvisoryError",
 ]);
 
 function isDomainError(e: unknown): e is DomainError {
@@ -144,6 +145,7 @@ program
     "--aliases <aliases>",
     "Comma-separated alternate names (max 20, 80 chars each; a comma cannot be part of an alias through this flag).",
   )
+  .option("--confirm-write", "Proceed after reviewing a likely duplicate or conflict advisory.")
   .option(
     "--allow-secrets",
     "Write even if the secret scanner flags this content (project policy may block by default).",
@@ -171,6 +173,7 @@ program
         sourceType: opts.sourceType as string | undefined,
         sourceRef: opts.sourceRef as string | undefined,
         allowSecrets: Boolean(opts.allowSecrets),
+        confirmWrite: Boolean(opts.confirmWrite),
       }),
     ),
   );
@@ -329,6 +332,7 @@ program
     "--aliases <aliases>",
     "Comma-separated alternate names; replaces the set (max 20, 80 chars each; a comma cannot be part of an alias through this flag).",
   )
+  .option("--confirm-write", "Proceed after reviewing a likely duplicate or conflict advisory.")
   .option(
     "--allow-secrets",
     "Write even if the secret scanner flags the resulting entry (project policy may block by default).",
@@ -365,6 +369,7 @@ program
           sourceType: opts.sourceType as string | undefined,
           sourceRef: opts.sourceRef as string | undefined,
           allowSecrets: Boolean(opts.allowSecrets),
+          confirmWrite: Boolean(opts.confirmWrite),
           clearStatus: opts.clearStatus as boolean | undefined,
           clearSupersedes: opts.clearSupersedes as boolean | undefined,
           clearReviewAfter: opts.clearReviewAfter as boolean | undefined,

@@ -144,6 +144,7 @@ describe("engram opencode plugin / registration", () => {
       "sourceRef",
       "related",
       "aliases",
+      "confirmWrite",
       "allowSecrets",
     ]);
     expect(Object.keys(tools.engram_edit.args)).toEqual([
@@ -163,6 +164,7 @@ describe("engram opencode plugin / registration", () => {
       "sourceRef",
       "related",
       "aliases",
+      "confirmWrite",
       "allowSecrets",
     ]);
   });

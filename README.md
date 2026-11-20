@@ -523,6 +523,26 @@ engram edit 01jb3 --status superseded --supersedes 0001 --review-after 2026-08-0
 engram edit 01jb3 --clear-review-after --clear-expires --clear-source-type
 ```
 
+### Duplicate and conflict advisories
+
+Add and edit check the destination scope. An exact match has the same title
+and body after trimming, Unicode NFC normalization, and line-ending
+normalization. Case, punctuation, and interior whitespace still matter.
+Metadata differences do not make an exact copy distinct. Exact matches
+are refused even against inactive memories. Editing an existing record
+excludes that record from comparison, and ordinary metadata-only updates
+can still proceed.
+
+Likely duplicates use overlapping title, body, and tag terms. Possible
+conflicts use matching subjects and differing preference or decision text.
+These advisories consider active entries and exclude an explicitly
+superseded predecessor. Each advisory names the existing `scope:id`.
+The CLI exits 1 without saving. Review the entries, then retry with
+`--confirm-write` if the write is intentional. Pi and OpenCode tools take
+`confirmWrite: true`. Confirmation cannot override exact duplicates or
+the secret scan. A confirmed write preserves the other entries unless
+you explicitly specify a lifecycle change such as `--supersedes`.
+
 ### Secret and prompt-injection scanning
 
 Every write through `engram add` and `engram edit` (and the Pi/OpenCode

@@ -215,6 +215,10 @@ export const engramAddTool = {
       .describe(
         'Alternate names for this entry, e.g. ["pg", "postgres row level security"]. The store trims, lowercases, and deduplicates them (first occurrence wins); the whole set is replaced. Optional.',
       ),
+    confirmWrite: z
+      .boolean()
+      .optional()
+      .describe("Proceed after the user reviews and accepts a write advisory."),
     allowSecrets: z
       .boolean()
       .optional()
@@ -239,6 +243,7 @@ export const engramAddTool = {
       related?: string[];
       aliases?: string[];
       allowSecrets?: boolean;
+      confirmWrite?: boolean;
     },
     context: OpenCodeToolContext,
   ) {
@@ -327,6 +332,10 @@ export const engramEditTool = {
       .describe(
         "Replace the whole alias set with these alternate names. The store trims, lowercases, and deduplicates them. Null clears; omit to preserve.",
       ),
+    confirmWrite: z
+      .boolean()
+      .optional()
+      .describe("Proceed after the user reviews and accepts a write advisory."),
     allowSecrets: z
       .boolean()
       .optional()
@@ -353,6 +362,7 @@ export const engramEditTool = {
       related?: string[] | null;
       aliases?: string[] | null;
       allowSecrets?: boolean;
+      confirmWrite?: boolean;
     },
     context: OpenCodeToolContext,
   ) {

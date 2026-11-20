@@ -11,6 +11,10 @@ entries (decisions, facts, gotchas, conventions) recorded per project
 `~/.engram`). The `engram` command is on your PATH while this plugin is
 enabled.
 
+If add or edit reports a likely duplicate or possible conflict, show the
+user the scoped IDs and wait for explicit approval before retrying with
+`--confirm-write`. Exact duplicates cannot be confirmed.
+
 ## Session flow
 
 1. **At the start of a session or feature**, load the digest manually —
