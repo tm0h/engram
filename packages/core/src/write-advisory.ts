@@ -25,6 +25,8 @@ const terms = (text: string): ReadonlySet<string> =>
     ),
   );
 
+const titleKey = (title: string): string => normalizeText(title).trim().replace(/\s+/g, " ");
+
 const overlap = (a: ReadonlySet<string>, b: ReadonlySet<string>) => {
   let shared = 0;
   for (const term of a) if (b.has(term)) shared++;
@@ -48,6 +50,7 @@ export function findWriteCandidates(
       effectiveStatus(previous, nowMs) === "inactive");
   if (!contentChanged && !checkAdvisories) return [];
 
+  const proposedTitle = titleKey(proposed.title);
   const title = terms(proposed.title);
   const body = terms(proposed.body);
   const tags = new Set(proposed.tags.map(normalizeText));
@@ -72,8 +75,8 @@ export function findWriteCandidates(
 
     const titles = overlap(title, terms(entry.title));
     const bodies = overlap(body, terms(entry.body));
-    const sameSubject = titles.shared >= 2 && titles.similarity >= 0.75;
-    const sameTitle = titles.shared >= 2 && titles.similarity === 1;
+    const sameTitle = proposedTitle === titleKey(entry.title);
+    const sameSubject = sameTitle || (titles.shared >= 2 && titles.similarity >= 0.75);
     const sharedTag = entry.tags.some((tag) => tags.has(normalizeText(tag)));
 
     // A changed preference or decision on the same subject can conflict even
@@ -83,7 +86,7 @@ export function findWriteCandidates(
       body.size > 0 &&
       entry.body.trim() !== "" &&
       bodies.similarity < 1 &&
-      (sameTitle || (sameSubject && (sharedTag || bodies.shared >= 3)))
+      (sameTitle || (sameSubject && (titles.similarity === 1 || sharedTag || bodies.shared >= 3)))
     ) {
       advisory.push({ ...ref, kind: "possible_conflict" });
     } else if (

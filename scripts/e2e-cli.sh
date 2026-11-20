@@ -658,6 +658,26 @@ replacement=$(engram add --type decision --title "Artifact retention policy" --s
 engram show "$replacement" | grep -F "supersedes: $prior_id"
 engram show "$prior_id" | grep -F "status: superseded"
 
+step "Active conflicts with single-word titles"
+shell_id=$(engram add --type preference --title "Shell" "Use Bash." | entry_id)
+before=$(snapshot_writes)
+expect_write_refusal "Possible active conflict (same subject, different preference or decision): project:$shell_id" \
+  add --type preference --title "shell" "Use Fish."
+grep -F -- "--confirm-write" "$write_log"
+[[ "$(snapshot_writes)" == "$before" ]] || fail "unconfirmed short-title add changed the store"
+fish_output=$(engram add --confirm-write --type preference --title "shell" "Use Fish.")
+fish_id=$(printf '%s\n' "$fish_output" | entry_id)
+printf '%s\n' "$fish_output" | grep -F "Added [$fish_id]"
+engram show "$fish_id" | grep -F "Use Fish."
+
+before=$(snapshot_writes)
+expect_write_refusal "Possible active conflict (same subject, different preference or decision): project:$shell_id" \
+  edit "$fish_id" "Use Zsh."
+[[ "$(snapshot_writes)" == "$before" ]] || fail "unconfirmed short-title edit changed the store"
+engram edit "$fish_id" --confirm-write "Use Zsh." | grep -F "Updated [$fish_id]"
+engram show "$fish_id" | grep -F "Use Zsh."
+engram show "$shell_id" | grep -F "Use Bash."
+
 step "Write confirmation and secret scanning"
 before=$(snapshot_writes)
 expect_write_refusal "SEC-INJECT-OVERRIDE" \
