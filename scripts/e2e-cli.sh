@@ -52,6 +52,7 @@ expected_version=$(node -p "require('./packages/cli/package.json').version")
 
 step "Repository gate"
 pnpm check
+pnpm exec tsc -p "$audit_source/tsconfig.json"
 pnpm test
 pnpm --filter @engram/core benchmark
 pnpm --filter engram-cli build
@@ -719,7 +720,7 @@ retrieval_audit() (
   mkdir "$fixture_home"
   if [[ "$scenario" == stats ]]; then collection=on; fi
   env HOME="$fixture_home" ENGRAM_STATS="$collection" \
-    node "$audit_source/e2e-retrieval.mjs" "$scenario" "$run_root/retrieval-$scenario"
+    node "$audit_source/e2e-retrieval.ts" "$scenario" "$run_root/retrieval-$scenario"
 )
 
 step "Packaged search lifecycle ranking and diversification"
@@ -736,20 +737,7 @@ retrieval_audit manual
 
 step "Packaged Pi and OpenCode automatic compaction"
 ENGRAM_DEBUG=1 retrieval_audit compaction 2>"$run_root/compaction.err"
-node --input-type=module - "$run_root/compaction.err" <<'JS'
-import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-const rows = readFileSync(process.argv[2], "utf8").trim().split("\n").map((line) => JSON.parse(line));
-assert.equal(rows.length, 6);
-for (const harness of ["pi", "opencode"]) {
-  const [wide, tight, empty] = rows.filter((row) => row.harness === harness);
-  assert.ok([wide, tight, empty].every((row) => row.event === "engram.automatic-context"));
-  assert.ok(tight.used > 0 && tight.used <= tight.effective && tight.used < wide.used);
-  assert.ok(tight.omitted.some(({ reason }) => reason === "budget"));
-  assert.equal(tight.deduplicated.length, 1);
-  assert.equal(empty.used, 0);
-}
-JS
+node "$audit_source/e2e-retrieval.ts" diagnostics "$run_root/compaction.err"
 
 step "Packaged Pi and OpenCode automatic usage statistics"
 retrieval_audit stats

@@ -7,22 +7,157 @@ import { setTimeout } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
-const [scenario, project] = process.argv.slice(2);
+interface SearchResult {
+  id: string;
+  explanation?: { contributions: Array<{ field: string; score: number }> };
+}
+
+interface StatsReport {
+  events: number;
+  loads: { total: number; withContext: number; outcomes: Record<string, number> };
+  contextBytes: { total: number };
+  candidates: { recall: { selected: number } };
+}
+
+interface ToolDetails {
+  id?: string;
+  budget?: { method: string; used: number };
+}
+
+type ToolArgs = { scope: "project"; limit: number; tokens?: number } | { id: string; body: string };
+type ToolName = "context" | "edit";
+
+interface PiTool {
+  name: string;
+  execute(
+    id: string,
+    args: ToolArgs,
+  ): Promise<{
+    content: [{ text: string }];
+    isError: boolean;
+    details: ToolDetails;
+  }>;
+}
+
+interface PiContext {
+  cwd: string;
+  hasUI: false;
+  model?: { contextWindow: number; maxTokens: number };
+}
+
+type PiHandlers = {
+  session_start: (event: { reason: "startup" }, context: PiContext) => Promise<void>;
+  before_agent_start: (
+    event: { prompt: string; systemPrompt: string },
+    context: PiContext,
+  ) => Promise<{ systemPrompt: string } | undefined>;
+};
+
+interface PiBundle {
+  default(host: {
+    on: <Event extends keyof PiHandlers>(name: Event, handler: PiHandlers[Event]) => void;
+    registerTool: (tool: PiTool) => void;
+    registerCommand: () => void;
+  }): void;
+}
+
+interface OpenCodeAssistant {
+  info: {
+    role: "assistant";
+    sessionID: string;
+    parentID: string;
+    time: { completed?: number };
+    path: { cwd: string };
+    modelID: string;
+    providerID: string;
+  };
+}
+
+interface OpenCodeUserMessage {
+  info: { role: "user"; id: string; sessionID: string };
+  parts: Array<{ type: "text"; sessionID: string; messageID: string; text: string }>;
+}
+
+interface OpenCodeBundle {
+  default(input: {
+    client: {
+      session: {
+        messages: (params: { path: { id: string } }) => Promise<{ data: OpenCodeAssistant[] }>;
+        message: (params: {
+          path: { id: string; messageID: string };
+        }) => Promise<{ data: OpenCodeUserMessage }>;
+      };
+    };
+  }): Promise<{
+    "experimental.chat.system.transform": (
+      input: {
+        sessionID: string;
+        model: { id: string; providerID: string; limit: { context: number; output: number } };
+      },
+      output: { system: string[] },
+    ) => Promise<void>;
+    tool: Record<
+      `engram_${ToolName}`,
+      {
+        execute(
+          args: ToolArgs,
+          context: { directory: string; sessionID: string },
+        ): Promise<{
+          output: string;
+          metadata: ToolDetails & { isError: boolean };
+        }>;
+      }
+    >;
+  }>;
+}
+
+interface CompactionDiagnostic {
+  harness: string;
+  event: string;
+  used: number;
+  effective: number;
+  omitted: Array<{ reason: string }>;
+  deduplicated: unknown[];
+}
+
+const [scenario, input] = process.argv.slice(2);
+assert.ok(input, "Pass a project directory or diagnostics file");
+if (scenario === "diagnostics") {
+  const rows = readFileSync(input, "utf8")
+    .trim()
+    .split("\n")
+    .map((line): CompactionDiagnostic => JSON.parse(line));
+  assert.equal(rows.length, 6);
+  for (const harness of ["pi", "opencode"]) {
+    const deliveries = rows.filter((row) => row.harness === harness);
+    assert.equal(deliveries.length, 3, harness);
+    const [wide, tight, empty] = deliveries;
+    assert.ok([wide, tight, empty].every((row) => row.event === "engram.automatic-context"));
+    assert.ok(tight.used > 0 && tight.used <= tight.effective && tight.used < wide.used);
+    assert.ok(tight.omitted.some(({ reason }) => reason === "budget"));
+    assert.equal(tight.deduplicated.length, 1);
+    assert.equal(empty.used, 0);
+  }
+  process.exit(0);
+}
+
+const project = input;
+assert.ok(process.env.ENGRAM_E2E_BIN, "Set ENGRAM_E2E_BIN to the installed CLI");
 const bin = realpathSync(process.env.ENGRAM_E2E_BIN);
 const dist = dirname(bin);
 const store = ".engram/engrams";
 mkdirSync(project);
 process.chdir(project);
 
-const cli = (...args) => execFileSync(bin, args, { encoding: "utf8" });
-const json = (...args) => JSON.parse(cli(...args));
-const bundle = (name) => import(pathToFileURL(join(dist, name)).href);
+const cli = (...args: string[]) => execFileSync(bin, args, { encoding: "utf8" });
+const json = <T>(...args: string[]): T => JSON.parse(cli(...args));
+const bundle = <T>(name: string): Promise<T> => import(pathToFileURL(join(dist, name)).href);
 const snapshot = () =>
   readdirSync(store)
     .filter((name) => name.endsWith(".md"))
     .sort()
-    .map((name) => [name, readFileSync(join(store, name), "utf8")]);
-const cost = (text) =>
+    .map((name) => [name, readFileSync(join(store, name), "utf8")] as const);
+const cost = (text: string) =>
   Array.from(text).reduce(
     (sum, point) =>
       sum + Math.max(Buffer.byteLength(point), Buffer.byteLength(point.normalize("NFKD"))),
@@ -30,7 +165,7 @@ const cost = (text) =>
   );
 
 cli("init", "--untracked");
-function add(title, body, ...flags) {
+function add(title: string, body: string, ...flags: string[]) {
   const result = cli("add", "--title", title, ...flags, body);
   const id = /Added \[([a-z0-9]+)\]/.exec(result)?.[1];
   assert.ok(id, result);
@@ -41,9 +176,9 @@ if (scenario === "ranking") {
   // Existing stores can contain synchronized duplicates. Seed them directly
   // so the write admission guard does not mask the retrieval behavior.
   const seed = (
-    id,
-    title,
-    body,
+    id: string,
+    title: string,
+    body: string,
     { type = "decision", status = "active", updated = "2000-01-01T00:00:00.000Z" } = {},
   ) =>
     writeFileSync(
@@ -82,50 +217,64 @@ if (scenario === "ranking") {
   });
   const before = snapshot();
 
-  const top = json("search", "auth", "--limit", "5", "--json", "--explain").results;
+  const top = json<{ results: SearchResult[] }>(
+    "search",
+    "auth",
+    "--limit",
+    "5",
+    "--json",
+    "--explain",
+  ).results;
   assert.deepEqual(top.map(({ id }) => id).sort(), ["0001", "0011", "0012", "0013", "0014"]);
-  const all = json("search", "auth", "--json", "--explain").results;
+  const all = json<{ results: SearchResult[] }>("search", "auth", "--json", "--explain").results;
   assert.equal(all.length, 10);
   assert.ok(
     all
       .find(({ id }) => id === "0002")
-      .explanation.contributions.some(
+      ?.explanation?.contributions.some(
         ({ field, score }) => field === "diversification" && score < 0,
       ),
   );
-  const inactive = json("search", "auth", "--all", "--json").results;
+  const inactive = json<{ results: SearchResult[] }>("search", "auth", "--all", "--json").results;
   assert.ok(inactive.some(({ id }) => id === "0015"));
-  const freshness = json("search", "quorum", "--json", "--explain").results;
+  const freshness = json<{ results: SearchResult[] }>(
+    "search",
+    "quorum",
+    "--json",
+    "--explain",
+  ).results;
   assert.deepEqual(
     freshness.map(({ id }) => id),
     ["0021", "0020"],
   );
   assert.ok(
-    freshness[0].explanation.contributions.some(
+    freshness[0].explanation?.contributions.some(
       ({ field, score }) => field === "freshness" && score > 0,
     ),
   );
   assert.equal(
-    freshness[1].explanation.contributions.some(({ field }) => field === "freshness"),
+    freshness[1].explanation?.contributions.some(({ field }) => field === "freshness"),
     false,
   );
   assert.deepEqual(snapshot(), before);
   process.exit(0);
 }
 
-const { default: pi } = await bundle("pi-extension.js");
-const piTools = new Map();
-const handlers = new Map();
+const { default: pi } = await bundle<PiBundle>("pi-extension.js");
+const piTools = new Map<string, PiTool>();
+const handlers: Partial<PiHandlers> = {};
 pi({
-  on: (name, handler) => handlers.set(name, handler),
+  on: (name, handler) => {
+    handlers[name] = handler;
+  },
   registerTool: (tool) => piTools.set(tool.name, tool),
   registerCommand() {},
 });
-const { default: opencode } = await bundle("opencode-plugin.js");
+const { default: opencode } = await bundle<OpenCodeBundle>("opencode-plugin.js");
 const sessionID = "offline-fixture";
 const provider = { id: "offline", providerID: "offline" };
 let sequence = 0;
-let turn;
+let turn: { id: string; prompt: string };
 const hooks = await opencode({
   client: {
     session: {
@@ -159,15 +308,17 @@ const hooks = await opencode({
     },
   },
 });
-const piContext = { cwd: project, hasUI: false };
-await handlers.get("session_start")({ reason: "startup" }, piContext);
+const piContext: PiContext = { cwd: project, hasUI: false };
+assert.ok(handlers.session_start);
+await handlers.session_start({ reason: "startup" }, piContext);
 const openContext = { directory: project, sessionID };
 const harnesses = [
   {
     name: "Pi",
     envelope: 0,
-    async deliver(prompt, { system = "Project instructions.", window = 8192 } = {}) {
-      const result = await handlers.get("before_agent_start")(
+    async deliver(prompt: string, { system = "Project instructions.", window = 8192 } = {}) {
+      assert.ok(handlers.before_agent_start);
+      const result = await handlers.before_agent_start(
         { prompt, systemPrompt: system },
         { ...piContext, model: { contextWindow: window, maxTokens: 256 } },
       );
@@ -176,8 +327,10 @@ const harnesses = [
       assert.ok(result.systemPrompt.startsWith(system + "\n\n"));
       return result.systemPrompt.slice(system.length + 2);
     },
-    async tool(name, args) {
-      const result = await piTools.get(`engram_${name}`).execute("offline-fixture", args);
+    async tool(name: ToolName, args: ToolArgs) {
+      const tool = piTools.get(`engram_${name}`);
+      assert.ok(tool);
+      const result = await tool.execute("offline-fixture", args);
       return { text: result.content[0].text, isError: result.isError, details: result.details };
     },
   },
@@ -185,7 +338,7 @@ const harnesses = [
     name: "OpenCode",
     envelope: 16,
     async deliver(
-      prompt,
+      prompt: string,
       { system = "Project instructions.", window = 8192, sameTurn = false } = {},
     ) {
       if (!sameTurn) turn = { id: `turn-${++sequence}`, prompt };
@@ -198,14 +351,14 @@ const harnesses = [
       assert.ok(out.system.length <= 2);
       return out.system[1] ?? "";
     },
-    async tool(name, args) {
+    async tool(name: ToolName, args: ToolArgs) {
       const result = await hooks.tool[`engram_${name}`].execute(args, openContext);
       return { text: result.output, isError: result.metadata.isError, details: result.metadata };
     },
   },
-];
+] as const;
 
-function assertFrame(text) {
+function assertFrame(text: string) {
   assert.equal(text.split("<engram-memory>").length, 2, text);
   assert.ok(text.endsWith("</engram-memory>"), text);
 }
@@ -289,7 +442,9 @@ if (scenario === "startup") {
   assert.match(refreshed, /orchid_ttl=86400/);
   assert.doesNotMatch(refreshed, /604800/);
   assert.equal(snapshot().length, before.length);
-  assert.match(snapshot().find(([name]) => name.startsWith(orchid))[1], /orchid_ttl=86400/);
+  const changed = snapshot().find(([name]) => name.startsWith(orchid));
+  assert.ok(changed);
+  assert.match(changed[1], /orchid_ttl=86400/);
   assert.deepEqual(
     snapshot().find(([name]) => name.startsWith(cedar)),
     before.find(([name]) => name.startsWith(cedar)),
@@ -299,7 +454,7 @@ if (scenario === "startup") {
   for (let i = 0; i < 8; i++) add(`Étiquette ${i} ${"🧭".repeat(26)}`, `Fixture ${i}.`);
   const before = snapshot();
   for (const harness of harnesses) {
-    const args = { scope: "project", limit: 9 };
+    const args = { scope: "project", limit: 9 } as const;
     const full = await harness.tool("context", args);
     assert.equal(full.isError, false, full.text);
     assert.ok(cost(full.text) > 512);
@@ -308,6 +463,7 @@ if (scenario === "startup") {
     assert.ok(cost(bounded.text) <= 512, bounded.text);
     assert.ok(bounded.text.includes(pinned));
     assert.match(bounded.text, /Équipe 🧭 recovery/);
+    assert.ok(bounded.details.budget);
     assert.equal(bounded.details.budget.method, "utf8-nfkd-bytes-v1");
     assert.equal(bounded.details.budget.used, cost(bounded.text));
     assert.doesNotMatch(bounded.text, /\uFFFD/);
@@ -379,7 +535,7 @@ if (scenario === "startup") {
   const id = add("Azalea retention", "Set azalea_ttl=3600.");
   const before = snapshot();
   cli("stats", "--clear");
-  assert.equal(json("stats", "--json").events, 0);
+  assert.equal(json<StatsReport>("stats", "--json").events, 0);
   const runAsync = promisify(execFile);
   let events = 0;
   let bytes = 0;
@@ -391,13 +547,14 @@ if (scenario === "startup") {
     bytes += Buffer.byteLength(block);
     // Recording is best-effort and asynchronous. Wait for the event before
     // making the next request so the host fixture does not contend on the lock.
-    let report;
+    let report: StatsReport | undefined;
     for (let attempt = 0; attempt < 20; attempt++) {
       const { stdout } = await runAsync(bin, ["stats", "--json"]);
-      report = JSON.parse(stdout);
+      report = JSON.parse(stdout) as StatsReport;
       if (report.events >= events) break;
       await setTimeout(30);
     }
+    assert.ok(report);
     assert.equal(report.events, events, JSON.stringify(report));
     assert.deepEqual(report.loads, {
       total: events,
@@ -408,7 +565,8 @@ if (scenario === "startup") {
     assert.equal(report.candidates.recall.selected, events);
   }
   const history = readFileSync(join(homedir(), ".engram/stats/events.json"), "utf8");
-  assert.equal(JSON.parse(history).events.length, events);
+  const stored: { events: unknown[] } = JSON.parse(history);
+  assert.equal(stored.events.length, events);
   assert.doesNotMatch(history, new RegExp(`${id}|azalea`, "i"));
   assert.deepEqual(snapshot(), before);
 } else {
