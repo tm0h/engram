@@ -71,8 +71,8 @@ printf '%s\n' "$where_output"
 [[ "$where_output" == *"/home/node/.engram"* ]] || fail "personal scope escaped the container home"
 engram init --tracked | grep -F "Already initialized"
 
-# The queue has no public command. Bundle an offline driver against the core
-# source and use the installed package for the canonical read surfaces.
+# The queue has no public intake command. Seed it with the offline fixture
+# and exercise retrieval and review through the installed package.
 (
   cd /workspace
   fixture_dir="packages/core/node_modules/.cache/engram-pending-e2e"
@@ -162,6 +162,24 @@ engram init --tracked | grep -F "Already initialized"
   canonical=(.engram/engrams/*.md)
   [[ ${#canonical[@]} -eq 1 && ! -e "$HOME/.engram/engrams" ]] || fail "pending write changed canonical storage"
   [[ -s "$personal_file" && -s "${files[0]}" ]] || fail "pending files disappeared after retrieval"
+
+  pending_review_audit() (
+    export HOME="$run_root/pending-review-home-$1"
+    mkdir "$HOME"
+    node "$audit_source/e2e-pending.ts" "$1" "$run_root/pending-review-$1" "$fixture"
+  )
+
+  step "Packaged pending list, inspection and exact approval preview"
+  pending_review_audit approval
+
+  step "Packaged pending edits, rejection and mixed JSON batches"
+  pending_review_audit batch
+
+  step "Packaged pending approval validation and redacted failures"
+  pending_review_audit validation
+
+  step "Packaged concurrent pending approval and cleanup retry"
+  pending_review_audit concurrency
 )
 
 step "Local diagnostics and usage statistics"

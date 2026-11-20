@@ -467,3 +467,18 @@ it("requires the user's approval before retrying a write advisory", () => {
     expect(skill).toContain("Exact duplicates cannot be confirmed");
   }
 });
+
+it("documents human pending-memory review across the README and shipped skills", () => {
+  for (const file of [
+    "README.md",
+    "packages/harnesses/src/pi/skills/engram/SKILL.md",
+    "packages/harnesses/claude/skills/engram/SKILL.md",
+    "packages/harnesses/claude/scaffold/SKILL.md",
+  ]) {
+    const guidance = fs.readFileSync(path.join(repoRoot, file), "utf8");
+    for (const command of ["list", "show", "edit", "approve", "reject"]) {
+      expect(guidance, file).toContain(`engram pending ${command}`);
+    }
+    expect(guidance, file).toContain("engram pending approve <id> --dry-run");
+  }
+});

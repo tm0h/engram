@@ -3,7 +3,7 @@
  */
 import { Effect } from "effect";
 import { execSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 /** Crockford base32, lowercase (filesystem-safe, no i/l/o/u). */
 const BASE32 = "0123456789abcdefghjkmnpqrstvwxyz";
@@ -56,16 +56,25 @@ export const newId = (): string => {
     return encodeTime(t) + lastRandom;
   }
   lastTime = t;
+  lastRandom = encodeEntropy(randomBytes(10));
+  return encodeTime(t) + lastRandom;
+};
+
+const encodeEntropy = (bytes: Uint8Array): string => {
   let n = 0n;
-  for (const b of randomBytes(10)) n = (n << 8n) | BigInt(b);
+  for (const b of bytes) n = (n << 8n) | BigInt(b);
   let s = "";
   for (let i = 0; i < 16; i++) {
     s = BASE32[Number(n & 31n)] + s;
     n >>= 5n;
   }
-  lastRandom = s;
-  return encodeTime(t) + s;
+  return s;
 };
+
+/** Derive a repeatable canonical ID from an independently random proposal ID. */
+export const pendingApprovalId = (candidateId: string, created: number): string =>
+  encodeTime(Math.max(0, Math.min(created, 2 ** 48 - 1))) +
+  encodeEntropy(createHash("sha256").update(candidateId).digest().subarray(0, 10));
 
 export const nowISO = (): string => new Date().toISOString();
 
