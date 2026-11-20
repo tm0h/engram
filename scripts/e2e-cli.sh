@@ -69,6 +69,99 @@ printf '%s\n' "$where_output"
 [[ "$where_output" == *"/home/node/.engram"* ]] || fail "personal scope escaped the container home"
 engram init --tracked | grep -F "Already initialized"
 
+# The queue has no public command. Bundle an offline driver against the core
+# source and use the installed package for the canonical read surfaces.
+(
+  cd /workspace
+  fixture_dir="packages/core/node_modules/.cache/engram-pending-e2e"
+  pnpm --dir packages/core exec vp pack test/fixtures/pending-queue.ts --no-dts \
+    --out-dir node_modules/.cache/engram-pending-e2e
+  fixture="/workspace/$fixture_dir/pending-queue.mjs"
+  pending() { node "$fixture" "$@"; }
+
+  export HOME="$run_root/pending-home"
+  mkdir -p "$HOME" "$run_root/pending-project"
+  cd "$run_root/pending-project"
+  git init --quiet
+  engram init --tracked
+  engram add --title "Canonical violet decision" "This memory is available to the CLI." >/dev/null
+
+  step "Pending queue rejects sensitive excerpts before writing"
+  if pending sensitive project > "$run_root/pending.out" 2> "$run_root/pending.err"; then
+    fail "pending queue accepted a sensitive excerpt"
+  else
+    [[ $? -eq 1 ]] || fail "unexpected sensitive candidate exit status"
+  fi
+  [[ ! -s "$run_root/pending.out" ]] || fail "rejected candidate produced stdout"
+  grep -F "Pending candidate blocked:" "$run_root/pending.err" | grep -F "SEC-CRED-ASSIGNMENT"
+  if grep -F "synthetic-private-value" "$run_root/pending.err"; then
+    fail "pending diagnostics leaked the excerpt"
+  fi
+  [[ ! -e .engram/pending ]] || fail "rejected candidate created a project queue"
+
+  step "Pending queue persists versioned candidates and rejects incompatible files"
+  accepted=$(pending write personal)
+  printf '%s\n' "$accepted" | parse_json '
+    value.schemaVersion === 1 && value.scope === "personal" &&
+    value.id.startsWith("pending-") && Number.isFinite(Date.parse(value.created)) &&
+    value.proposed.title === "quartzpending example" && value.proposed.type === "decision" &&
+    value.proposed.tags[0] === "capture" && value.proposed.body === "Use the synthetic violet adapter." &&
+    value.sourceExcerpt === "A violet adapter was discussed." && value.provenanceClass === "conversation" &&
+    value.duplicates[0].id === "0001" && value.duplicates[0].kind === "exact_duplicate" &&
+    value.conflicts[0].id === "0002" && value.conflicts[0].kind === "possible_conflict"'
+  candidate_id=$(printf '%s\n' "$accepted" | node -p 'JSON.parse(require("node:fs").readFileSync(0)).id')
+  personal_file="$HOME/.engram/pending/$candidate_id.json"
+  cmp "$personal_file" <(printf '%s\n' "$accepted" | node -p 'JSON.stringify(JSON.parse(require("node:fs").readFileSync(0)), null, 2)')
+  [[ $(pending read personal "$candidate_id") == "$accepted" ]] || fail "pending file did not round-trip"
+  cp "$personal_file" "$run_root/pending-v1.json"
+  sed 's/"schemaVersion": 1/"schemaVersion": 2/' "$run_root/pending-v1.json" > "$personal_file"
+  if pending read personal "$candidate_id" > "$run_root/pending.out" 2> "$run_root/pending.err"; then
+    fail "pending queue read an unsupported schema version"
+  else
+    [[ $? -eq 1 ]] || fail "unexpected unsupported version exit status"
+  fi
+  [[ ! -s "$run_root/pending.out" ]] || fail "unsupported version produced stdout"
+  grep -Fx "Invalid pending candidate." "$run_root/pending.err"
+  grep -F '"schemaVersion": 2' "$personal_file"
+  mv "$run_root/pending-v1.json" "$personal_file"
+
+  step "Pending queue publishes complete files from concurrent processes"
+  pids=()
+  for n in {1..8}; do
+    pending write project "$n" > "$run_root/pending-$n.json" &
+    pids+=("$!")
+  done
+  for pid in "${pids[@]}"; do
+    wait "$pid" || fail "a concurrent candidate writer failed"
+  done
+  files=(.engram/pending/*.json)
+  [[ ${#files[@]} -eq ${#pids[@]} ]] || fail "concurrent candidate files were lost"
+  for n in {1..8}; do
+    stored=$(cat "$run_root/pending-$n.json")
+    project_id=$(printf '%s\n' "$stored" | node -p 'JSON.parse(require("node:fs").readFileSync(0)).id')
+    [[ $(pending read project "$project_id") == "$stored" ]] || fail "concurrent write did not round-trip"
+    printf '%s\n' "$stored" | parse_json "value.proposed.title === 'quartzpending $n' && value.scope === 'project'"
+  done
+  [[ -z $(find .engram/pending -name '.write-*' -print -quit) ]] || fail "queue left staging files"
+
+  step "Pending files stay Git-ignored in a tracked project"
+  git check-ignore "${files[@]}"
+  git add .
+  git ls-files --error-unmatch .engram/engrams/*.md
+  [[ -z $(git ls-files .engram/pending) ]] || fail "git staged a pending queue file"
+
+  step "Packaged search and context exclude both pending scopes"
+  engram search quartzpending --scope all --json | parse_json 'value.total === 0'
+  engram search violet --scope all --json |
+    parse_json 'value.total === 1 && value.results[0].title === "Canonical violet decision"'
+  context=$(engram context --scope all)
+  [[ "$context" == *"Canonical violet decision"* && "$context" != *"quartzpending"* &&
+    "$context" != *"A violet adapter was discussed."* ]] || fail "unexpected context output"
+  canonical=(.engram/engrams/*.md)
+  [[ ${#canonical[@]} -eq 1 && ! -e "$HOME/.engram/engrams" ]] || fail "pending write changed canonical storage"
+  [[ -s "$personal_file" && -s "${files[0]}" ]] || fail "pending files disappeared after retrieval"
+)
+
 step "Local diagnostics and usage statistics"
 engram doctor | grep -F "project store: empty"
 engram doctor --json |

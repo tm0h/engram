@@ -314,6 +314,27 @@ paths, machine-readable codes, and repair hints.
 You can edit these by hand (they're just files), but never invent an id:
 `engram add` mints a globally-unique one.
 
+### Local pending memory
+
+The pending-memory store keeps proposals in `.engram/pending/` for the current
+project and `~/.engram/pending/` for personal memory. Both queues install a
+Git ignore rule before writing, including in projects with tracked canonical
+memory. Each version-1 JSON file contains the proposed title, type, tags and
+body, a source excerpt, its provenance class, the scope, duplicate and conflict
+references by scope and ID, and the creation time. A reference is an advisory
+hint. The queue is separate from canonical Markdown, and ordinary search and
+context only read canonical memory.
+
+The queue rejects excerpts and proposed text flagged by the secret and
+prompt-injection scanner. Diagnostics give scanner rule information without
+quoting matched text. Files are published atomically under unique IDs.
+
+Pending files have no automatic expiry. To discard a candidate, delete its
+`pending-*.json` file. To clear a whole queue or remove a leftover `.write-*`
+staging directory after an interrupted process, do so while no queue writer is
+running. A later write recreates the queue and its ignore rule. Cleanup leaves
+canonical memory untouched.
+
 ---
 
 ## Commands

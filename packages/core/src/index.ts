@@ -11,6 +11,7 @@ export * from "./integrity.js";
 export * from "./links.js";
 export * from "./config.js";
 export * from "./store.js";
+export * from "./pending-store.js";
 export * from "./frontmatter.js";
 export * from "./search.js";
 export * from "./abstention.js";
