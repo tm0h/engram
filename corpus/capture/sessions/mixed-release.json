@@ -1,0 +1,78 @@
+{
+  "id": "mixed-release",
+  "messages": [
+    {
+      "id": "m1",
+      "origin": "user",
+      "text": "Correction for Lantern: production publishes on Thursdays, not Fridays. Keep Thursday as the release day."
+    },
+    {
+      "id": "m2",
+      "origin": "assistant",
+      "text": "I updated the release branch and the current build is 80 percent complete."
+    },
+    {
+      "id": "m3",
+      "origin": "user",
+      "text": "For Lantern, we decided to publish complete index snapshots instead of deltas so mirrors can recover after missing an update."
+    },
+    {
+      "id": "m4",
+      "origin": "assistant",
+      "text": "Maybe we'll move the mirrors to a different region next quarter."
+    }
+  ],
+  "existingMemory": [
+    {
+      "id": "old-release-day",
+      "title": "Production release day",
+      "body": "Lantern publishes production releases on Fridays.",
+      "type": "decision",
+      "scope": "project"
+    }
+  ],
+  "expected": [
+    {
+      "id": "release-day",
+      "title": "Production release day",
+      "body": "Lantern publishes production releases on Thursdays.",
+      "type": "decision",
+      "scope": "project",
+      "signal": "correction",
+      "evidence": [
+        {
+          "messageId": "m1",
+          "origin": "user"
+        }
+      ],
+      "conflicts": ["old-release-day"]
+    },
+    {
+      "id": "snapshot-format",
+      "title": "Index snapshot publication",
+      "body": "Publish full index snapshots so mirrors can recover after missing an update.",
+      "type": "decision",
+      "scope": "project",
+      "signal": "decision",
+      "evidence": [
+        {
+          "messageId": "m3",
+          "origin": "user"
+        }
+      ],
+      "conflicts": []
+    }
+  ],
+  "rejected": [
+    {
+      "messageId": "m2",
+      "reason": "progress",
+      "rationale": "The build and branch updates describe the current task."
+    },
+    {
+      "messageId": "m4",
+      "reason": "speculation",
+      "rationale": "The move is a possibility without a decision."
+    }
+  ]
+}

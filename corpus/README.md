@@ -10,6 +10,8 @@ Everything in this directory is **synthetic**. The fixture project
 ("mothlight", a fictional static-site generator) does not exist. No real
 personal engrams, credentials, or private data may ever be committed here.
 
+For evaluating memory suggestions from sessions, see the [capture corpus](capture/README.md).
+
 ## Layout
 
 ```

@@ -1,0 +1,29 @@
+{
+  "id": "sensitive-task",
+  "messages": [
+    {
+      "id": "m1",
+      "origin": "user",
+      "text": "For today's throwaway demo, password = synthetic-lantern-demo-never-real"
+    },
+    {
+      "id": "m2",
+      "origin": "tool",
+      "text": "demo-server: listening on a temporary port 61923; retry 2/3"
+    }
+  ],
+  "existingMemory": [],
+  "expected": [],
+  "rejected": [
+    {
+      "messageId": "m1",
+      "reason": "secret",
+      "rationale": "The credential-shaped value is entirely synthetic and the message should not be retained."
+    },
+    {
+      "messageId": "m2",
+      "reason": "tool-output",
+      "rationale": "The temporary port and retry count apply only to the current run."
+    }
+  ]
+}

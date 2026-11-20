@@ -692,6 +692,46 @@ fi
 personal_warning_id=$(printf '%s\n' "$personal_warning_output" | entry_id)
 engram remove --scope personal --yes "$personal_warning_id"
 
+step "Capture corpus release-day correction and persisted supersession"
+(
+  mkdir "$run_root/capture-correction"
+  cd "$run_root/capture-correction"
+  engram init --untracked
+
+  # Replay the gold correction as an explicit write through the packaged CLI.
+  fixture=$(node -e '
+    const session = require(process.argv[1]);
+    const correction = session.expected.find(row => row.id === "release-day");
+    const prior = session.existingMemory.find(row => row.id === correction.conflicts[0]);
+    for (const { scope, type, title, body } of [prior, correction]) {
+      console.log([scope, type, title, body].join("\n"));
+    }
+  ' /workspace/corpus/capture/sessions/mixed-release.json)
+  mapfile -t fields <<<"$fixture"
+  prior_output=$(engram add --scope "${fields[0]}" --type "${fields[1]}" --title "${fields[2]}" "${fields[3]}")
+  prior_id=$(printf '%s\n' "$prior_output" | entry_id)
+  printf '%s\n' "$prior_output" | grep -F "Added [$prior_id]"
+  before=$(sha256sum .engram/engrams/*.md)
+
+  status=0
+  engram add --scope "${fields[4]}" --type "${fields[5]}" --title "${fields[6]}" "${fields[7]}" \
+    >"$run_root/capture-conflict.log" 2>&1 || status=$?
+  [[ "$status" == 1 ]] || fail "capture correction expected conflict exit 1, got $status"
+  grep -F "Possible active conflict" "$run_root/capture-conflict.log" | grep -F "${fields[0]}:$prior_id"
+  [[ "$(sha256sum .engram/engrams/*.md)" == "$before" ]] || fail "refused correction changed stored memory"
+
+  output=$(engram add --scope "${fields[4]}" --type "${fields[5]}" --title "${fields[6]}" \
+    --supersedes "$prior_id" "${fields[7]}")
+  id=$(printf '%s\n' "$output" | entry_id)
+  printf '%s\n' "$output" | grep -F "Added [$id]"
+  files=(.engram/engrams/*.md)
+  [[ ${#files[@]} -eq 2 ]] || fail "correction should persist exactly two linked entries"
+  grep -Fx "status: superseded" .engram/engrams/"$prior_id"-*.md
+  grep -Fx -- "${fields[3]}" .engram/engrams/"$prior_id"-*.md
+  grep -Fx "supersedes: $prior_id" .engram/engrams/"$id"-*.md
+  grep -Fx -- "${fields[7]}" .engram/engrams/"$id"-*.md
+)
+
 step "Exact duplicate add and edit"
 advisory_root="$run_root/write-advisories"
 mkdir "$advisory_root"

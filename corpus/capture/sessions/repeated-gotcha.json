@@ -1,0 +1,49 @@
+{
+  "id": "repeated-gotcha",
+  "messages": [
+    {
+      "id": "m1",
+      "origin": "user",
+      "text": "Yesterday the Lantern preview skipped the Japanese sample. It was following an old locale index again."
+    },
+    {
+      "id": "m2",
+      "origin": "user",
+      "text": "The same thing happened today with the French sample. We fixed both by rebuilding the locale index after adding translations and before previewing."
+    },
+    {
+      "id": "m3",
+      "origin": "tool",
+      "text": "preview worker 419 finished in 1.9 seconds; transient queue depth = 3"
+    }
+  ],
+  "existingMemory": [],
+  "expected": [
+    {
+      "id": "locale-index",
+      "title": "Rebuild the locale index before preview",
+      "body": "After adding translations, rebuild Lantern's locale index before previewing so translated samples appear.",
+      "type": "issue",
+      "scope": "project",
+      "signal": "gotcha",
+      "evidence": [
+        {
+          "messageId": "m1",
+          "origin": "user"
+        },
+        {
+          "messageId": "m2",
+          "origin": "user"
+        }
+      ],
+      "conflicts": []
+    }
+  ],
+  "rejected": [
+    {
+      "messageId": "m3",
+      "reason": "tool-output",
+      "rationale": "Transient metrics do not support the workaround."
+    }
+  ]
+}

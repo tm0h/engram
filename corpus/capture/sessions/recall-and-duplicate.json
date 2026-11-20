@@ -1,0 +1,38 @@
+{
+  "id": "recall-and-duplicate",
+  "messages": [
+    {
+      "id": "m1",
+      "origin": "recall",
+      "text": "Existing Lantern memory: output bundles are stored in build/exports."
+    },
+    {
+      "id": "m2",
+      "origin": "user",
+      "text": "Yes, Lantern stores output bundles in build/exports."
+    }
+  ],
+  "existingMemory": [
+    {
+      "id": "bundle-location",
+      "title": "Lantern bundle location",
+      "body": "Lantern stores output bundles in build/exports.",
+      "type": "fact",
+      "scope": "project"
+    }
+  ],
+  "expected": [],
+  "rejected": [
+    {
+      "messageId": "m1",
+      "reason": "recalled",
+      "rationale": "The recall payload is a copy of already stored memory."
+    },
+    {
+      "messageId": "m2",
+      "reason": "duplicate",
+      "rationale": "User confirmation repeats the existing fact without new durable detail.",
+      "duplicateOf": "bundle-location"
+    }
+  ]
+}
