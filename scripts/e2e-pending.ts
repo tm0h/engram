@@ -59,6 +59,7 @@ interface ReviewResult {
   scope: string;
   status: string;
   code?: string;
+  message?: string;
   canonicalId?: string;
   markdown?: string;
   revision?: string;
@@ -354,6 +355,14 @@ switch (scenario) {
     const bytes = readFileSync(canonical, "utf8");
     // Restore the queue side of the interruption window after publication.
     writeFileSync(file, before);
+    const [edit] = review(
+      ["edit", proposal.id, "--patch", '{"body":"Choose the glossy mineral."}'],
+      1,
+    );
+    assert.equal(edit.status, "failed");
+    assert.match(edit.message ?? "", /already published.*retry approval.*engram edit/i);
+    assert.equal(readFileSync(file, "utf8"), before);
+    assert.equal(readFileSync(canonical, "utf8"), bytes);
     assert.equal(review(["approve", proposal.id, "--yes"])[0].status, "already_approved");
     assert.equal(existsSync(file), false);
     assert.equal(publishedFiles().length, 1);

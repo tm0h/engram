@@ -129,6 +129,10 @@ export interface EngramStoreShape {
     | WriteAdvisoryError
     | ValidationError
   >;
+  /** Check while holding the candidate lock, before changing the queue file. */
+  readonly assertPendingEditable: (
+    candidate: PendingCandidate,
+  ) => Effect.Effect<void, StoreError | ValidationError>;
   readonly approvePending: (
     candidate: PendingCandidate,
     options: WriteOptions & { readonly expectedMarkdown?: string },
@@ -871,6 +875,35 @@ const makeEngramStoreLive = (
           return { dir, slug, buildCandidate, candidate: buildCandidate(probeId, probeFile) };
         });
 
+      const hasPendingPublication = (scanned: StoreScan, candidateId: string, id: string) => {
+        const existing = scanned.entries.find((entry) => entry.id === id);
+        if (
+          scanned.duplicateIds.some((claim) => claim.id === id) ||
+          (existing !== undefined && existing.sourceRef !== candidateId)
+        ) {
+          return Effect.fail(
+            new ValidationError({
+              message:
+                "The canonical approval ID is already in use. Run engram check and resolve the ID conflict.",
+            }),
+          );
+        }
+        return Effect.succeed(existing !== undefined);
+      };
+
+      const assertPendingEditable: EngramStoreShape["assertPendingEditable"] = (candidate) =>
+        Effect.gen(function* () {
+          const id = pendingApprovalId(candidate.id, Date.parse(candidate.created));
+          const scanned = yield* scanStore(candidate.scope);
+          if (yield* hasPendingPublication(scanned, candidate.id, id)) {
+            return yield* Effect.fail(
+              new ValidationError({
+                message: `This candidate was already published. Retry approval to finish queue cleanup. Use engram edit on canonical memory ${id} to revise it.`,
+              }),
+            );
+          }
+        });
+
       const approvePending: EngramStoreShape["approvePending"] = (pending, options) =>
         Effect.gen(function* () {
           const { scope, created, provenanceClass } = pending;
@@ -891,22 +924,11 @@ const makeEngramStoreLive = (
           const markdown = serialize(candidate);
           const validateAndPublish = Effect.gen(function* () {
             const scanned = yield* scanStore(scope);
-            const existing = scanned.entries.find((entry) => entry.id === id);
-            if (
-              scanned.duplicateIds.some((claim) => claim.id === id) ||
-              (existing !== undefined && existing.sourceRef !== pending.id)
-            ) {
-              return yield* Effect.fail(
-                new ValidationError({
-                  message:
-                    "The canonical approval ID is already in use. Run engram check and resolve the ID conflict.",
-                }),
-              );
-            }
             // A prior write may have succeeded before queue cleanup. The ID
             // and source reference survive ordinary edits and retitles.
-            if (existing !== undefined)
+            if (yield* hasPendingPublication(scanned, pending.id, id)) {
               return { id, status: "already_published", markdown } as const;
+            }
 
             yield* scanGate(candidate, candidate.path, { policy: "block", allowSecrets: false });
             yield* validateCandidate(candidate, candidate.path);
@@ -1566,6 +1588,7 @@ const makeEngramStoreLive = (
         get,
         add,
         approvePending,
+        assertPendingEditable,
         update,
         remove,
         dedupe,

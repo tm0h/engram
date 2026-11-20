@@ -357,7 +357,8 @@ before publishing. Sensitive content and exact duplicates block approval.
 Review likely duplicates and possible conflicts before retrying with
 `--confirm-write`. If validation fails, edit or reject the pending candidate.
 If queue cleanup fails after publication, retry approval to finish cleanup
-using the existing canonical memory.
+using the existing canonical memory. The leftover queue file cannot be edited.
+Use `engram edit` on the canonical memory to make changes.
 
 Pass multiple IDs to `show`, `edit`, `approve`, or `reject` to process a
 batch in one scope. A batch edit applies the same patch to each candidate.

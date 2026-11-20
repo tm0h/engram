@@ -178,7 +178,7 @@ engram init --tracked | grep -F "Already initialized"
   step "Packaged pending approval validation and redacted failures"
   pending_review_audit validation
 
-  step "Packaged concurrent pending approval and cleanup retry"
+  step "Packaged concurrent pending approval, edit protection and cleanup retry"
   pending_review_audit concurrency
 )
 

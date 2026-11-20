@@ -169,6 +169,7 @@ export const pendingCommand = (action: Action, ids: string[], opts: PendingOptio
             scope,
             id,
             readPendingCandidate(scope, id).pipe(
+              Effect.tap(store.assertPendingEditable),
               Effect.flatMap((candidate) => patchPendingCandidate(candidate, patch)),
             ),
           );
