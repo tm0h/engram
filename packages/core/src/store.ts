@@ -992,7 +992,7 @@ const makeEngramStoreLive = (
               );
             }
             const other: Scope = scope === "project" ? "personal" : "project";
-            const elsewhere = yield* Effect.result(scan(other));
+            const elsewhere = yield* Effect.result(scanStore(other));
             if (
               Result.isSuccess(elsewhere) &&
               elsewhere.success.entries.some((m) => m.id === targetId)
