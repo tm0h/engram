@@ -9,6 +9,7 @@
  * entry (bundled as dist/opencode-plugin.js).
  */
 import type { Hooks, Plugin } from "@opencode-ai/plugin";
+import { createCaptureCommand } from "./capture-command.js";
 import { createContextTransform, resolveActiveRequest } from "./context-transform.js";
 import {
   engramAddTool,
@@ -19,6 +20,7 @@ import {
 } from "./tools.js";
 
 const engramPlugin: Plugin = async (input) => {
+  const capture = createCaptureCommand(input);
   const autoContext = createContextTransform(resolveActiveRequest(input.client));
 
   const writeToolWithRefresh = <
@@ -53,12 +55,16 @@ const engramPlugin: Plugin = async (input) => {
 
   const hooks: Hooks = {
     tool,
+    config: capture.config,
+    "chat.message": capture.observe,
+    "command.execute.before": capture.command,
     "experimental.chat.system.transform": autoContext.transform,
     event: async ({ event }) => {
       // Opportunistic cleanup; correctness never depends on this event — the
       // cache is bounded and evicts FIFO.
       if (event.type === "session.deleted") {
         autoContext.dropSession(event.properties.info.id);
+        capture.dropSession(event.properties.info.id);
       }
     },
   };

@@ -196,6 +196,13 @@ step "Packaged Pi lifecycle stages provenance-backed candidates for review"
   node "$audit_source/e2e-pi-capture.ts" "$run_root/pi-capture"
 )
 
+step "Packaged OpenCode command stages provenance-backed candidates for review"
+(
+  export HOME="$run_root/opencode-capture-home"
+  mkdir -p "$HOME"
+  node "$audit_source/e2e-opencode-capture.ts" "$run_root/opencode-capture"
+)
+
 step "Local diagnostics and usage statistics"
 engram doctor | grep -F "project store: empty"
 engram doctor --json |

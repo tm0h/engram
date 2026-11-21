@@ -187,6 +187,9 @@ memory for the current request from the active workspace. When recall finds
 no strong match, the curated digest is available as a fallback. Successful
 adds and edits refresh cached context across sessions.
 
+Run `/engram-capture` to stage eligible statements from the active OpenCode
+session, then review them with `engram pending list --scope all`.
+
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
