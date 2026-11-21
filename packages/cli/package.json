@@ -36,7 +36,8 @@
   "main": "dist/index.js",
   "exports": {
     ".": "./dist/index.js",
-    "./server": "./dist/opencode-plugin.js"
+    "./server": "./dist/opencode-plugin.js",
+    "./capture": "./dist/capture-adapter.js"
   },
   "scripts": {
     "build": "vp pack",

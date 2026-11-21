@@ -62,7 +62,7 @@ type Session = typeof Session.Type;
 type Proposal = {
   candidateId: string | null;
   scope: typeof ScopeSchema.Type;
-  evidence: readonly (typeof Evidence.Type)[];
+  evidence: readonly { messageId: string; origin: string }[];
 };
 
 function index<T extends { id: string }>(items: readonly T[], kind: string) {
