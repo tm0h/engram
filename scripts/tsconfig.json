@@ -8,5 +8,11 @@
     "types": ["node"],
     "skipLibCheck": true
   },
-  "include": ["e2e-retrieval.ts", "e2e-pending.ts", "e2e-capture.ts", "e2e-pi-capture.ts"]
+  "include": [
+    "e2e-retrieval.ts",
+    "e2e-pending.ts",
+    "e2e-capture.ts",
+    "e2e-pi-capture.ts",
+    "e2e-opencode-capture.ts"
+  ]
 }

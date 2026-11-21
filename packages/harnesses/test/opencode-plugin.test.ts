@@ -741,3 +741,17 @@ describe("engram opencode plugin / search aliases (ENG-47)", () => {
     expect(res.metadata).toMatchObject({ total: 1, isError: false });
   });
 });
+
+describe("OpenCode capture command", () => {
+  it("registers an explicit command without overriding a user command", async () => {
+    const hooks = await engramPlugin({} as Parameters<typeof engramPlugin>[0]);
+    const config: Parameters<NonNullable<typeof hooks.config>>[0] = {};
+    await hooks.config?.(config);
+    expect(config.command?.["engram-capture"]?.description).toMatch(/review/);
+    expect(hooks["command.execute.before"]).toBeTypeOf("function");
+    const custom = { template: "A user-defined command" };
+    const existing = { command: { "engram-capture": custom } };
+    await hooks.config?.(existing);
+    expect(existing.command["engram-capture"]).toBe(custom);
+  });
+});

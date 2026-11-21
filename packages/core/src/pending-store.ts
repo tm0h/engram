@@ -40,13 +40,22 @@ export const CaptureOrigin = Schema.Literals([
   "system",
 ]);
 
-const CaptureSource = Schema.Struct({
+const CaptureEvidence = Schema.Struct({ messageId: CaptureMessageId, origin: CaptureOrigin });
+const PiCaptureSource = Schema.Struct({
   harness: Schema.Literal("pi"),
   sessionKind: Schema.Literal("tui"),
   sessionId: CaptureMessageId,
   event: Schema.Literals(["agent_settled", "session_before_compact", "session_shutdown"]),
-  evidence: Schema.Array(Schema.Struct({ messageId: CaptureMessageId, origin: CaptureOrigin })),
+  evidence: Schema.Array(CaptureEvidence),
 });
+const OpenCodeCaptureSource = Schema.Struct({
+  harness: Schema.Literal("opencode"),
+  sessionKind: Schema.Literal("root"),
+  sessionId: CaptureMessageId,
+  event: Schema.Literal("command.execute.before"),
+  evidence: Schema.Array(Schema.Struct({ ...CaptureEvidence.fields, partId: CaptureMessageId })),
+});
+const CaptureSource = Schema.Union([PiCaptureSource, OpenCodeCaptureSource]);
 export type CaptureSource = typeof CaptureSource.Type;
 
 const CandidateInput = Schema.Struct({

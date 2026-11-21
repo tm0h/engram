@@ -78,3 +78,21 @@ claims, source excerpts, and evidence with the fixture labels.
 
 No dogfood threshold or labeled Pi dogfood sessions are available. Dogfood
 precision and threshold attainment remain unverified.
+
+### OpenCode command evaluation
+
+The Docker scenario **Packaged OpenCode command stages provenance-backed
+candidates for review** invokes the installed plugin's configuration, message
+and command hooks with synthetic OpenCode SDK fixtures. The positive session
+contains a remember request, a decision and a two-message gotcha. It repeats the
+command before and after rejecting a suggestion. Four negative sessions cover
+excluded content, a child session, a mismatched workspace and unresponsive
+retrieval. The audit scores exact persisted bodies, excerpts and host evidence
+IDs against fixture expectations and confirms that canonical memory stays empty.
+
+| Sample                              | Sessions |  TP |  FP |  FN | Precision | Recall | Duplicate suggestions | Unsupported assertions |
+| ----------------------------------- | -------: | --: | --: | --: | --------: | -----: | --------------------: | ---------------------: |
+| Synthetic OpenCode command fixtures |        5 |   3 |   0 |   0 |      100% |   100% |                     0 |                      0 |
+
+These scores apply to the synthetic OpenCode fixtures. No labeled OpenCode
+dogfood sessions were evaluated.

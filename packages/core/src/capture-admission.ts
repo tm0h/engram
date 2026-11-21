@@ -41,6 +41,13 @@ type CaptureProposal = Claim & {
   readonly sourceExcerpt: string;
 };
 type StoredClaim = Pick<Claim, "scope" | "body">;
+type CaptureSourceInput =
+  | Omit<Extract<CaptureSource, { harness: "pi" }>, "evidence">
+  | (Omit<Extract<CaptureSource, { harness: "opencode" }>, "evidence"> & {
+      readonly partIds: ReadonlyMap<string, string>;
+    });
+
+export { CaptureMessageId } from "./pending-store.js";
 
 const externalRequest = "Remember this external claim: ";
 // Rules operate on complete, short statements. Reject examples, hedges and
@@ -173,13 +180,27 @@ export function evaluateCapture(input: unknown, existing: readonly StoredClaim[]
 export const stageCapture = Effect.fnUntraced(function* (
   input: unknown,
   cwd: string,
-  source?: Omit<CaptureSource, "evidence">,
+  source?: CaptureSourceInput,
 ) {
   const proposals = evaluateCapture(input);
   if (proposals.length !== 1) {
     return { status: "rejected", reason: proposals.length ? "ambiguous" : "ineligible" } as const;
   }
   const { scope, title, body, type, sourceExcerpt, evidence } = proposals[0];
+  let captureSource: CaptureSource | undefined;
+  if (source?.harness === "opencode") {
+    const { partIds, ...provenance } = source;
+    const parts = evidence.flatMap((item) => {
+      const partId = partIds.get(item.messageId);
+      return partId ? [{ ...item, partId }] : [];
+    });
+    if (parts.length !== evidence.length) {
+      return { status: "rejected", reason: "ineligible" } as const;
+    }
+    captureSource = { ...provenance, evidence: parts };
+  } else if (source) {
+    captureSource = { ...source, evidence };
+  }
   const store = yield* EngramStore;
   return yield* withPendingAdmissionLock(
     scope,
@@ -206,7 +227,7 @@ export const stageCapture = Effect.fnUntraced(function* (
           proposed: { title, body, type, tags: [] },
           sourceExcerpt,
           provenanceClass: "conversation",
-          ...(source && { captureSource: { ...source, evidence } }),
+          ...(captureSource && { captureSource }),
           duplicates: [],
           conflicts: [],
         },
