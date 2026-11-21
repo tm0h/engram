@@ -55,7 +55,7 @@ const OpenCodeCaptureSource = Schema.Struct({
   event: Schema.Literal("command.execute.before"),
   evidence: Schema.Array(Schema.Struct({ ...CaptureEvidence.fields, partId: CaptureMessageId })),
 });
-const CaptureSource = Schema.Union([PiCaptureSource, OpenCodeCaptureSource]);
+export const CaptureSource = Schema.Union([PiCaptureSource, OpenCodeCaptureSource]);
 export type CaptureSource = typeof CaptureSource.Type;
 
 const CandidateInput = Schema.Struct({
@@ -263,7 +263,7 @@ export const parsePendingPatch = (json: string) =>
     ),
   );
 
-const withQueueLock = <A, E, R>(
+export const withQueueLock = <A, E, R>(
   lock: string,
   operation: Effect.Effect<A, E, R>,
   busyMessage: string,

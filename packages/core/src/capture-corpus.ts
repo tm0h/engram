@@ -56,6 +56,7 @@ const Manifest = Schema.Struct({
   corpusVersion: Schema.String.check(Schema.isPattern(/^\d+\.\d+\.\d+$/)),
   name: Text,
 });
+export const validateCaptureManifest = Schema.decodeUnknownSync(Manifest);
 const strict = { onExcessProperty: "error" } as const;
 
 type Session = typeof Session.Type;

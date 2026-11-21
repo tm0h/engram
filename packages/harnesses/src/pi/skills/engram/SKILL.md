@@ -327,3 +327,8 @@ It includes inactive history, resolves exact same-scope ids from one scan, and
 preserves MISSING/AMBIGUOUS states. It infers no semantic or transitive edges.
 Use `--scope project|personal`, `--offset n`, and `--limit n` (default 10,
 maximum 100). Follow the continuation footer; related reads never write files.
+
+Project capture is review-only by default. The local project owner can inspect
+the mode and evidence with `engram capture status` and revoke automatic
+recording immediately with `engram capture disable`. Leave evidence submission
+and explicit opt-in to the project owner.

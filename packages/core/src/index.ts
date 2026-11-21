@@ -30,3 +30,5 @@ export * from "./layer.js";
 export { validRetrievalPath } from "./retrieval-metadata.js";
 export { pathApplies } from "./retrieval-metadata.js";
 export * from "./contextual-evidence.js";
+
+export { captureControl } from "./capture-control.js";

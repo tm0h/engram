@@ -39,6 +39,7 @@ import { statsCommand } from "./commands/stats.js";
 import * as Install from "./commands/install.js";
 import * as Hook from "./commands/hook.js";
 import { MIN_CONTEXT_TOKENS, recordHookUsageArgument } from "@engram/harnesses/shared";
+import { captureCommand } from "./commands/capture.js";
 import { installEpipeGuard } from "./io.js";
 
 // ENG-39: a piped consumer closing stdout/stderr early (e.g. `| head`) must
@@ -439,6 +440,28 @@ program
       }),
     ),
   );
+
+const capture = program.command("capture").description("Manage project automatic recording.");
+capture
+  .command("status")
+  .description("Inspect local evidence, recording mode, and audit.")
+  .action(() => run(captureCommand("status")));
+capture
+  .command("evidence")
+  .description("Submit the project owner's reviewed sample as JSON on stdin.")
+  .action(() => run(captureCommand("evidence")));
+capture
+  .command("enable")
+  .description("Opt this project into automatic recording.")
+  .requiredOption(
+    "--confirm-owner",
+    "Confirm you are the project owner and want automatic recording.",
+  )
+  .action(() => run(captureCommand("enable")));
+capture
+  .command("disable")
+  .description("Immediately return this project to review-only capture.")
+  .action(() => run(captureCommand("disable")));
 
 const pending = program.command("pending").description("Review local pending memory candidates.");
 

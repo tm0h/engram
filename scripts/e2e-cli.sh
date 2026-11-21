@@ -203,6 +203,13 @@ step "Packaged OpenCode command stages provenance-backed candidates for review"
   node "$audit_source/e2e-opencode-capture.ts" "$run_root/opencode-capture"
 )
 
+step "Packaged Pi and OpenCode require owner evidence and audit automatic recording"
+(
+  export HOME="$run_root/capture-graduation-home"
+  mkdir -p "$HOME"
+  node "$audit_source/e2e-capture-graduation.ts" "$run_root/capture-graduation"
+)
+
 step "Local diagnostics and usage statistics"
 engram doctor | grep -F "project store: empty"
 engram doctor --json |

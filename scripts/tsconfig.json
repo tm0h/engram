@@ -13,6 +13,8 @@
     "e2e-pending.ts",
     "e2e-capture.ts",
     "e2e-pi-capture.ts",
-    "e2e-opencode-capture.ts"
+    "e2e-opencode-capture.ts",
+    "e2e-capture-graduation.ts",
+    "capture-fingerprint.ts"
   ]
 }
