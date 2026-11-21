@@ -48,6 +48,24 @@ engram config set autoContextScope both      # project (default) | personal | bo
 Use `engram_context` for a workspace digest, or `engram_search` and
 `engram_show` for focused manual recall.
 
+## Pending memory suggestions
+
+Pi can stage short, durable statements from direct interactive input when a run
+settles, before compaction, or during session teardown. It matches Pi's input
+event to a delivered user message. Tool results, assistant messages, recalled
+context, expanded prompts, and extension input are excluded. Capture runs in
+the interactive TUI. Pi's bundled subagent example uses JSON mode, which is
+excluded along with print and RPC modes. The Pi SDK does not expose a generic
+subagent flag for third-party integrations that impersonate a TUI session.
+
+Suggestions use the shared [admission rules](../../../../corpus/capture/admission.md)
+and stay pending until review. The pending detail includes the Pi session ID,
+session mode, lifecycle event, and evidence IDs. Engram holds up to 64 message
+boundaries in memory, attempts up to eight proposals per flush, and waits up to
+200 ms for staging. Repeat lifecycle calls consume each observation only once.
+When an interactive notice appears, run `engram pending list --scope all` to
+review the suggestions.
+
 ## What you get
 
 | Surface               | What it does                                                                                                                                         |

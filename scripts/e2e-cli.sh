@@ -189,6 +189,13 @@ step "Packaged capture admission checks provenance and stages review only"
   node "$audit_source/e2e-capture.ts" "$run_root/capture-admission"
 )
 
+step "Packaged Pi lifecycle stages provenance-backed candidates for review"
+(
+  export HOME="$run_root/pi-capture-home"
+  mkdir -p "$HOME"
+  node "$audit_source/e2e-pi-capture.ts" "$run_root/pi-capture"
+)
+
 step "Local diagnostics and usage statistics"
 engram doctor | grep -F "project store: empty"
 engram doctor --json |

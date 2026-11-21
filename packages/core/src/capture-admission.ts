@@ -1,6 +1,9 @@
 import { Effect, Result, Schema } from "effect";
 import type { EngramType, Scope } from "./domain.js";
 import {
+  CaptureMessageId as Id,
+  CaptureOrigin,
+  type CaptureSource,
   enqueuePendingCandidate,
   listPendingIds,
   readPendingCandidate,
@@ -11,10 +14,9 @@ import { EngramStore } from "./store.js";
 
 export const CAPTURE_RULES_VERSION = 1;
 
-const Id = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/));
 const Message = Schema.Struct({
   id: Id,
-  origin: Schema.Literals(["user", "assistant", "tool", "recall", "external", "system"]),
+  origin: CaptureOrigin,
   text: Schema.String,
 });
 const Request = Schema.Struct({
@@ -168,7 +170,11 @@ export function evaluateCapture(input: unknown, existing: readonly StoredClaim[]
   return proposals;
 }
 
-export const stageCapture = Effect.fnUntraced(function* (input: unknown, cwd: string) {
+export const stageCapture = Effect.fnUntraced(function* (
+  input: unknown,
+  cwd: string,
+  source?: Omit<CaptureSource, "evidence">,
+) {
   const proposals = evaluateCapture(input);
   if (proposals.length !== 1) {
     return { status: "rejected", reason: proposals.length ? "ambiguous" : "ineligible" } as const;
@@ -200,6 +206,7 @@ export const stageCapture = Effect.fnUntraced(function* (input: unknown, cwd: st
           proposed: { title, body, type, tags: [] },
           sourceExcerpt,
           provenanceClass: "conversation",
+          ...(source && { captureSource: { ...source, evidence } }),
           duplicates: [],
           conflicts: [],
         },
