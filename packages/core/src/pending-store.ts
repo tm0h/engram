@@ -123,6 +123,15 @@ const ensureIgnored = Effect.fnUntraced(function* (directory: string) {
   }
 });
 
+const prepareQueue = Effect.fnUntraced(function* (scope: Scope, cwd: string) {
+  const fs = yield* FileSystem;
+  const directory = yield* queueDirectory(scope, cwd);
+  yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 });
+  yield* checkQueueDirectory(directory);
+  yield* ensureIgnored(directory);
+  return directory;
+});
+
 /** Store a proposal without writing to or consulting the canonical store. */
 export const enqueuePendingCandidate = Effect.fnUntraced(function* (
   input: PendingCandidateInput,
@@ -133,11 +142,7 @@ export const enqueuePendingCandidate = Effect.fnUntraced(function* (
   );
   yield* checkQueueContent(validated);
 
-  const fs = yield* FileSystem;
-  const directory = yield* queueDirectory(validated.scope, cwd);
-  yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 });
-  yield* checkQueueDirectory(directory);
-  yield* ensureIgnored(directory);
+  const directory = yield* prepareQueue(validated.scope, cwd);
 
   const candidate: PendingCandidate = {
     schemaVersion,
@@ -226,18 +231,13 @@ export const parsePendingPatch = (json: string) =>
     ),
   );
 
-/** Every reviewer mutation uses the same lock for a candidate. Readers see
- * whole old or new files, and admission can still enqueue unrelated IDs. */
-export const withPendingCandidateLock = <A, E, R>(
-  scope: Scope,
-  id: string,
+const withQueueLock = <A, E, R>(
+  lock: string,
   operation: Effect.Effect<A, E, R>,
-  cwd: string = process.cwd(),
+  busyMessage: string,
 ) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem;
-    const { file } = yield* candidatePath(scope, id, cwd);
-    const lock = file + ".lock";
     const acquire = fs.makeDirectory(lock).pipe(
       Effect.retry({
         times: 80,
@@ -247,7 +247,7 @@ export const withPendingCandidateLock = <A, E, R>(
       Effect.mapError((error) =>
         error.reason._tag === "AlreadyExists"
           ? new ValidationError({
-              message: "Candidate is busy. Retry when the other review finishes.",
+              message: busyMessage,
             })
           : error,
       ),
@@ -256,6 +256,38 @@ export const withPendingCandidateLock = <A, E, R>(
       acquire,
       () => operation,
       () => fs.remove(lock, { recursive: true }),
+    );
+  });
+
+/** Serialize admission checks and writes within a scope. */
+export const withPendingAdmissionLock = <A, E, R>(
+  scope: Scope,
+  operation: Effect.Effect<A, E, R>,
+  cwd: string,
+) =>
+  Effect.gen(function* () {
+    const path = yield* Path;
+    const directory = yield* prepareQueue(scope, cwd);
+    return yield* withQueueLock(
+      path.join(directory, ".admission.lock"),
+      operation,
+      "Pending admission is busy. Retry when the other admission finishes.",
+    );
+  });
+
+/** Every reviewer mutation shares the same candidate lock. */
+export const withPendingCandidateLock = <A, E, R>(
+  scope: Scope,
+  id: string,
+  operation: Effect.Effect<A, E, R>,
+  cwd: string = process.cwd(),
+) =>
+  Effect.gen(function* () {
+    const { file } = yield* candidatePath(scope, id, cwd);
+    return yield* withQueueLock(
+      file + ".lock",
+      operation,
+      "Candidate is busy. Retry when the other review finishes.",
     );
   });
 

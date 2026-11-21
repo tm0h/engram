@@ -182,6 +182,13 @@ engram init --tracked | grep -F "Already initialized"
   pending_review_audit concurrency
 )
 
+step "Packaged capture admission checks provenance and stages review only"
+(
+  export HOME="$run_root/capture-admission-home"
+  mkdir -p "$HOME"
+  node "$audit_source/e2e-capture.ts" "$run_root/capture-admission"
+)
+
 step "Local diagnostics and usage statistics"
 engram doctor | grep -F "project store: empty"
 engram doctor --json |

@@ -76,6 +76,9 @@ The Docker audit also replays the labeled release-day correction as an
 explicit CLI write. It checks conflict detection against the fixture's existing
 memory and the resulting stored state after an explicit supersession.
 
+For the deterministic baseline and its reproducible report, see
+[review-only capture admission](admission.md).
+
 ## Versioning
 
 Bump `schemaVersion` when fields or the scoring contract change incompatibly.

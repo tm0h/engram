@@ -6,11 +6,13 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./corpus": "./src/corpus.ts"
+    "./corpus": "./src/corpus.ts",
+    "./capture": "./src/capture-admission.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "benchmark": "tsx src/benchmark/run.ts",
+    "benchmark:capture": "node --import tsx src/benchmark/capture.ts",
     "benchmark:shadow": "tsx src/benchmark/shadow-cli.ts"
   },
   "dependencies": {
