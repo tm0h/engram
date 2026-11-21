@@ -6,12 +6,14 @@
  * in-process against @engram/core; no CLI binary or network required.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerCapture } from "./capture-hook.js";
 import { registerAutoContext } from "./context-hook.js";
 import { registerEngramCommand } from "./commands.js";
 import { registerEngramTools } from "./tools.js";
 
 export default function engramExtension(pi: ExtensionAPI): void {
   const autoContext = registerAutoContext(pi);
+  registerCapture(pi);
   registerEngramTools(pi, { onWriteSuccess: autoContext.invalidate });
   registerEngramCommand(pi, { onWriteSuccess: autoContext.invalidate });
 }

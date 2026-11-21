@@ -27,11 +27,34 @@ const Proposed = Schema.Struct({
   body: Schema.String,
 });
 
+export const CaptureMessageId = Schema.String.check(
+  Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/),
+);
+
+export const CaptureOrigin = Schema.Literals([
+  "user",
+  "assistant",
+  "tool",
+  "recall",
+  "external",
+  "system",
+]);
+
+const CaptureSource = Schema.Struct({
+  harness: Schema.Literal("pi"),
+  sessionKind: Schema.Literal("tui"),
+  sessionId: CaptureMessageId,
+  event: Schema.Literals(["agent_settled", "session_before_compact", "session_shutdown"]),
+  evidence: Schema.Array(Schema.Struct({ messageId: CaptureMessageId, origin: CaptureOrigin })),
+});
+export type CaptureSource = typeof CaptureSource.Type;
+
 const CandidateInput = Schema.Struct({
   scope: ScopeSchema,
   proposed: Proposed,
   sourceExcerpt: nonBlank,
   provenanceClass: SourceTypeSchema,
+  captureSource: Schema.optionalKey(CaptureSource),
   duplicates: Schema.Array(
     Schema.Struct({ ...reference, kind: Schema.Literals(["exact_duplicate", "likely_duplicate"]) }),
   ),

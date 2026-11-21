@@ -61,3 +61,20 @@ never adjudicated or whose evidence is missing or misattributed.
 These scores cover seven synthetic sessions. The rules abstain on phrasings they
 do not recognize, and source attribution establishes who said something.
 Reviewers still decide whether the claim belongs in canonical memory.
+
+### Pi lifecycle evaluation
+
+The packaged Pi lifecycle audit uses three independently labeled synthetic
+sessions. The interactive eligible session contains a remember request and a
+decision, with replayed lifecycle events between them. The interactive negative
+session contains injected, recalled, and tool content. A JSON-mode fixture
+represents the bundled Pi subagent recipe. The audit compares exact persisted
+claims, source excerpts, and evidence with the fixture labels.
+
+| Sample                          | Sessions |  TP |  FP |  FN | Precision | Recall | Duplicate suggestions | Unsupported assertions |
+| ------------------------------- | -------: | --: | --: | --: | --------: | -----: | --------------------: | ---------------------: |
+| Synthetic Pi lifecycle fixtures |        3 |   2 |   0 |   0 |      100% |   100% |                     0 |                      0 |
+| Pi dogfood                      |        0 |   — |   — |   — |         — |      — |                     — |                      — |
+
+No dogfood threshold or labeled Pi dogfood sessions are available. Dogfood
+precision and threshold attainment remain unverified.
