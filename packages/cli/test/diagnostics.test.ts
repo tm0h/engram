@@ -87,7 +87,7 @@ describe("local diagnostics and statistics", () => {
     expect(cli("doctor")).toContain("project store: unhealthy");
   }, 25_000);
 
-  it("counts completed reads, keeps private input out of storage, and supports disable and clear", () => {
+  it("counts completed reads, keeps private input out of storage, and supports disable and clear", async () => {
     expect(json("stats")).toMatchObject({ state: "empty", collection: "enabled", events: 0 });
     expect(cli("stats")).toContain("No usage statistics");
     cli("init", "--untracked");
@@ -124,12 +124,17 @@ describe("local diagnostics and statistics", () => {
     cli("stats", "--enable");
     cli("search", "privatebodyneedle");
     expect(cli("hook", "claude-code", "startup")).toContain("Private Title");
-    expect(json("stats")).toMatchObject({
-      state: "available",
-      events: 2,
-      loads: { total: 1, withContext: 1 },
-      candidates: { bootstrap: { selected: 1 } },
-    });
+    // The hook can return context before its statistics child finishes.
+    await vi.waitFor(
+      () =>
+        expect(json("stats")).toMatchObject({
+          state: "available",
+          events: 2,
+          loads: { total: 1, withContext: 1 },
+          candidates: { bootstrap: { selected: 1 } },
+        }),
+      { timeout: 5_000, interval: 100 },
+    );
   }, 30_000);
 
   it("retains concurrent CLI writes and fails open on invalid or locked statistics", async () => {
