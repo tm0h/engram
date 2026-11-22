@@ -5,8 +5,16 @@ const mothlightCases: ReadonlyArray<readonly [id: string, query: string, require
   ["coedit-websocket", "can our team edit together over the dev server websocket"],
   ["thumbnail-encryption", "does the image cache encrypt thumbnail files"],
   ["preview-robots", "are preview hosts excluded by the robots file", "01jwq3vvf0000000000000002n"],
-  ["websocket-restart", "why does the dev server websocket reconnect after restart", "01jwq06nf0000000000000000n"],
-  ["thumbnail-retention", "how long does the image cache keep old thumbnails", "01jwq1jkq0000000000000001d"],
+  [
+    "websocket-restart",
+    "why does the dev server websocket reconnect after restart",
+    "01jwq06nf0000000000000000n",
+  ],
+  [
+    "thumbnail-retention",
+    "how long does the image cache keep old thumbnails",
+    "01jwq1jkq0000000000000001d",
+  ],
 ];
 
 const skylarkCases: typeof mothlightCases = [
@@ -57,6 +65,10 @@ export function heldOutSuites(corpus: LoadedCorpus): Record<string, LoadedCorpus
           type: "fact",
           scope: "project",
           tags: [],
+          aliases: [],
+          author: undefined,
+          schemaVersion: 1,
+          path: `/synthetic/${note.id}.md`,
           pinned: false,
           created: "2025-12-01T00:00:00.000Z",
           updated: "2025-12-01T00:00:00.000Z",
