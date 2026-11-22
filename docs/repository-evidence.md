@@ -15,10 +15,11 @@ current working tree. A changed file calls for human review of the claim.
 Results can be `changed`, `unchanged`, or `unavailable`. Existing unversioned
 references retain their original format and report a missing reviewed revision.
 The command accepts only project-local regular UTF-8 files up to 64 KiB.
-It reports bounded excerpts and suppresses excerpts flagged by secret scanning.
+It scans each full file for sensitive content before showing bounded excerpts.
+For files with Git line-ending conversion, LF blobs can match CRLF checkouts.
 Use `--json` for a versioned report.
 
-Commit the changed source file before staging a correction. The source bytes
+Commit the changed source file before staging a correction. The source text
 must agree with the current commit so the new memory can point to an immutable
 reviewed revision. Staging preserves the title, type, and tags as editable
 pending fields.

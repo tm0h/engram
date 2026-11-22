@@ -80,13 +80,35 @@ function text(bytes: Buffer) {
   return decoded;
 }
 
-function excerpt(body: string) {
-  return scanContent(body).length
+async function convertsLineEndings(root: string, path: string) {
+  // Read settings only. Git clean filters may execute repository-configured programs.
+  const attributes = (await git(root, "check-attr", "-z", "text", "eol", "--", path))
+    .toString()
+    .split("\0");
+  const [, , textAttr, , , eol] = attributes;
+  if (textAttr === "unset") return false;
+  if (textAttr === "set" || textAttr === "auto" || eol === "lf" || eol === "crlf") return true;
+  try {
+    return /^(?:true|yes|on|[1-9][0-9]*|input)$/i.test(
+      (await git(root, "config", "--get", "core.autocrlf")).toString().trim(),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function comparableCheckout(committed: string, checkout: string, convert: boolean) {
+  // A historical blob may intentionally contain CRLF. Keep its bytes authoritative.
+  return convert && !committed.includes("\r\n") ? checkout.replaceAll("\r\n", "\n") : checkout;
+}
+
+function excerpt(body: string, fullText = body) {
+  return scanContent(fullText).length || (body !== fullText && scanContent(body).length)
     ? { text: null, truncated: false }
     : { text: body.slice(0, 4096), truncated: body.length > 4096 };
 }
 
-function changedLines(before: string, after: string) {
+function changedLines(before: string, after: string, checkoutText: string) {
   const old = before.split("\n");
   const next = after.split("\n");
   let start = 0;
@@ -100,8 +122,8 @@ function changedLines(before: string, after: string) {
     end++;
   return {
     line: start + 1,
-    reviewed: excerpt(old.slice(start, old.length - end).join("\n")),
-    checkout: excerpt(next.slice(start, next.length - end).join("\n")),
+    reviewed: excerpt(old.slice(start, old.length - end).join("\n"), before),
+    checkout: excerpt(next.slice(start, next.length - end).join("\n"), checkoutText),
   };
 }
 
@@ -126,29 +148,33 @@ async function review(
     return unavailable("reviewed_file_unavailable");
   }
 
-  let bytes: Buffer;
-  let after: string;
+  let checkout: string;
+  let convert = false;
   try {
-    bytes = await checkoutFile(root, source.path);
-    after = text(bytes);
+    checkout = text(await checkoutFile(root, source.path));
+    if (checkout.includes("\r\n")) convert = await convertsLineEndings(root, source.path);
   } catch {
     return unavailable("checkout_file_unavailable");
   }
+  const after = comparableCheckout(before, checkout, convert);
   if (before === after) return { status: "unchanged" } as const;
 
   // Before staging a correction, anchor the reviewed checkout to immutable bytes.
   let checkoutRevision: string | null = null;
   try {
     const head = (await git(root, "rev-parse", "--verify", "HEAD")).toString().trim();
-    if (
-      /^([0-9a-f]{40}|[0-9a-f]{64})$/.test(head) &&
-      (await committedFile(root, head, source.path)).equals(bytes)
-    )
-      checkoutRevision = head;
+    if (/^([0-9a-f]{40}|[0-9a-f]{64})$/.test(head)) {
+      const committed = text(await committedFile(root, head, source.path));
+      if (committed === comparableCheckout(committed, checkout, convert)) checkoutRevision = head;
+    }
   } catch {
     // The working tree still provides evidence for inspection.
   }
-  return { status: "changed", change: changedLines(before, after), checkoutRevision } as const;
+  return {
+    status: "changed",
+    change: changedLines(before, after, checkout),
+    checkoutRevision,
+  } as const;
 }
 
 export const evidenceCommand = (id: string, opts: { json?: boolean; propose?: string }) =>
