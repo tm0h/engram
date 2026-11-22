@@ -55,7 +55,7 @@ const OpenCodeCaptureSource = Schema.Struct({
   event: Schema.Literal("command.execute.before"),
   evidence: Schema.Array(Schema.Struct({ ...CaptureEvidence.fields, partId: CaptureMessageId })),
 });
-const CaptureSource = Schema.Union([PiCaptureSource, OpenCodeCaptureSource]);
+export const CaptureSource = Schema.Union([PiCaptureSource, OpenCodeCaptureSource]);
 export type CaptureSource = typeof CaptureSource.Type;
 
 const CandidateInput = Schema.Struct({

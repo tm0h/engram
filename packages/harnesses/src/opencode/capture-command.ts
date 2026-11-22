@@ -46,7 +46,10 @@ function plainText(parts: Part[], sessionID: string, messageID: string) {
 
 const digest = (text: string) => createHash("sha256").update(text).digest("hex");
 
-export function createCaptureCommand({ client, directory, project }: PluginInput) {
+export function createCaptureCommand(
+  { client, directory, project }: PluginInput,
+  onWriteSuccess?: () => void,
+) {
   const sessions = new Map<string, Map<string, Observed>>();
   const active = new Set<string>();
   let registered = false;
@@ -55,7 +58,7 @@ export function createCaptureCommand({ client, directory, project }: PluginInput
     value.command ??= {};
     if (Object.hasOwn(value.command, NAME)) return;
     value.command[NAME] = {
-      description: "Stage Engram memory suggestions for review",
+      description: "Capture Engram memory suggestions for project review or opt-in recording",
       template: TEMPLATE,
     };
     registered = true;
@@ -122,6 +125,7 @@ export function createCaptureCommand({ client, directory, project }: PluginInput
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let count = 0;
+    let recorded = 0;
     const capture = async () => {
       if (!client?.session || !project?.id || !directory || !isAbsolute(directory)) {
         return "unavailable";
@@ -187,22 +191,31 @@ export function createCaptureCommand({ client, directory, project }: PluginInput
         const ids = evidence.map(({ messageId }) => messageId);
         if (ids.some((id) => observed.get(id)?.handled !== false)) continue;
         const result = await Effect.runPromise(
-          stageCapture({ messages, selectedEvidence: ids }, directory, {
-            harness: "opencode",
-            sessionKind: "root",
-            sessionId: sessionID,
-            event: "command.execute.before",
-            partIds,
-          }).pipe(Effect.provide(MainLiveAt(directory))),
+          stageCapture(
+            { messages, selectedEvidence: ids },
+            directory,
+            {
+              harness: "opencode",
+              sessionKind: "root",
+              sessionId: sessionID,
+              event: "command.execute.before",
+              partIds,
+            },
+            signal,
+          ).pipe(Effect.provide(MainLiveAt(directory))),
           { signal },
         );
-        if (result.status === "pending" || result.reason === "duplicate") {
+        if (result.status !== "rejected" || result.reason === "duplicate") {
           for (const id of ids) {
             const source = observed.get(id);
             if (source) source.handled = true;
           }
         }
         if (result.status === "pending") count++;
+        if (result.status === "recorded") {
+          recorded++;
+          onWriteSuccess?.();
+        }
       }
       return "complete";
     };
@@ -216,6 +229,11 @@ export function createCaptureCommand({ client, directory, project }: PluginInput
         }, CAPTURE_MS);
       });
       const result = await Promise.race([capture(), deadline]);
+      if (recorded > 0) {
+        notify(
+          `Engram automatically recorded ${recorded} ${recorded === 1 ? "memory" : "memories"}.`,
+        );
+      }
       if (count) {
         notify(
           `Engram staged ${count} ${count === 1 ? "candidate" : "candidates"} for review. Run engram pending list --scope all.`,
@@ -223,7 +241,7 @@ export function createCaptureCommand({ client, directory, project }: PluginInput
       }
       if (result === "unavailable") {
         notify("Engram capture could not complete for this session.", "warning");
-      } else if (!count) {
+      } else if (!count && !recorded) {
         notify("Engram found no new eligible candidates.");
       }
     } catch {

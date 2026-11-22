@@ -480,5 +480,7 @@ it("documents human pending-memory review across the README and shipped skills",
       expect(guidance, file).toContain(`engram pending ${command}`);
     }
     expect(guidance, file).toContain("engram pending approve <id> --dry-run");
+    expect(guidance, file).toContain("engram capture status");
+    expect(guidance, file).toContain("engram capture disable");
   }
 });

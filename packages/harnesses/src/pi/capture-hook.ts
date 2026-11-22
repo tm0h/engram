@@ -14,7 +14,7 @@ type CaptureMessage = {
   text: string;
 };
 
-export function registerCapture(pi: ExtensionAPI): void {
+export function registerCapture(pi: ExtensionAPI, onWriteSuccess?: () => void): void {
   let active:
     | {
         sessionId: string;
@@ -113,6 +113,7 @@ export function registerCapture(pi: ExtensionAPI): void {
     const captureSignal = signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let staged = 0;
+    let recorded = 0;
     const stage = async () => {
       for (const { evidence } of proposals) {
         if (captureSignal.aborted) break;
@@ -121,10 +122,15 @@ export function registerCapture(pi: ExtensionAPI): void {
             { messages, selectedEvidence: evidence.map(({ messageId }) => messageId) },
             cwd,
             { harness: "pi", sessionKind: "tui", sessionId, event },
+            captureSignal,
           ).pipe(Effect.provide(MainLiveAt(cwd))),
           { signal: captureSignal },
         );
         if (result.status === "pending") staged++;
+        if (result.status === "recorded") {
+          recorded++;
+          onWriteSuccess?.();
+        }
       }
     };
     try {
@@ -142,6 +148,12 @@ export function registerCapture(pi: ExtensionAPI): void {
       // cancel compaction or prevent teardown.
     } finally {
       clearTimeout(timer);
+    }
+    if (recorded > 0 && ctx.hasUI) {
+      ctx.ui.notify(
+        `Engram automatically recorded ${recorded} ${recorded === 1 ? "memory" : "memories"}.`,
+        "info",
+      );
     }
     if (staged > 0 && ctx.hasUI) {
       ctx.ui.notify(

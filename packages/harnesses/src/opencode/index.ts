@@ -20,8 +20,8 @@ import {
 } from "./tools.js";
 
 const engramPlugin: Plugin = async (input) => {
-  const capture = createCaptureCommand(input);
   const autoContext = createContextTransform(resolveActiveRequest(input.client));
+  const capture = createCaptureCommand(input, autoContext.invalidate);
 
   const writeToolWithRefresh = <
     Args,

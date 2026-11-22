@@ -13,7 +13,7 @@ import { registerEngramTools } from "./tools.js";
 
 export default function engramExtension(pi: ExtensionAPI): void {
   const autoContext = registerAutoContext(pi);
-  registerCapture(pi);
+  registerCapture(pi, autoContext.invalidate);
   registerEngramTools(pi, { onWriteSuccess: autoContext.invalidate });
   registerEngramCommand(pi, { onWriteSuccess: autoContext.invalidate });
 }

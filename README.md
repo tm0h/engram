@@ -187,8 +187,8 @@ memory for the current request from the active workspace. When recall finds
 no strong match, the curated digest is available as a fallback. Successful
 adds and edits refresh cached context across sessions.
 
-Run `/engram-capture` to stage eligible statements from the active OpenCode
-session, then review them with `engram pending list --scope all`.
+Run `/engram-capture` to capture eligible statements from the active OpenCode
+session. By default, review suggestions with `engram pending list --scope all`.
 
 ```json
 {
@@ -401,6 +401,21 @@ condition before retrying.
 | `engram config [get\|set] [key] [value]`                  | Manage tracking, defaults, automatic context, and project or personal secret-scan policies.            |
 | `engram inject`                                           | Print generic agent instructions for a system prompt or project rule.                                  |
 | `engram where`                                            | Show resolved storage paths and the current default scope.                                             |
+
+### Project automatic recording
+
+Pi lifecycle capture and OpenCode's `/engram-capture` stage candidates for
+review by default. A local project owner can opt in to automatic recording
+after reviewing a representative sample from the checkout. Personal capture
+always stays in the review queue.
+
+- `engram capture status` shows the mode, required evidence, and local audit.
+- `engram capture evidence < report.json` evaluates the reviewed sample.
+- `engram capture enable --confirm-owner` opts the project in after it qualifies.
+- `engram capture disable` immediately revokes the opt-in.
+
+See the [capture graduation policy](corpus/capture/graduation.md) for the
+report format, minimum samples, and automatic suspension rules.
 
 ### Budgeted context
 

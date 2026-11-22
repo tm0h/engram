@@ -135,7 +135,12 @@ export interface EngramStoreShape {
   ) => Effect.Effect<void, StoreError | ValidationError>;
   readonly approvePending: (
     candidate: PendingCandidate,
-    options: WriteOptions & { readonly expectedMarkdown?: string },
+    options: WriteOptions & {
+      readonly expectedMarkdown?: string;
+      readonly automatic?: (
+        canonicalId: string,
+      ) => Effect.Effect<void, PlatformError | ValidationError>;
+    },
   ) => Effect.Effect<
     PendingApproval,
     StoreError | SecretScanBlockedError | WriteAdvisoryError | ValidationError
@@ -932,11 +937,26 @@ const makeEngramStoreLive = (
 
             yield* scanGate(candidate, candidate.path, { policy: "block", allowSecrets: false });
             yield* validateCandidate(candidate, candidate.path);
-            yield* admitWrite(candidate, scanned.entries, options);
-            if (options.expectedMarkdown === undefined) {
-              return { id, status: "ready", markdown } as const;
+            if (
+              options.automatic &&
+              (scope !== "project" ||
+                scanned.diagnostics.some(
+                  ({ severity, code }) =>
+                    severity === "error" || code === "schema_version_unsupported",
+                ))
+            ) {
+              return yield* Effect.fail(
+                new IntegrityCheckFailedError({
+                  message: "Project store failed capture validation.",
+                }),
+              );
             }
-            if (options.expectedMarkdown !== markdown) {
+            yield* admitWrite(candidate, scanned.entries, options.automatic ? {} : options);
+            if (options.automatic) {
+              yield* options.automatic(id);
+            } else if (options.expectedMarkdown === undefined) {
+              return { id, status: "ready", markdown } as const;
+            } else if (options.expectedMarkdown !== markdown) {
               return yield* Effect.fail(
                 new ValidationError({
                   message: "The proposed Markdown changed. Preview it again before approving.",
@@ -951,7 +971,8 @@ const makeEngramStoreLive = (
             return { id, status: "published", markdown } as const;
           });
 
-          if (options.expectedMarkdown === undefined) return yield* validateAndPublish;
+          if (!options.automatic && options.expectedMarkdown === undefined)
+            return yield* validateAndPublish;
           yield* fs.makeDirectory(dir, { recursive: true });
           return yield* withWriteLock(dir, validateAndPublish);
         });
