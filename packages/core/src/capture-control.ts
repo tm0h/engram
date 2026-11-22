@@ -3,6 +3,7 @@ import { Effect, Option, Result, Schema } from "effect";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
 import { writeAtomicFile } from "./atomic-file.js";
+import { withCaptureLock } from "./capture-lock.js";
 import { ConfigRepo } from "./config.js";
 import {
   AuditId,
@@ -18,7 +19,7 @@ import {
 } from "./capture-policy.js";
 import { ValidationError } from "./errors.js";
 import { projectConfigPath, projectDir, projectEngramsDir } from "./paths.js";
-import { type CaptureSource, type PendingCandidate, withQueueLock } from "./pending-store.js";
+import { type CaptureSource, type PendingCandidate } from "./pending-store.js";
 import { scanContent } from "./secrets.js";
 import { EngramStore } from "./store.js";
 
@@ -170,8 +171,9 @@ const withControls = <A, E, R>(use: (controls: Controls) => Effect.Effect<A, E, 
     const fs = yield* FileSystem;
     const path = yield* Path;
     const { actualRoot, project, directory, actor } = yield* openControls();
-    return yield* withQueueLock(
-      path.join(directory, ".lock"),
+    return yield* withCaptureLock(
+      directory,
+      actor,
       Effect.gen(function* () {
         const file = path.join(directory, basename);
         // Git ignores this directory even when project memories are tracked.
@@ -227,25 +229,30 @@ const withControls = <A, E, R>(use: (controls: Controls) => Effect.Effect<A, E, 
         });
         return yield* use({ root: actualRoot, get: () => state, persist, event });
       }),
-      "Project capture controls are busy.",
     );
   });
 
-const append = (state: State, row: Audit): State => ({
-  ...state,
-  audit: [...state.audit, row].slice(-maxAudit),
-});
+const inSampleWindow = (row: Audit, now: number) =>
+  row.sample &&
+  (row.result === "pending" || row.result === "recorded" || row.result === "reconciled") &&
+  row.policy === policyId &&
+  row.at >= now - capturePolicy.windowDays * day &&
+  row.at <= now;
+
+const append = (state: State, row: Audit): State => {
+  const audit = [...state.audit, row];
+  if (audit.length <= maxAudit) return { ...state, audit };
+
+  const protectedSamples = new Set(
+    audit.filter((entry) => inSampleWindow(entry, Date.now())).slice(-capturePolicy.maxPopulation),
+  );
+  const evicted = audit.findIndex((entry) => !protectedSamples.has(entry));
+  return { ...state, audit: audit.filter((_, index) => index !== evicted) };
+};
 
 const population = (audit: readonly Audit[], now: number): Sample[] =>
   audit
-    .filter(
-      (row) =>
-        row.sample &&
-        (row.result === "pending" || row.result === "recorded" || row.result === "reconciled") &&
-        row.policy === policyId &&
-        row.at >= now - capturePolicy.windowDays * day &&
-        row.at <= now,
-    )
+    .filter((row) => inSampleWindow(row, now))
     .slice(-capturePolicy.maxPopulation)
     .flatMap(({ id, at, sample }) => (sample ? [{ id, at, ...sample }] : []));
 

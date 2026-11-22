@@ -12,6 +12,7 @@ const sources = [
     "capture-admission",
     "capture-control",
     "capture-corpus",
+    "capture-lock",
     "capture-policy",
     "capture-rules",
     "capture-score",

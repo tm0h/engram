@@ -84,11 +84,18 @@ control keeps the candidate pending. Ineligible or unsafe source input is
 discarded by the shared admission rules.
 
 The owner-only `.engram/capture/state.json` is ignored by Git. It retains
-up to 512 decision records plus the current evidence report. An authorized
+up to 512 decision records plus the current evidence report. The latest 240
+in-window review samples have priority over duplicate and control events
+when the audit fills. An authorized
 write records its intended canonical ID before the store publishes it.
 After an interruption, reconciliation compares that ID and source reference
 against the store and records an observed publication or interrupted attempt.
-An unresolved intent prevents a new authorized write.
+An unresolved intent prevents a new authorized write. Capture controls reclaim
+a lock when they can verify that the owning process has exited in the same
+local process namespace. For an unidentifiable holder or a legacy lock, stop
+all Engram processes using the checkout before removing the abandoned
+`.engram/capture/.holder` directory or legacy `.engram/capture/.lock`
+directory. The regular `.lock` protocol marker stays in place.
 Audits include the local UID, time, policy and evidence digests, redacted
 provenance references, outcome, and reason. Pending proposals remain the
 place to examine source excerpts. When audit storage is unavailable, the

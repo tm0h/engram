@@ -1,18 +1,22 @@
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { execFile, spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { createRequire } from "node:module";
+import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 
 const [root, mode, subject] = process.argv.slice(2);
 const bin = process.env.ENGRAM_E2E_BIN!;
@@ -87,7 +91,29 @@ async function opencode(sessionID: string, statements: string[]) {
   );
 }
 
-if (mode === "collect") {
+if (mode === "lock-owner") {
+  // Simulate a process that reached the published holder directory and then
+  // died before cleanup. Keep it alive until the parent tests live exclusion.
+  const identity =
+    process.platform === "linux"
+      ? hostname() +
+        readFileSync("/proc/sys/kernel/random/boot_id", "utf8") +
+        readlinkSync("/proc/self/ns/pid")
+      : hostname();
+  const namespace = createHash("sha256").update(identity).digest("hex");
+  writeFileSync(
+    join(root, ".engram/capture/.holder", `${process.pid}-${namespace}-${randomUUID()}`),
+    "",
+    { mode: 0o600, flag: "wx" },
+  );
+  console.log("holder ready");
+  const heartbeat = setInterval(() => {}, 1000);
+  try {
+    await new Promise(() => {});
+  } finally {
+    clearInterval(heartbeat);
+  }
+} else if (mode === "collect") {
   for (let index = 0; index < 10; index++) {
     for (const [name, fire] of [
       ["pi", pi],
@@ -216,6 +242,23 @@ if (mode === "collect") {
   assert.ok(readdirSync(canonical)[0].startsWith(entry.canonicalId));
   assert.doesNotMatch(readFileSync(statePath, "utf8"), /partitions stripes by luminance/);
 
+  // Fill the audit to its real limit with representative non-sample rows,
+  // then append a duplicate through the shipped adapter.
+  const retained = state.samples.map(({ id }: { id: string }) => id);
+  const duplicate = state.audit.find((row: { reason: string }) => row.reason === "exact_duplicate");
+  const atLimit = JSON.parse(readFileSync(statePath, "utf8"));
+  while (atLimit.audit.length < 512) atLimit.audit.push({ ...duplicate, id: randomUUID() });
+  writeFileSync(statePath, JSON.stringify(atLimit));
+  assert.match(await collect("opencode", statement), /no new eligible candidates/);
+  state = status();
+  assert.equal(state.status, "active");
+  assert.equal(state.audit.length, 512);
+  assert.equal(state.audit.at(-1).reason, "exact_duplicate");
+  assert.deepEqual(
+    state.samples.map(({ id }: { id: string }) => id),
+    retained,
+  );
+
   assert.match(
     await collect("opencode", "the amber scanner signs manifests with a detached certificate."),
     /automatically recorded 1 memory/,
@@ -229,9 +272,37 @@ if (mode === "collect") {
   const interrupted = JSON.parse(activeSnapshot);
   Object.assign(interrupted.audit.at(-1), { result: "authorized", reason: "write_authorized" });
   writeFileSync(statePath, JSON.stringify(interrupted));
-  assert.equal(status().audit.at(-1).result, "reconciled");
-  assert.equal(status().audit.at(-1).reason, "publication_observed");
+  const holder = spawn(process.execPath, [here, root, "lock-owner"], {
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  const exited = once(holder, "exit");
+  try {
+    const ready = await Promise.race([once(holder.stdout, "data"), exited]);
+    assert.equal(String(ready[0]).trim(), "holder ready");
+    assert.match(run(["capture", "disable"], 1), /controls are busy/);
+    assert.equal(readFileSync(statePath, "utf8"), JSON.stringify(interrupted));
+  } finally {
+    holder.kill("SIGKILL");
+    await exited;
+  }
+  const asyncCli = promisify(execFile);
+  const [inspect, disable] = await Promise.all([
+    asyncCli(bin, ["capture", "status"], { cwd: root }),
+    asyncCli(bin, ["capture", "disable"], { cwd: root }),
+  ]);
+  assert.ok(
+    JSON.parse(inspect.stdout).audit.some(
+      (row: { reason: string }) => row.reason === "publication_observed",
+    ),
+  );
+  assert.equal(JSON.parse(disable.stdout).status, "review-only");
+  assert.equal(status().status, "eligible");
+  assert.ok(status().audit.some((row: { result: string }) => row.result === "reconciled"));
+  assert.deepEqual(readdirSync(join(root, ".engram/capture/.holder")), []);
+  console.log("A killed lock holder is reclaimed and its interrupted write is reconciled.");
   assert.equal(readdirSync(canonical).length, 2);
+  assert.equal(pending().length, 60);
+  run(enable);
 
   chmodSync(statePath, 0o644);
   assert.match(

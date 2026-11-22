@@ -263,7 +263,7 @@ export const parsePendingPatch = (json: string) =>
     ),
   );
 
-export const withQueueLock = <A, E, R>(
+const withQueueLock = <A, E, R>(
   lock: string,
   operation: Effect.Effect<A, E, R>,
   busyMessage: string,
