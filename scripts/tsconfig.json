@@ -5,6 +5,7 @@
     "moduleResolution": "NodeNext",
     "strict": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "types": ["node"],
     "skipLibCheck": true
   },
@@ -15,6 +16,7 @@
     "e2e-pi-capture.ts",
     "e2e-opencode-capture.ts",
     "e2e-capture-graduation.ts",
-    "capture-fingerprint.ts"
+    "capture-fingerprint.ts",
+    "memory-application/*.ts"
   ]
 }
