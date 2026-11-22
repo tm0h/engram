@@ -25,6 +25,7 @@ import * as Edit from "./commands/edit.js";
 import * as Remove from "./commands/remove.js";
 import * as Context from "./commands/context.js";
 import * as Review from "./commands/review.js";
+import { evidenceCommand } from "./commands/evidence.js";
 import { pendingCommand } from "./commands/pending.js";
 import * as Config from "./commands/configCmd.js";
 import * as Inject from "./commands/inject.js";
@@ -439,6 +440,15 @@ program
         json: Boolean(opts.json),
       }),
     ),
+  );
+
+program
+  .command("evidence <id>")
+  .description("Review a project memory against changed repository-file evidence.")
+  .option("--json", "Emit one versioned JSON report.")
+  .option("--propose <body>", "Stage a replacement claim for explicit pending review.")
+  .action((id: string, opts: { json?: boolean; propose?: string }) =>
+    run(evidenceCommand(id, opts)),
   );
 
 const capture = program.command("capture").description("Manage project automatic recording.");

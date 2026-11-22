@@ -28,8 +28,9 @@ import { Path } from "effect/Path";
 import { PlatformError } from "effect/PlatformError";
 import { writeAtomicFile } from "./atomic-file.js";
 import type { PendingCandidate } from "./pending-store.js";
+import { correctionBaseline, parseRepositoryReference } from "./repository-reference.js";
 import type { Engram, EngramInput, EngramPatch, Scope, Frontmatter } from "./domain.js";
-import { SUPPORTED_ENTRY_SCHEMA_VERSION } from "./domain.js";
+import { effectiveStatus, SUPPORTED_ENTRY_SCHEMA_VERSION } from "./domain.js";
 import {
   AmbiguousIdError,
   DuplicateIdError,
@@ -143,7 +144,13 @@ export interface EngramStoreShape {
     },
   ) => Effect.Effect<
     PendingApproval,
-    StoreError | SecretScanBlockedError | WriteAdvisoryError | ValidationError
+    | StoreError
+    | SecretScanBlockedError
+    | WriteAdvisoryError
+    | ValidationError
+    | EngramNotFoundError
+    | AmbiguousIdError
+    | DuplicateIdError
   >;
   readonly update: (
     scope: Scope,
@@ -880,11 +887,30 @@ const makeEngramStoreLive = (
           return { dir, slug, buildCandidate, candidate: buildCandidate(probeId, probeFile) };
         });
 
-      const hasPendingPublication = (scanned: StoreScan, candidateId: string, id: string) => {
+      const markPredecessor = (scope: Scope, predecessor: string, successorPath: string) =>
+        Effect.gen(function* () {
+          const marked = yield* Effect.result(
+            writeUpdate(scope, predecessor, { status: "superseded" }, INTERNAL_MARK_SCAN),
+          );
+          if (Result.isFailure(marked)) {
+            const cleanup = yield* rollbackStep(
+              successorPath,
+              `the new entry file "${successorPath}"`,
+              marked.failure,
+              fs.remove(successorPath, { force: true }),
+            );
+            return yield* Effect.fail(cleanup ?? marked.failure);
+          }
+        });
+
+      const hasPendingPublication = (scanned: StoreScan, pending: PendingCandidate, id: string) => {
+        const correction = pending.correction;
         const existing = scanned.entries.find((entry) => entry.id === id);
         if (
           scanned.duplicateIds.some((claim) => claim.id === id) ||
-          (existing !== undefined && existing.sourceRef !== candidateId)
+          (existing !== undefined &&
+            (existing.sourceRef !== (correction?.sourceRef ?? pending.id) ||
+              (correction !== undefined && existing.supersedes !== correction.originalId)))
         ) {
           return Effect.fail(
             new ValidationError({
@@ -893,14 +919,14 @@ const makeEngramStoreLive = (
             }),
           );
         }
-        return Effect.succeed(existing !== undefined);
+        return Effect.succeed(existing);
       };
 
       const assertPendingEditable: EngramStoreShape["assertPendingEditable"] = (candidate) =>
         Effect.gen(function* () {
           const id = pendingApprovalId(candidate.id, Date.parse(candidate.created));
           const scanned = yield* scanStore(candidate.scope);
-          if (yield* hasPendingPublication(scanned, candidate.id, id)) {
+          if (yield* hasPendingPublication(scanned, candidate, id)) {
             return yield* Effect.fail(
               new ValidationError({
                 message: `This candidate was already published. Retry approval to finish queue cleanup. Use engram edit on canonical memory ${id} to revise it.`,
@@ -911,17 +937,35 @@ const makeEngramStoreLive = (
 
       const approvePending: EngramStoreShape["approvePending"] = (pending, options) =>
         Effect.gen(function* () {
-          const { scope, created, provenanceClass } = pending;
+          const { scope, created, provenanceClass, correction } = pending;
+          if (
+            correction &&
+            (options.automatic || scope !== "project" || provenanceClass !== "file")
+          ) {
+            return yield* Effect.fail(
+              new ValidationError({
+                message: "Repository corrections require explicit project review.",
+              }),
+            );
+          }
           const id = pendingApprovalId(pending.id, Date.parse(created));
+          const predecessor = correction ? yield* get(scope, correction.originalId) : undefined;
           const { candidate, dir } = yield* prepareAdd(
             scope,
             {
               ...pending.proposed,
-              pinned: false,
+              pinned: predecessor?.pinned ?? false,
               author: undefined,
-              aliases: [],
+              aliases: predecessor?.aliases ?? [],
+              related: predecessor?.related,
+              triggers: predecessor?.triggers,
+              appliesTo: predecessor?.appliesTo,
+              importance: predecessor?.importance,
+              reviewAfter: predecessor?.reviewAfter,
+              expires: predecessor?.expires,
               sourceType: provenanceClass,
-              sourceRef: pending.id,
+              sourceRef: correction?.sourceRef ?? pending.id,
+              supersedes: correction?.originalId,
             },
             created,
             id,
@@ -931,7 +975,40 @@ const makeEngramStoreLive = (
             const scanned = yield* scanStore(scope);
             // A prior write may have succeeded before queue cleanup. The ID
             // and source reference survive ordinary edits and retitles.
-            if (yield* hasPendingPublication(scanned, pending.id, id)) {
+            const original =
+              correction && scanned.entries.find((entry) => entry.id === correction.originalId);
+            const existing = yield* hasPendingPublication(scanned, pending, id);
+            if (existing) {
+              if (original?.status !== "superseded" && correction) {
+                if (options.expectedMarkdown === undefined) {
+                  return { id, status: "ready", markdown } as const;
+                }
+                if (
+                  !original ||
+                  correctionBaseline(original) !== correction.originalDigest ||
+                  options.expectedMarkdown !== markdown ||
+                  serialize(existing) !== markdown
+                ) {
+                  return yield* Effect.fail(
+                    new ValidationError({
+                      message:
+                        "The original changed during publication. Inspect both memories before retrying.",
+                    }),
+                  );
+                }
+                yield* validateSupersedesEstablish(
+                  scope,
+                  id,
+                  correction.originalId,
+                  candidate.path,
+                );
+                yield* writeUpdate(
+                  scope,
+                  correction.originalId,
+                  { status: "superseded" },
+                  INTERNAL_MARK_SCAN,
+                );
+              }
               return { id, status: "already_published", markdown } as const;
             }
 
@@ -951,7 +1028,37 @@ const makeEngramStoreLive = (
                 }),
               );
             }
-            yield* admitWrite(candidate, scanned.entries, options.automatic ? {} : options);
+            if (correction) {
+              const originalRef =
+                original?.sourceType === "file"
+                  ? parseRepositoryReference(original.sourceRef ?? "")
+                  : undefined;
+              const nextRef = parseRepositoryReference(correction.sourceRef);
+              if (
+                !original ||
+                effectiveStatus(original, Date.now()) !== "active" ||
+                correctionBaseline(original) !== correction.originalDigest ||
+                !originalRef ||
+                !nextRef ||
+                originalRef.path !== nextRef.path ||
+                originalRef.revision === nextRef.revision
+              ) {
+                return yield* Effect.fail(
+                  new ValidationError({
+                    message:
+                      "The original changed after staging. Review it and stage a new correction.",
+                  }),
+                );
+              }
+              yield* validateSupersedesEstablish(scope, id, correction.originalId, candidate.path);
+            }
+            yield* admitWrite(
+              candidate,
+              scanned.entries,
+              options.automatic ? {} : options,
+              undefined,
+              correction?.originalId,
+            );
             if (options.automatic) {
               yield* options.automatic(id);
             } else if (options.expectedMarkdown === undefined) {
@@ -968,6 +1075,7 @@ const makeEngramStoreLive = (
               Effect.provideService(FileSystem, fs),
               Effect.provideService(Path, path),
             );
+            if (correction) yield* markPredecessor(scope, correction.originalId, candidate.path);
             return { id, status: "published", markdown } as const;
           });
 
@@ -1065,18 +1173,7 @@ const makeEngramStoreLive = (
                * both failures (review fix). A hard crash between the two writes
                * can still leave the new entry without the marking; the scope lock
                * serializes other local add and edit operations. */
-              const marked = yield* Effect.result(
-                writeUpdate(scope, input.supersedes, { status: "superseded" }, INTERNAL_MARK_SCAN),
-              );
-              if (Result.isFailure(marked)) {
-                const cleanup = yield* rollbackStep(
-                  added.path,
-                  `the new entry file "${added.path}"`,
-                  marked.failure,
-                  fs.remove(added.path, { force: true }),
-                );
-                return yield* Effect.fail(cleanup ?? marked.failure);
-              }
+              yield* markPredecessor(scope, input.supersedes, added.path);
               return added;
             }),
           );

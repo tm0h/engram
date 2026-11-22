@@ -32,3 +32,5 @@ export { pathApplies } from "./retrieval-metadata.js";
 export * from "./contextual-evidence.js";
 
 export { captureControl } from "./capture-control.js";
+
+export * from "./repository-reference.js";

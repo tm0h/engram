@@ -9,6 +9,7 @@ import { ProjectNotInitializedError, SecretScanBlockedError, ValidationError } f
 import { findProjectRoot } from "./location.js";
 import { globalRoot, projectDir } from "./paths.js";
 import { scanContent } from "./secrets.js";
+import { parseRepositoryReference } from "./repository-reference.js";
 import { isValidId, nowISO, parseTimestamp } from "./util.js";
 
 const schemaVersion = 1;
@@ -64,6 +65,15 @@ const CandidateInput = Schema.Struct({
   sourceExcerpt: nonBlank,
   provenanceClass: SourceTypeSchema,
   captureSource: Schema.optionalKey(CaptureSource),
+  correction: Schema.optionalKey(
+    Schema.Struct({
+      originalId: reference.id,
+      originalDigest: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
+      sourceRef: Schema.String.check(
+        Schema.makeFilter((ref) => parseRepositoryReference(ref) !== undefined),
+      ),
+    }),
+  ),
   duplicates: Schema.Array(
     Schema.Struct({ ...reference, kind: Schema.Literals(["exact_duplicate", "likely_duplicate"]) }),
   ),
@@ -112,11 +122,22 @@ const checkQueueDirectory = Effect.fnUntraced(function* (directory: string) {
   }
 });
 
-const checkQueueContent = (input: PendingCandidateInput) => {
+const checkQueueContent = (
+  input: PendingCandidateInput,
+): Effect.Effect<void, ValidationError | SecretScanBlockedError> => {
   const { proposed, sourceExcerpt } = input;
-  const findings = [sourceExcerpt, proposed.title, proposed.body, ...proposed.tags].flatMap(
-    scanContent,
-  );
+  if (
+    input.correction &&
+    (input.scope !== "project" || input.provenanceClass !== "file" || input.captureSource)
+  )
+    return Effect.fail(invalidCandidate());
+  const findings = [
+    sourceExcerpt,
+    proposed.title,
+    proposed.body,
+    ...proposed.tags,
+    input.correction?.sourceRef ?? "",
+  ].flatMap(scanContent);
   return findings.length === 0
     ? Effect.void
     : Effect.fail(
