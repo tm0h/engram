@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
-import { readFileSync, readlinkSync } from "node:fs";
-import { lstat, mkdtemp, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
-import { join } from "node:path";
-import { Effect, Schedule } from "effect";
+import { Effect, Option, Result, Schedule } from "effect";
+import { FileSystem, type File } from "effect/FileSystem";
+import { Path } from "effect/Path";
+import type { PlatformError } from "effect/PlatformError";
 import { ValidationError } from "./errors.js";
 
 const busy = new ValidationError({ message: "Project capture controls are busy." });
@@ -14,22 +14,24 @@ const legacy = new ValidationError({
 });
 
 let namespace: string | undefined;
-function processNamespace() {
+const processNamespace = Effect.fnUntraced(function* () {
   if (namespace) return namespace;
   let identity = hostname();
   if (process.platform === "linux") {
-    try {
-      identity +=
-        readFileSync("/proc/sys/kernel/random/boot_id", "utf8") + readlinkSync("/proc/self/ns/pid");
-    } catch {
-      // If the PID namespace cannot be identified, another process cannot
-      // safely prove that this owner is gone.
-      identity = randomUUID();
-    }
+    const fs = yield* FileSystem;
+    const derived = yield* Effect.result(
+      Effect.all([
+        fs.readFileString("/proc/sys/kernel/random/boot_id"),
+        fs.readLink("/proc/self/ns/pid"),
+      ]),
+    );
+    // If the PID namespace cannot be identified, another process cannot
+    // safely prove that this owner is gone.
+    identity = Result.isSuccess(derived) ? identity + derived.success.join("") : randomUUID();
   }
-  namespace = createHash("sha256").update(identity).digest("hex");
+  namespace ??= createHash("sha256").update(identity).digest("hex");
   return namespace;
-}
+});
 
 const errorCode = (error: unknown) => (error as NodeJS.ErrnoException | null)?.code;
 
@@ -47,11 +49,9 @@ function exited(value: string, local: string) {
   }
 }
 
-const io = <A>(run: () => Promise<A>) =>
-  Effect.tryPromise({
-    try: run,
-    catch: (error) => (error instanceof ValidationError ? error : unavailable),
-  });
+const alreadyExists = (error: PlatformError) => error.reason._tag === "AlreadyExists";
+const isContention = (error: PlatformError) =>
+  alreadyExists(error) || errorCode(error.reason.cause) === "ENOTEMPTY";
 
 export const withCaptureLock = <A, E, R>(
   directory: string,
@@ -59,57 +59,59 @@ export const withCaptureLock = <A, E, R>(
   operation: Effect.Effect<A, E, R>,
 ) =>
   Effect.gen(function* () {
-    const protocol = join(directory, ".lock");
-    const target = join(directory, ".holder");
-    const local = processNamespace();
+    const fs = yield* FileSystem;
+    const path = yield* Path;
+    const protocol = path.join(directory, ".lock");
+    const target = path.join(directory, ".holder");
+    const local = yield* processNamespace();
     const name = `${process.pid}-${local}-${randomUUID()}`;
+    const isPrivate = (stat: File.Info) =>
+      Option.getOrUndefined(stat.uid) === actor && (stat.mode & 0o077) === 0;
     const acquire = Effect.gen(function* () {
-      yield* io(async () => {
-        // Reserve the old mkdir lock path so older processes cannot acquire it
-        // alongside this protocol. An existing ownerless directory is ambiguous.
-        try {
-          await writeFile(protocol, "", { flag: "wx", mode: 0o600 });
-        } catch (error) {
-          if (errorCode(error) !== "EEXIST") throw error;
-        }
-        const marker = await lstat(protocol);
-        if (marker.isDirectory()) throw legacy;
-        if (
-          !marker.isFile() ||
-          marker.uid !== actor ||
-          marker.mode & 0o077 ||
-          marker.nlink !== 1 ||
-          marker.size !== 0
-        ) {
-          throw unavailable;
-        }
-      });
+      // Reserve the old mkdir lock path so older processes cannot acquire it
+      // alongside this protocol. An existing ownerless directory is ambiguous.
+      yield* fs
+        .writeFileString(protocol, "", { flag: "wx", mode: 0o600 })
+        .pipe(Effect.catchIf(alreadyExists, () => Effect.void));
+      const marker = yield* fs.stat(protocol);
+      if (marker.type === "Directory") return yield* Effect.fail(legacy);
+      if (
+        marker.type !== "File" ||
+        !isPrivate(marker) ||
+        Option.getOrUndefined(marker.nlink) !== 1 ||
+        Number(marker.size) !== 0 ||
+        (yield* fs.realPath(protocol)) !== protocol
+      ) {
+        return yield* Effect.fail(unavailable);
+      }
 
       yield* Effect.acquireUseRelease(
-        io(() => mkdtemp(join(directory, ".holder-tmp-"))),
+        fs.makeTempDirectory({ directory, prefix: ".holder-tmp-" }),
         (staging) =>
           Effect.gen(function* () {
-            yield* io(() => writeFile(join(staging, name), "", { flag: "wx", mode: 0o600 }));
-            yield* io(async () => {
-              try {
-                // POSIX rename replaces an absent or empty directory atomically.
-                // A live holder's unique marker makes its directory non-empty.
-                await rename(staging, target);
-                return;
-              } catch (error) {
-                if (errorCode(error) !== "ENOTEMPTY" && errorCode(error) !== "EEXIST") throw error;
+            yield* fs.writeFileString(path.join(staging, name), "", { flag: "wx", mode: 0o600 });
+            yield* Effect.gen(function* () {
+              // POSIX rename replaces an absent or empty directory atomically.
+              // A live holder's unique marker makes its directory non-empty.
+              const claim = yield* Effect.result(fs.rename(staging, target));
+              if (Result.isSuccess(claim)) return;
+              if (!isContention(claim.failure)) return yield* Effect.fail(claim.failure);
+              const holder = yield* fs.stat(target);
+              if (
+                holder.type !== "Directory" ||
+                !isPrivate(holder) ||
+                (yield* fs.realPath(target)) !== target
+              ) {
+                return yield* Effect.fail(unavailable);
               }
-              const holder = await lstat(target);
-              if (!holder.isDirectory() || holder.uid !== actor || holder.mode & 0o077)
-                throw unavailable;
-              const owners = await readdir(target);
+              const owners = yield* fs.readDirectory(target);
               const owner = owners[0];
               if (owners.length === 1 && exited(owner, local)) {
                 // Only remove this generation's marker. A delayed reclaimer
                 // can never remove a new owner's marker or its directory.
-                await rm(join(target, owner), { force: true });
+                yield* fs.remove(path.join(target, owner), { force: true });
               }
-              throw busy;
+              return yield* Effect.fail(busy);
             }).pipe(
               Effect.retry({
                 times: 80,
@@ -118,13 +120,13 @@ export const withCaptureLock = <A, E, R>(
               }),
             );
           }),
-        (staging) => io(() => rm(staging, { force: true, recursive: true })).pipe(Effect.ignore),
+        (staging) => fs.remove(staging, { force: true, recursive: true }).pipe(Effect.ignore),
       );
     });
 
     return yield* Effect.acquireUseRelease(
       acquire,
       () => operation,
-      () => io(() => rm(join(target, name), { force: true })).pipe(Effect.ignore),
+      () => fs.remove(path.join(target, name), { force: true }).pipe(Effect.ignore),
     );
   });
