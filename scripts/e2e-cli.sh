@@ -911,6 +911,38 @@ retrieval_audit startup
 step "Packaged Pi and OpenCode active-turn recall"
 retrieval_audit recall
 
+step "Packaged memory-application evaluation records three delivery conditions"
+application_report="$run_root/memory-application.json"
+application_runner="$audit_source/memory-application/evaluate.ts"
+application_output=$(node "$application_runner" --bin "$ENGRAM_E2E_BIN" \
+  --output "$application_report" --task release-contradicts --offline)
+printf '%s\n' "$application_output" | parse_json '
+  Object.keys(value).join(",") === "none,startup,recall" &&
+  Object.values(value).every(cell => cell.skipped === 1 && cell.observed === 0 && cell.unavailable === 0)'
+parse_json '
+  value.schemaVersion === 1 && value.rows.length === 3 &&
+  value.fixtureMemory["release-contradicts"][0] === "Quartz release command" &&
+  value.rows[0].memory === "" &&
+  value.rows[1].delivered.includes("Quartz release command") && value.rows[1].evidence.length === 0 &&
+  value.rows[2].evidence.includes("Quartz release command") &&
+  value.rows[2].memory.includes("Use pnpm release:quartz") &&
+  value.rows.every(row => row.status === "skipped" && !("session" in row))
+' < "$application_report"
+if node "$application_runner" --bin "$ENGRAM_E2E_BIN" \
+  --output "$run_root/invalid-application.json" --task missing-task --offline \
+  > "$run_root/invalid-application.out" 2> "$run_root/invalid-application.err"; then
+  fail "unknown evaluation task was accepted"
+else
+  [[ $? -eq 1 ]] || fail "unexpected invalid evaluation task exit status"
+fi
+grep -F "Unknown task" "$run_root/invalid-application.err" >/dev/null
+[[ ! -e "$run_root/invalid-application.json" && ! -s "$run_root/invalid-application.out" ]]
+
+step "Packaged memory-application evaluation preserves interrupted traces"
+node "$audit_source/memory-application/e2e-interrupted.ts" \
+  "$ENGRAM_E2E_BIN" "$run_root/interrupted-application.json" |
+  grep -Fx "Interrupted evaluations persisted all three partial traces without scoring them"
+
 step "Packaged Pi and OpenCode manual token budgets"
 retrieval_audit manual
 
