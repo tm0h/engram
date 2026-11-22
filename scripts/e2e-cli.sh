@@ -911,6 +911,10 @@ retrieval_audit startup
 step "Packaged Pi and OpenCode active-turn recall"
 retrieval_audit recall
 
+step "Packaged repository evidence corrections survive restart and require approval"
+node "$audit_source/e2e-repository-evidence.ts" "$run_root/repository-evidence" "$ENGRAM_E2E_BIN" |
+  grep -Fx "Repository evidence correction persisted through explicit approval"
+
 step "Packaged memory-application evaluation records three delivery conditions"
 application_report="$run_root/memory-application.json"
 application_runner="$audit_source/memory-application/evaluate.ts"

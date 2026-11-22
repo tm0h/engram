@@ -173,6 +173,10 @@ describe("guidance / skills stay aligned", () => {
       expect(skill, `${name}: inactive entry behavior`).toMatch(/inactive/i);
       expect(skill, `${name}: inactive CLI override`).toContain("--all");
       expect(skill, `${name}: review workflow`).toContain("engram review");
+      expect(skill, `${name}: source evidence`).toContain("engram evidence <id>");
+      expect(skill, `${name}: reviewed source reference`).toContain(
+        "git:<full-commit>:<repo-relative-path>",
+      );
       expect(skill, `${name}: integrity workflow`).toContain("engram check");
       expect(skill, `${name}: diagnostics workflow`).toContain("engram doctor");
       expect(skill, `${name}: local statistics controls`).toContain(

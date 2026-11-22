@@ -137,6 +137,13 @@ state. Use `engram stats` to summarize local usage without recording memory
 content or query text. Both support `--json`. Use
 `engram stats --disable --clear` to stop collection and remove the history.
 
+Use `engram evidence <id>` to compare a project memory with its reviewed
+repository file. A file-backed memory can record its reviewed source with
+`--source-type file --source-ref git:<full-commit>:<repo-relative-path>`.
+Changed source is a reason to inspect the claim. Use `engram evidence <id>
+--propose '<replacement>'` to stage a correction, then preview it with
+`engram pending approve <pending-id> --dry-run` for explicit review.
+
 Run `engram review --scope all` to find superseded, archived, expired,
 review-due, and broken-lineage entries. Add `--json` for structured output.
 The command is read-only.
