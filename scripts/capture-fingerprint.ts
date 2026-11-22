@@ -22,6 +22,7 @@ const sources = [
     "integrity",
     "location",
     "pending-store",
+    "repository-reference",
     "secrets",
     "store",
     "write-advisory",
