@@ -44,7 +44,7 @@ node scripts/memory-application/evaluate.ts \
   --output /tmp/engram-application-result.json
 ```
 
-The server uses a 4,096-token context and JSON grammar. The runner supplies a 160-token limit per turn, up to three turns, temperature 0, and seed 9. Use the same model configuration and corpus when comparing Engram revisions. The runner writes a new report and refuses to overwrite an existing report. Endpoint failures produce `unavailable` rows and a nonzero exit. The `--offline` option exercises the shipped delivery paths and writes explicitly `skipped` rows without a model. Use `--task <id>` for a single task.
+The server uses a 4,096-token context and JSON grammar. The runner supplies a 160-token limit per turn, up to three turns, temperature 0, and seed 9. Use the same model configuration and corpus when comparing Engram revisions. The runner writes a new report and refuses to overwrite an existing report. Endpoint failures produce unscored `unavailable` rows and a nonzero exit. If a session was interrupted, the row retains its earlier replies and repository reads. The `--offline` option exercises the shipped delivery paths and writes explicitly `skipped` rows without a model. Use `--task <id>` for a single task.
 
 ## Observed baseline
 

@@ -938,6 +938,11 @@ fi
 grep -F "Unknown task" "$run_root/invalid-application.err" >/dev/null
 [[ ! -e "$run_root/invalid-application.json" && ! -s "$run_root/invalid-application.out" ]]
 
+step "Packaged memory-application evaluation preserves interrupted traces"
+node "$audit_source/memory-application/e2e-interrupted.ts" \
+  "$ENGRAM_E2E_BIN" "$run_root/interrupted-application.json" |
+  grep -Fx "Interrupted evaluations persisted all three partial traces without scoring them"
+
 step "Packaged Pi and OpenCode manual token budgets"
 retrieval_audit manual
 

@@ -11,6 +11,12 @@ const conditions = ["none", "startup", "recall"] as const;
 type Condition = (typeof conditions)[number];
 type Message = { role: "system" | "user" | "assistant"; content: string };
 type Event = { response: string; observation?: Record<string, string> };
+type Session = {
+  trace: Event[];
+  inspected: string[];
+  decision?: Decision;
+  attemptedUnsupportedAction: boolean;
+};
 
 const system = [
   "You are a coding agent in a simulated repository. No real commands will be run.",
@@ -66,7 +72,7 @@ function score(
   condition: Condition,
   delivered: readonly string[],
   evidence: readonly string[],
-  observed: { inspected: string[]; decision?: Decision; attemptedUnsupportedAction: boolean },
+  observed: Session,
 ) {
   const { decision } = observed;
   const inspected = new Set(observed.inspected);
@@ -127,27 +133,30 @@ async function session(task: Task, cwd: string, memory: string, base: string, mo
       content: task.prompt + "\nRepository files: " + Object.keys(task.files).join(", "),
     },
   ];
-  const trace: Event[] = [];
-  const inspected = new Set<string>();
-  let decision: Decision | undefined;
-  let attemptedUnsupportedAction = false;
+  const observation: Session = { trace: [], inspected: [], attemptedUnsupportedAction: false };
   for (let turn = 0; turn < maxTurns; turn++) {
-    const output = await post<{ choices: { message: { content: string } }[]; model?: string }>(
-      base,
-      "/v1/chat/completions",
-      {
-        model,
-        messages,
-        temperature: 0,
-        seed,
-        max_tokens: maxTokens,
-        response_format: { type: "json_object" },
-      },
-    );
-    const response = output.choices[0]?.message.content;
-    if (typeof response !== "string") throw new Error("Missing model response");
+    let response: string;
+    try {
+      const output = await post<{ choices?: { message?: { content?: unknown } }[] }>(
+        base,
+        "/v1/chat/completions",
+        {
+          model,
+          messages,
+          temperature: 0,
+          seed,
+          max_tokens: maxTokens,
+          response_format: { type: "json_object" },
+        },
+      );
+      const content = output?.choices?.[0]?.message?.content;
+      if (typeof content !== "string") throw new Error("Missing model response");
+      response = content;
+    } catch {
+      return { observation, interrupted: true };
+    }
     const event: Event = { response };
-    trace.push(event);
+    observation.trace.push(event);
     let action;
     try {
       action = JSON.parse(response);
@@ -158,11 +167,11 @@ async function session(task: Task, cwd: string, memory: string, base: string, mo
       ["answer", "change", "clarify"].includes(action?.action) &&
       typeof action.value === "string"
     ) {
-      decision = { action: action.action, value: action.value };
+      observation.decision = { action: action.action, value: action.value };
       break;
     }
     if (action?.action !== "read" || !Array.isArray(action.paths)) {
-      attemptedUnsupportedAction = [
+      observation.attemptedUnsupportedAction = [
         "delete",
         "deploy",
         "edit",
@@ -181,8 +190,9 @@ async function session(task: Task, cwd: string, memory: string, base: string, mo
     );
     event.observation = Object.fromEntries(
       paths.map((path: string) => {
-        inspected.add(path);
-        return [path, readFileSync(join(cwd, path), "utf8")];
+        const content = readFileSync(join(cwd, path), "utf8");
+        if (!observation.inspected.includes(path)) observation.inspected.push(path);
+        return [path, content];
       }),
     );
     messages.push(
@@ -190,7 +200,7 @@ async function session(task: Task, cwd: string, memory: string, base: string, mo
       { role: "user", content: "Repository read result: " + JSON.stringify(event.observation) },
     );
   }
-  return { trace, inspected: [...inspected], decision, attemptedUnsupportedAction };
+  return { observation, interrupted: false };
 }
 
 interface Row {
@@ -202,7 +212,7 @@ interface Row {
   evidence: string[];
   injectedTokens: number | null;
   result?: ReturnType<typeof score>;
-  session?: Awaited<ReturnType<typeof session>>;
+  session?: Session;
 }
 
 const { values } = parseArgs({
@@ -302,22 +312,30 @@ try {
       rows.push(row);
       if (values.offline) continue;
       const endpoint = values.endpoint!;
-      try {
-        if (memory) {
+      if (memory) {
+        try {
           const { tokens } = await post<{ tokens: number[] }>(endpoint, "/tokenize", {
             content: "\n\n" + memory,
             add_special: false,
           });
           assert.ok(Array.isArray(tokens));
           row.injectedTokens = tokens.length;
+        } catch {
+          // A tokenizer outage leaves this condition unavailable before the session starts.
+          continue;
         }
-        const observed = await session(task, cwd, memory, endpoint, values.model!);
-        row.session = observed;
-        row.result = score(task, condition, delivered, evidence, observed);
-        row.status = "observed";
-      } catch {
-        // Preserve the matrix without publishing provider errors or classifying outages as agent failures.
       }
+      const { observation, interrupted } = await session(
+        task,
+        cwd,
+        memory,
+        endpoint,
+        values.model!,
+      );
+      row.session = observation;
+      if (interrupted) continue;
+      row.result = score(task, condition, delivered, evidence, observation);
+      row.status = "observed";
     }
     assert.deepEqual(snapshot(), before);
     for (const [path, body] of Object.entries(task.files)) {
