@@ -27,7 +27,7 @@ import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
 import { PlatformError } from "effect/PlatformError";
 import { writeAtomicFile } from "./atomic-file.js";
-import type { PendingCandidate } from "./pending-store.js";
+import { pendingSourceRef, type PendingCandidate } from "./pending-store.js";
 import { correctionBaseline, parseRepositoryReference } from "./repository-reference.js";
 import type { Engram, EngramInput, EngramPatch, Scope, Frontmatter } from "./domain.js";
 import { effectiveStatus, SUPPORTED_ENTRY_SCHEMA_VERSION } from "./domain.js";
@@ -909,7 +909,7 @@ const makeEngramStoreLive = (
         if (
           scanned.duplicateIds.some((claim) => claim.id === id) ||
           (existing !== undefined &&
-            (existing.sourceRef !== (correction?.sourceRef ?? pending.id) ||
+            (existing.sourceRef !== pendingSourceRef(pending) ||
               (correction !== undefined && existing.supersedes !== correction.originalId)))
         ) {
           return Effect.fail(
@@ -948,6 +948,11 @@ const makeEngramStoreLive = (
               }),
             );
           }
+          if (pending.importSource && options.automatic) {
+            return yield* Effect.fail(
+              new ValidationError({ message: "Imports require explicit review." }),
+            );
+          }
           const id = pendingApprovalId(pending.id, Date.parse(created));
           const predecessor = correction ? yield* get(scope, correction.originalId) : undefined;
           const { candidate, dir } = yield* prepareAdd(
@@ -964,7 +969,7 @@ const makeEngramStoreLive = (
               reviewAfter: predecessor?.reviewAfter,
               expires: predecessor?.expires,
               sourceType: provenanceClass,
-              sourceRef: correction?.sourceRef ?? pending.id,
+              sourceRef: pendingSourceRef(pending),
               supersedes: correction?.originalId,
             },
             created,

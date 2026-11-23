@@ -1101,6 +1101,23 @@ const purePlan = (
   };
 };
 
+/** Update a text block without repairing ambiguous ownership markers.
+ * Preserve the original separator following the block, including CRLF. */
+export function replaceManagedText(
+  spec: Extract<AssetSpec, { kind: "text" }>,
+  current: string,
+): string | undefined {
+  const state = classifyInstall(spec, current);
+  if (state.status === "corrupt") return undefined;
+  if (state.status === "current") return current;
+  const after = installActionFor(spec, current);
+  return current
+    .split("\n")
+    .some((line) => line.endsWith("\r") && isMarkerLine(line, spec.endMarker))
+    ? after.replace(spec.endMarker + "\n", spec.endMarker + "\r\n")
+    : after;
+}
+
 /** Pure: exact changes to install every installable asset. */
 export const planInstall = (
   states: ScanResult,
