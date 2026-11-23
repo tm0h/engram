@@ -5,10 +5,12 @@ import { Path } from "effect/Path";
 import {
   EngramStore,
   findProjectRoot,
+  importLocation,
   reviewImport,
   scanContent,
   searchEngrams,
   writeAtomicFile,
+  type ImportConflictNotice,
   type ImportProposal,
 } from "@engram/core";
 import {
@@ -17,6 +19,7 @@ import {
   replaceManagedText,
 } from "@engram/harnesses/shared";
 import { out } from "../io.js";
+import { loadPack } from "../template-pack.js";
 import {
   DIGEST_BEGIN,
   DIGEST_END,
@@ -30,10 +33,14 @@ interface Outcome {
   readonly path: string;
   readonly status: string;
   readonly line?: number;
+  readonly entryId?: string;
+  readonly packName?: string;
+  readonly packVersion?: number;
+  readonly conflicts?: readonly ImportConflictNotice[];
   readonly reason?: string;
   readonly id?: string;
   readonly rules?: readonly string[];
-  readonly candidate?: Pick<ImportProposal, "title" | "body" | "type">;
+  readonly candidate?: Omit<ImportProposal, "source">;
 }
 
 const MAX_MIGRATION_BYTES = 256 * 1024;
@@ -53,7 +60,11 @@ const describe = (row: Outcome) =>
   [
     row.status,
     JSON.stringify(row.path) + (row.line === undefined ? "" : ":" + row.line),
+    row.packName && `${row.packName}@${row.packVersion}/${row.entryId}`,
     row.reason,
+    row.conflicts
+      ?.map((conflict) => `${conflict.kind}:${"id" in conflict ? conflict.id : conflict.entryId}`)
+      .join(", "),
     row.id,
     row.rules?.join(", "),
     row.candidate && JSON.stringify(row.candidate),
@@ -97,9 +108,11 @@ const readText = (absolute: string) =>
 
 export const importCommand = (
   files: string[],
-  opts: { format?: string; scope?: string; apply?: boolean; json?: boolean },
+  opts: { format?: string; pack?: string; scope?: string; apply?: boolean; json?: boolean },
 ) =>
   Effect.gen(function* () {
+    if (opts.pack !== undefined && (files.length || opts.format !== undefined))
+      return yield* Effect.fail(new Error("Use --pack without import files or --format."));
     if (files.length > MAX_BATCH)
       return yield* Effect.fail(new Error("Pass up to 50 import files."));
     const scope = opts.scope ?? "project";
@@ -113,6 +126,16 @@ export const importCommand = (
       return yield* Effect.fail(new Error("Run engram init before importing into project memory."));
     const proposals: ImportProposal[] = [];
     const rows: Array<Outcome | number> = [];
+    if (opts.pack !== undefined) {
+      for (const item of yield* loadPack(opts.pack)) {
+        if ("proposal" in item) {
+          rows.push(proposals.length);
+          proposals.push(item.proposal);
+        } else {
+          rows.push(item);
+        }
+      }
+    }
     for (const file of files) {
       const absolute = path.resolve(cwd, file);
       const label = path.relative(root ?? cwd, absolute).replaceAll(path.sep, "/");
@@ -183,13 +206,11 @@ export const importCommand = (
             Effect.map((rows): readonly Outcome[] => rows),
             Effect.catch(() =>
               Effect.succeed(
-                items.map(({ source }) =>
-                  failed(
-                    source.path,
-                    apply ? "queue_unavailable" : "memory_unavailable",
-                    source.line,
-                  ),
-                ),
+                items.map(({ source }) => ({
+                  ...importLocation(source),
+                  status: "failed",
+                  reason: apply ? "queue_unavailable" : "memory_unavailable",
+                })),
               ),
             ),
           )

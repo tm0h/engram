@@ -28,6 +28,7 @@ import { Path } from "effect/Path";
 import { PlatformError } from "effect/PlatformError";
 import { writeAtomicFile } from "./atomic-file.js";
 import { pendingSourceRef, type PendingCandidate } from "./pending-store.js";
+import { canonicalPackSource, samePackEntry } from "./pack-source.js";
 import { correctionBaseline, parseRepositoryReference } from "./repository-reference.js";
 import type { Engram, EngramInput, EngramPatch, Scope, Frontmatter } from "./domain.js";
 import { effectiveStatus, SUPPORTED_ENTRY_SCHEMA_VERSION } from "./domain.js";
@@ -966,8 +967,8 @@ const makeEngramStoreLive = (
               triggers: predecessor?.triggers,
               appliesTo: predecessor?.appliesTo,
               importance: predecessor?.importance,
-              reviewAfter: predecessor?.reviewAfter,
-              expires: predecessor?.expires,
+              reviewAfter: predecessor?.reviewAfter ?? pending.proposed.reviewAfter,
+              expires: predecessor?.expires ?? pending.proposed.expires,
               sourceType: provenanceClass,
               sourceRef: pendingSourceRef(pending),
               supersedes: correction?.originalId,
@@ -1064,6 +1065,17 @@ const makeEngramStoreLive = (
               undefined,
               correction?.originalId,
             );
+            const pack = pending.importSource;
+            if (pack?.format === "pack" && !options.confirmWrite) {
+              const candidates = scanned.entries.flatMap((entry) => {
+                const source = canonicalPackSource(entry);
+                return source && samePackEntry(pack, source)
+                  ? [{ scope, id: entry.id, kind: "possible_conflict" as const }]
+                  : [];
+              });
+              if (candidates.length)
+                return yield* Effect.fail(new WriteAdvisoryError({ candidates }));
+            }
             if (options.automatic) {
               yield* options.automatic(id);
             } else if (options.expectedMarkdown === undefined) {

@@ -217,6 +217,13 @@ step "Packaged migration previews imports, stages review candidates, and updates
   node "$audit_source/e2e-migration.ts" "$run_root/migration" "$ENGRAM_E2E_BIN"
 )
 
+step "Packaged template packs preview, stage, and preserve local decisions on upgrade"
+(
+  export HOME="$run_root/template-pack-home"
+  mkdir -p "$HOME"
+  node "$audit_source/e2e-template-pack.ts" "$run_root/template-pack" "$ENGRAM_E2E_BIN"
+)
+
 step "Local diagnostics and usage statistics"
 engram doctor | grep -F "project store: empty"
 engram doctor --json |

@@ -1,4 +1,4 @@
-import type { ImportFormat, ImportProposal } from "@engram/core";
+import type { FileImportSource, ImportFormat, ImportProposal } from "@engram/core";
 
 export const DIGEST_ID = "engram-memory-digest";
 export const DIGEST_BEGIN = "<!-- BEGIN: " + DIGEST_ID + " -->";
@@ -67,12 +67,12 @@ export function parseImportMarkdown(
   text: string,
   format: ImportFormat,
   path: string,
-): ImportProposal[] | undefined {
+): ImportProposal<FileImportSource>[] | undefined {
   const lines = text
     .replace(/^\uFEFF/, "")
     .replace(/\r\n?/g, "\n")
     .split("\n");
-  const results: ImportProposal[] = [];
+  const results: ImportProposal<FileImportSource>[] = [];
   const isProfile = /(?:^|\/)user\.md$/i.test(path);
   const type =
     format === "hermes" || format === "openclaw" ? (isProfile ? "preference" : "note") : "decision";

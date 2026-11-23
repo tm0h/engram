@@ -102,13 +102,17 @@ program
   .version("0.6.0");
 
 program
-  .command("import <files...>")
-  .description("Preview Markdown migration into the pending review queue.")
+  .command("import [files...]")
+  .description("Preview Markdown or a local template pack for pending review.")
+  .option("--pack <name>", "Load a named template pack from ENGRAM_PACK_DIR.")
   .option("--format <format>", "agents | claude | cursor | readme | hermes | openclaw")
   .option("-s, --scope <scope>", "project (default) | personal")
   .option("--apply", "Stage eligible candidates after previewing them.")
   .option("--json", "Emit a versioned JSON result.")
-  .action((files, opts) => run(importCommand(files, opts)));
+  .action((files, opts, command) => {
+    if (!files.length && opts.pack === undefined) command.missingArgument("files");
+    run(importCommand(files, opts));
+  });
 
 program
   .command("export <files...>")
@@ -513,7 +517,10 @@ for (const action of ["show", "edit", "approve", "reject"] as const) {
     .action((ids, opts) => run(pendingCommand(action, ids, opts)));
   if (action === "edit") {
     command
-      .option("--patch <json>", "Patch title, type, tags or body.")
+      .option(
+        "--patch <json>",
+        "Patch title, type, tags, body, reviewAfter or expires. Use null to clear a date.",
+      )
       .addOption(new CommandOption("--stdin", "Read a JSON patch from stdin.").conflicts("patch"));
   }
   if (action === "approve") {

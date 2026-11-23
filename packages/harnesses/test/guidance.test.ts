@@ -96,6 +96,8 @@ describe("guidance / skills stay aligned", () => {
   it("both skills describe preview-first migration and managed export", () => {
     for (const skill of [piSkill, claudeSkill]) {
       expect(skill).toContain("engram import <files...>");
+      expect(skill).toContain("engram import --pack <name>");
+      expect(skill).toContain("ENGRAM_PACK_DIR");
       expect(skill).toMatch(/--apply[\s\S]*?pending review/);
       expect(skill).toContain("engram export <files...>");
       expect(skill).toContain("canonical project digest in managed Markdown sections");
