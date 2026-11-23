@@ -11,6 +11,7 @@ import {
   parsePendingPatch,
   patchPendingCandidate,
   readPendingCandidate,
+  rejectPendingCandidate,
   removePendingCandidate,
   scopesToQuery,
   withPendingCandidateLock,
@@ -161,7 +162,11 @@ export const pendingCommand = (action: Action, ids: string[], opts: PendingOptio
           return { status: "pending", title, type, created: candidate.created } as const;
         }
         if (action === "reject") {
-          yield* withPendingCandidateLock(scope, id, removePendingCandidate(scope, id));
+          yield* withPendingCandidateLock(
+            scope,
+            id,
+            rejectPendingCandidate(scope, id, store.assertPendingEditable),
+          );
           return { status: "rejected" } as const;
         }
         if (patch !== undefined) {

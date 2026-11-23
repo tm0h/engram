@@ -21,6 +21,7 @@ const sources = [
     "frontmatter",
     "integrity",
     "location",
+    "pack-source",
     "pending-store",
     "repository-reference",
     "secrets",

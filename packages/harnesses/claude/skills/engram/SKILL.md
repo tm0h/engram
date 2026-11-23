@@ -167,8 +167,11 @@ and unchecked scopes return a nonzero status. Lifecycle advisories are warnings.
 
 ### Pending memory review
 
-Preview migration with `engram import <files...>`. Use `--apply` with the user's
-approval to stage the eligible proposals for pending review. Use
+Preview migration with `engram import <files...>` or preview a local template
+pack with `engram import --pack <name>` using an explicitly set
+`ENGRAM_PACK_DIR`. Use `--apply` with the user's approval to stage eligible
+proposals for pending review. Compare pack conflicts with local memory before
+requesting approval. Use
 `engram export <files...>` with the user's approval to update a bounded
 canonical project digest in managed Markdown sections.
 

@@ -37,3 +37,5 @@ export * from "./repository-reference.js";
 
 export * from "./migration.js";
 export { writeAtomicFile } from "./atomic-file.js";
+
+export { packEntryPath, packSlug } from "./pack-source.js";

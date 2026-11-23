@@ -76,6 +76,7 @@ describe("Docker E2E runner", () => {
       "Related entry links",
       "Call-form body search",
       "Host hook install surface",
+      "Packaged template packs preview, stage, and preserve local decisions on upgrade",
     ]) {
       expect(e2e).toContain(`step "${scenario}"`);
     }

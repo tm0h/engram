@@ -9,6 +9,12 @@ import { ProjectNotInitializedError, SecretScanBlockedError, ValidationError } f
 import { findProjectRoot } from "./location.js";
 import { globalRoot, projectDir } from "./paths.js";
 import { scanContent } from "./secrets.js";
+import {
+  PackImportSource,
+  packRejectionFile,
+  packSourceRef,
+  parsePackRejection,
+} from "./pack-source.js";
 import { parseRepositoryReference } from "./repository-reference.js";
 import { isValidId, nowISO, parseTimestamp } from "./util.js";
 
@@ -21,11 +27,17 @@ const reference = {
   id: Schema.String.check(Schema.makeFilter(isValidId)),
 };
 
+const timestamp = Schema.String.check(
+  Schema.makeFilter((value) => parseTimestamp(value) !== undefined),
+);
+
 const Proposed = Schema.Struct({
   title: nonBlank,
   type: EngramTypeSchema,
   tags: Schema.Array(Schema.String),
   body: Schema.String,
+  reviewAfter: Schema.optionalKey(timestamp),
+  expires: Schema.optionalKey(timestamp),
 });
 
 export const CaptureMessageId = Schema.String.check(
@@ -68,16 +80,20 @@ export const ImportFormat = Schema.Literals([
   "openclaw",
 ]);
 export type ImportFormat = typeof ImportFormat.Type;
-const ImportSource = Schema.Struct({
+const FileImportSource = Schema.Struct({
   format: ImportFormat,
   path: nonBlank,
   line: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
   fileIdentity: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))),
 });
+export type FileImportSource = typeof FileImportSource.Type;
+const ImportSource = Schema.Union([FileImportSource, PackImportSource]);
 export type ImportSource = typeof ImportSource.Type;
 
-export const importSourceRef = ({ path, line, fileIdentity }: ImportSource): string =>
-  `${fileIdentity ? "file-sha256:" + fileIdentity : path}#L${line}`;
+export const importSourceRef = (source: ImportSource): string =>
+  source.format === "pack"
+    ? packSourceRef(source)
+    : `${source.fileIdentity ? "file-sha256:" + source.fileIdentity : source.path}#L${source.line}`;
 
 export const pendingSourceRef = (pending: PendingCandidate): string =>
   pending.correction?.sourceRef ??
@@ -110,7 +126,7 @@ const CandidateInput = Schema.Struct({
 const Candidate = Schema.Struct({
   schemaVersion: Schema.Literal(schemaVersion),
   id: Schema.String.check(Schema.isPattern(pendingId)),
-  created: Schema.String.check(Schema.makeFilter((value) => parseTimestamp(value) !== undefined)),
+  created: timestamp,
   ...CandidateInput.fields,
 });
 
@@ -168,6 +184,7 @@ const checkQueueContent = (
     ...proposed.tags,
     input.correction?.sourceRef ?? "",
     input.importSource?.path ?? "",
+    input.importSource?.format === "pack" ? importSourceRef(input.importSource) : "",
   ].flatMap(scanContent);
   return findings.length === 0
     ? Effect.void
@@ -297,8 +314,38 @@ export const listPendingIds = Effect.fnUntraced(function* (
   );
 });
 
+export const listPackRejections = Effect.fnUntraced(function* (scope: Scope, cwd: string) {
+  const fs = yield* FileSystem;
+  const directory = yield* queueDirectory(scope, cwd);
+  return yield* checkQueueDirectory(directory).pipe(
+    Effect.andThen(fs.readDirectory(directory)),
+    Effect.map((files) => files.flatMap((file) => parsePackRejection(file) ?? [])),
+    Effect.catchIf(
+      (error) => error._tag === "PlatformError" && error.reason._tag === "NotFound",
+      () => Effect.succeed([]),
+    ),
+  );
+});
+
 export const inspectPendingCandidate = (scope: Scope, id: string, cwd: string = process.cwd()) =>
-  readPendingCandidate(scope, id, cwd).pipe(Effect.tap(checkQueueContent));
+  readPendingCandidate(scope, id, cwd).pipe(
+    Effect.tap(checkQueueContent),
+    Effect.tap(({ importSource }) =>
+      Effect.gen(function* () {
+        if (importSource?.format !== "pack") return;
+        const { directory } = yield* candidatePath(scope, id, cwd);
+        const fs = yield* FileSystem;
+        const path = yield* Path;
+        if (yield* fs.exists(path.join(directory, packRejectionFile(importSource)))) {
+          return yield* Effect.fail(
+            new ValidationError({
+              message: "Candidate was rejected. Retry rejection to finish queue cleanup.",
+            }),
+          );
+        }
+      }),
+    ),
+  );
 
 export const parsePendingPatch = (json: string) =>
   Schema.decodeUnknownEffect(Schema.fromJsonString(Patch))(json, strict).pipe(
@@ -400,4 +447,30 @@ export const removePendingCandidate = Effect.fnUntraced(function* (
   const fs = yield* FileSystem;
   const { file } = yield* candidatePath(scope, id, cwd);
   yield* fs.remove(file);
+});
+
+// The rejection marker contains identity only. Write it before removing the
+// proposal so import retries still see the decision if cleanup is interrupted.
+export const rejectPendingCandidate = Effect.fnUntraced(function* <E, R>(
+  scope: Scope,
+  id: string,
+  assertEditable: (candidate: PendingCandidate) => Effect.Effect<void, E, R>,
+  cwd: string = process.cwd(),
+) {
+  const candidate = yield* readPendingCandidate(scope, id, cwd).pipe(
+    Effect.catchTag("ValidationError", () => Effect.succeed(undefined)),
+  );
+  const source = candidate?.importSource;
+  if (candidate && source?.format === "pack") {
+    yield* assertEditable(candidate);
+    const { directory } = yield* candidatePath(scope, id, cwd);
+    yield* ensureIgnored(directory);
+    yield* writeAtomicFile(directory, packRejectionFile(source), "", { mode: 0o600 }).pipe(
+      Effect.catchIf(
+        (error) => error.reason._tag === "AlreadyExists",
+        () => Effect.void,
+      ),
+    );
+  }
+  yield* removePendingCandidate(scope, id, cwd);
 });

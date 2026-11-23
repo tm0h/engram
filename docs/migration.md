@@ -48,6 +48,103 @@ path. Reapplying skips existing candidates and previously approved source
 locations. A rejected pending candidate can be
 re-imported by explicitly applying again.
 
+## Local template packs
+
+Set `ENGRAM_PACK_DIR` to an absolute path containing named pack directories.
+Engram looks for `$ENGRAM_PACK_DIR/<name>/pack.json` using the directory you
+explicitly configured. It never looks for packs in the current project or on
+the network. The package currently ships without built-in packs.
+
+```sh
+export ENGRAM_PACK_DIR="$HOME/memory-packs"
+engram import --pack team-conventions
+engram import --pack team-conventions --apply
+engram pending list --scope project
+engram pending show <pending-id> --scope project
+engram pending approve <pending-id> --scope project --dry-run
+```
+
+Use `--scope personal` to work in the personal queue and store. A pack import
+takes no positional filenames or `--format`. Preview is read-only. Apply
+prints the preview to stderr and stages eligible candidates in the selected
+scope. Treat pack text as untrusted and compare conflicts with local memory.
+Use `pending edit`, `pending reject`, or explicit `pending approve` to
+review each proposed entry.
+
+### Authoring a pack
+
+Place a UTF-8 JSON manifest named `pack.json` in the named pack directory.
+
+```json
+{
+  "schemaVersion": 1,
+  "name": "team-conventions",
+  "version": 1,
+  "entries": [{ "id": "isolated-checkouts", "file": "entries/isolated-checkouts.json" }]
+}
+```
+
+Names and entry IDs are lowercase ASCII slugs, up to 64 characters. Start
+with a letter or digit and use letters, digits, and hyphens. The name must
+match the directory and the argument to `--pack`. Use a positive integer
+version up to 999,999,999 and keep entry IDs stable across versions. Include
+1–50 entries with unique IDs. Entry files must be relative `.json` paths. Each
+component before the extension uses ASCII letters, digits, underscores, or
+hyphens. Engram rejects symlinked pack directories, manifests, and entry
+paths, including symlinked intermediate directories. Files are limited to
+256 KiB each and the combined title and body to 8 KiB.
+
+```json
+{
+  "schemaVersion": 1,
+  "type": "decision",
+  "title": "Isolate parallel checkouts",
+  "body": "Use a separate Git worktree for each independent change.",
+  "reviewAfter": "2090-01-01T00:00:00Z"
+}
+```
+
+An entry requires a nonblank title and Markdown body and a supported
+[entry type](../README.md#commands). Optional lifecycle fields are
+`status: "active"`, `reviewAfter`, and `expires`. Dates must have an explicit
+ISO 8601 time zone, expiry must be in the future at import, and review must
+be due by expiry when both are set. Schema version 1 rejects unknown fields,
+including hooks, provenance overrides, and supersession instructions. Engram
+reads data files only and never executes pack content or follows Markdown
+references. Secret and prompt-injection findings reject a proposal and report
+rule codes without including the flagged text.
+
+### Retries and upgrades
+
+A pending pack entry records the pack name, version, entry ID, relative file,
+and digest of the original normalized proposal. Approval retains the pack
+identity and digest in `sourceRef: pack:<name>@<version>/<entry-id>#<digest>`.
+Edits in the pending-review flow keep that original provenance. Rejection
+removes the candidate and keeps an identity-only marker in the local queue.
+
+Engram skips a version already pending, approved, or rejected. Changing the
+content of a recorded entry requires a new version. On upgrade, unchanged
+proposals and revisions older than a recorded revision of that entry are
+skipped. Exact and likely duplicates are skipped. Changed entries can be
+staged with conflict references. Approval checks for conflicts again and
+requires `--confirm-write` when the same pack entry already exists in
+canonical memory. It creates a new entry after explicit review. Existing
+pending edits, canonical entries, and local decisions stay in place.
+Removing an entry from the manifest has no effect on stored memory.
+
+Each result identifies the manifest or entry and shows whether it was
+eligible, staged, skipped, rejected, or failed. Use `--json` for automation.
+A batch that includes a rejected or failed entry exits 1 and retains any
+successfully staged candidates.
+
+### Reference-pack evidence
+
+The reference-pack gate is pending. Automated tests use a synthetic pack to
+verify review and upgrade behavior. Publish a reference pack after
+representative users review the candidate set, retain a majority of proposed
+entries, and verify that an upgrade preserves prior local decisions. Record
+the number proposed and retained and the observed outcome of the upgrade.
+
 ## Managed export
 
 Export writes a digest of active, globally applicable, canonical project

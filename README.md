@@ -383,7 +383,8 @@ condition before retrying.
 ## Commands
 
 Use [memory migration](docs/migration.md) to preview and stage existing
-Markdown for review, or export a managed project digest to harness files.
+Markdown or [local template packs](docs/migration.md#local-template-packs) for
+review, or export a managed project digest to harness files.
 See the [semantic-search evidence gate](docs/semantic-search-gate.md) for
 the evaluation required before optional semantic retrieval.
 
