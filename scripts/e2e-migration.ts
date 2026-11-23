@@ -15,8 +15,8 @@ import { join } from "node:path";
 const [root, bin] = process.argv.slice(2);
 assert.ok(root && bin);
 mkdirSync(root);
-function cli(args: string[], status = 0) {
-  const result = spawnSync(bin, args, { cwd: root, encoding: "utf8" });
+function cli(args: string[], status = 0, cwd = root) {
+  const result = spawnSync(bin, args, { cwd, encoding: "utf8" });
   assert.ifError(result.error);
   assert.equal(result.status, status, result.stderr + "\n" + result.stdout);
   return result;
@@ -225,3 +225,60 @@ cli(["pending", "approve", checkout.id, "--scope", "project", "--yes"]);
 assert.equal(snapshot().length, before.length + 1);
 assert.ok(snapshot().some(([, text]) => text.includes("sourceRef: AGENTS.md#L5")));
 assert.equal(json(["import", "AGENTS.md", "--apply"]).results[1].reason, "already_imported");
+
+const personalImport = (cwd: string) =>
+  JSON.parse(
+    cli(["import", "AGENTS.md", "--scope", "personal", "--apply", "--json"], 0, cwd).stdout,
+  ).results;
+const firstProject = join(root, "first-project");
+const secondProject = join(root, "second-project");
+mkdirSync(firstProject);
+mkdirSync(secondProject);
+const firstSource = "## Local database\nUse a dedicated Quartz sandbox.\n";
+const secondSource = "## Test runner\nUse the Juniper test runner.\n";
+writeFileSync(join(firstProject, "AGENTS.md"), firstSource);
+writeFileSync(join(secondProject, "AGENTS.md"), secondSource);
+const [firstPersonal] = personalImport(firstProject);
+assert.equal(firstPersonal.status, "staged");
+cli([
+  "pending",
+  "edit",
+  firstPersonal.id,
+  "--scope",
+  "personal",
+  "--patch",
+  '{"body":"Run Quartz in a dedicated sandbox."}',
+]);
+cli(["pending", "approve", firstPersonal.id, "--scope", "personal", "--yes"]);
+const [secondPersonal] = personalImport(secondProject);
+assert.equal(secondPersonal.status, "staged");
+assert.equal(personalImport(firstProject)[0].reason, "already_imported");
+assert.equal(
+  json(["import", "first-project/AGENTS.md", "--scope", "personal"]).results[0].reason,
+  "already_imported",
+);
+assert.equal(personalImport(secondProject)[0].reason, "exact_duplicate");
+assert.equal(readFileSync(join(firstProject, "AGENTS.md"), "utf8"), firstSource);
+assert.equal(readFileSync(join(secondProject, "AGENTS.md"), "utf8"), secondSource);
+
+mkdirSync(join(root, "ports"));
+write("ports/AGENTS.md", "## Production\nUse port 3000.\n## Staging\nUse port 3000.\n");
+const ports = json(["import", "ports/AGENTS.md", "--apply"]).results;
+assert.deepEqual(
+  ports.map((row: { status: string }) => row.status),
+  ["staged", "staged"],
+);
+const portCandidates = ports.map(
+  (row: { id: string }) => JSON.parse(read(join(".engram", "pending", row.id + ".json"))).proposed,
+);
+assert.deepEqual(
+  portCandidates.map(({ title }: { title: string }) => title),
+  ["Production", "Staging"],
+);
+assert.ok(portCandidates.every(({ body }: { body: string }) => body === "Use port 3000."));
+assert.deepEqual(
+  json(["import", "ports/AGENTS.md", "--apply"]).results.map(
+    (row: { reason: string }) => row.reason,
+  ),
+  ["exact_duplicate", "exact_duplicate"],
+);

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Effect, Result } from "effect";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
@@ -129,7 +130,17 @@ export const importCommand = (
         rows.push(failed(label, "explicit_scope_required"));
         continue;
       }
-      const source = yield* Effect.result(readText(absolute));
+      const source = yield* Effect.result(
+        Effect.gen(function* () {
+          // Personal memory is shared across projects. Use the resolved file
+          // path for identity and retain the relative path for review.
+          const resolved = scope === "personal" ? yield* fs.realPath(absolute) : absolute;
+          const { text } = yield* readText(resolved);
+          const fileIdentity =
+            scope === "personal" ? createHash("sha256").update(resolved).digest("hex") : undefined;
+          return { text, fileIdentity };
+        }),
+      );
       if (Result.isFailure(source)) {
         rows.push(
           failed(
@@ -141,7 +152,8 @@ export const importCommand = (
         );
         continue;
       }
-      const parsed = parseImportMarkdown(source.success.text, format, label);
+      const { text, fileIdentity } = source.success;
+      const parsed = parseImportMarkdown(text, format, label);
       if (!parsed) {
         rows.push(failed(label, "malformed_source"));
         continue;
@@ -160,7 +172,9 @@ export const importCommand = (
           continue;
         }
         rows.push(proposals.length);
-        proposals.push(proposal);
+        proposals.push(
+          fileIdentity ? { ...proposal, source: { ...proposal.source, fileIdentity } } : proposal,
+        );
       }
     }
     const classify = (items: readonly ImportProposal[], apply: boolean) =>

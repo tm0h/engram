@@ -80,18 +80,20 @@ export const reviewImport = (
         const proposed = { title, body, type, tags: [] };
         const entry = asEntry("import-preview-" + index, proposed);
         const advisory = findWriteCandidates(entry, existing, now);
+        const sourceRef = importSourceRef(proposal.source);
+        // An edited pending entry retains its original source excerpt. Match
+        // that only at the same source location so headings remain distinct.
         const earlierImport = pending.some(
           (candidate) =>
-            candidate?.importSource?.path === proposal.source.path &&
+            candidate?.importSource !== undefined &&
+            importSourceRef(candidate.importSource) === sourceRef &&
             isDuplicate(entry, [{ scope, body: candidate.sourceExcerpt }]),
         );
         const publishedImport = entries.some(
-          (candidate) =>
-            candidate.sourceType === "file" &&
-            candidate.sourceRef === importSourceRef(proposal.source),
+          (candidate) => candidate.sourceType === "file" && candidate.sourceRef === sourceRef,
         );
         const reason =
-          earlierImport || isDuplicate(entry, existing)
+          earlierImport || advisory[0]?.kind === "exact_duplicate"
             ? "exact_duplicate"
             : publishedImport
               ? "already_imported"

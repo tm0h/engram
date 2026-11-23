@@ -72,10 +72,12 @@ const ImportSource = Schema.Struct({
   format: ImportFormat,
   path: nonBlank,
   line: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+  fileIdentity: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))),
 });
 export type ImportSource = typeof ImportSource.Type;
 
-export const importSourceRef = ({ path, line }: ImportSource): string => `${path}#L${line}`;
+export const importSourceRef = ({ path, line, fileIdentity }: ImportSource): string =>
+  `${fileIdentity ? "file-sha256:" + fileIdentity : path}#L${line}`;
 
 export const pendingSourceRef = (pending: PendingCandidate): string =>
   pending.correction?.sourceRef ??

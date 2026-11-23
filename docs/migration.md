@@ -41,8 +41,11 @@ apply, the preview goes to stderr before any candidate is staged. The command
 rechecks pending and canonical memory before staging the eligible candidates.
 Source bytes are preserved. Apply stages each candidate with its source
 format, path, and line. Approvals use the existing pending review commands and
-record the file reference as `path#Lnn`. Reapplying skips existing candidates
-and previously approved source locations. A rejected pending candidate can be
+record the project file reference as `path#Lnn`. Personal approvals use a hash
+of the resolved source path and the line number to distinguish files with the
+same name in different projects. The pending candidate retains the readable
+path. Reapplying skips existing candidates and previously approved source
+locations. A rejected pending candidate can be
 re-imported by explicitly applying again.
 
 ## Managed export
