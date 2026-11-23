@@ -224,6 +224,13 @@ step "Packaged template packs preview, stage, and preserve local decisions on up
   node "$audit_source/e2e-template-pack.ts" "$run_root/template-pack" "$ENGRAM_E2E_BIN"
 )
 
+step "Packaged OpenClaw skill keeps personal and project memory separate"
+(
+  export HOME="$run_root/openclaw-home"
+  mkdir -p "$HOME"
+  node "$audit_source/e2e-openclaw.ts" "$run_root/openclaw" "$ENGRAM_E2E_BIN"
+)
+
 step "Local diagnostics and usage statistics"
 engram doctor | grep -F "project store: empty"
 engram doctor --json |
@@ -1303,7 +1310,7 @@ engram install claude --yes --uninstall | grep -F "Uninstalled"
 [[ -f .claude/skills/my-skill/SKILL.md ]] || fail "claude uninstall removed a user skill"
 
 # deny-cases: --home is a project-target error naming --root; unknown
-# targets enumerate exactly the five lanes. Expected-failing commands are
+# targets enumerate all supported targets. Expected-failing commands are
 # captured to files and the files grepped: under pipefail a plain pipeline
 # into a succeeding grep would abort the audit on the CLI's nonzero exit.
 if engram install generic --home "$run_root/host-home" >"$run_root/deny-home.txt" 2>&1; then
@@ -1313,7 +1320,7 @@ grep -F -- "--root" "$run_root/deny-home.txt"
 if engram install nope >"$run_root/deny-menu.txt" 2>&1; then
   fail "unknown install targets must fail"
 fi
-grep -F 'generic | cursor | claude | claude-code | codex' "$run_root/deny-menu.txt"
+grep -F 'generic | cursor | claude | claude-code | codex | openclaw' "$run_root/deny-menu.txt"
 
 step "Removal and duplicate no-op"
 engram dedupe --scope project | grep -F "No duplicate ids found"

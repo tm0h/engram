@@ -103,7 +103,7 @@ describe("Docker E2E runner", () => {
     expect(e2e).toContain("engram install cursor --yes");
     expect(e2e).toContain("engram install claude --yes");
     expect(e2e).toContain("sh .claude/skills/engram/bin/engram --version");
-    expect(e2e).toContain("generic | cursor | claude | claude-code | codex");
+    expect(e2e).toContain("generic | cursor | claude | claude-code | codex | openclaw");
     expect(e2e).toContain('--root "$root_view"');
     // R3 pinned at the e2e level: byte-exact uninstall of a no-NL AGENTS.md
     expect(e2e).toContain("sha256sum");
@@ -111,7 +111,7 @@ describe("Docker E2E runner", () => {
     expect(e2e).toContain('"$run_root/deny-home.txt" 2>&1');
     expect(e2e).toContain('grep -F -- "--root" "$run_root/deny-home.txt"');
     expect(e2e).toContain(
-      "grep -F 'generic | cursor | claude | claude-code | codex' \"$run_root/deny-menu.txt\"",
+      "grep -F 'generic | cursor | claude | claude-code | codex | openclaw' \"$run_root/deny-menu.txt\"",
     );
   });
 

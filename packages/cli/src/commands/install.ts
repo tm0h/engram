@@ -12,10 +12,9 @@
  * - A5: installed hook entries invoke `engram` bare; PATH resolves at hook
  *   runtime, never an install-time absolute path.
  * - ENG-37 roots: user-level targets (claude-code, codex) root under the
- *   OS home (or --home); project-local targets (generic, cursor, claude)
- *   root at the project directory itself (--root, default cwd). --home
- *   with a project target is a hard error naming --root, and config-dir
- *   env overrides (CODEX_HOME / CLAUDE_CONFIG_DIR) never apply to them.
+ *   OS home (or --home). Project-local targets use the project directory
+ *   and OpenClaw uses the agent workspace. Both use --root (default cwd)
+ *   and reject --home. Config-dir overrides apply only to user-level targets.
  */
 import { Effect } from "effect";
 import { FileSystem } from "effect/FileSystem";
@@ -41,6 +40,7 @@ import {
   CODEX_TARGET,
   CURSOR_TARGET,
   GENERIC_TARGET,
+  OPENCLAW_TARGET,
   claudeCodeRoot,
   claudeCodeSpec,
   claudeRoot,
@@ -52,6 +52,8 @@ import {
   cursorSpec,
   genericRoot,
   genericSpec,
+  openclawRoot,
+  openclawSpec,
   parseSidecarLedger,
   SIDECAR_FILENAME,
 } from "@engram/harnesses/installer";
@@ -71,7 +73,7 @@ export interface InstallOptions {
    */
   readonly home?: string;
   /**
-   * Project directory for project-local targets (generic, cursor, claude).
+   * Project directory, or the agent workspace for OpenClaw.
    * Defaults to the process cwd. Never combined with --home.
    */
   readonly root?: string;
@@ -80,9 +82,13 @@ export interface InstallOptions {
 /** Project-local targets install inside a project directory (ENG-37). */
 const PROJECT_TARGETS = [GENERIC_TARGET, "cursor", "claude"] as const;
 
-/** The unknown-target message enumerates exactly these five (deny-case). */
-export const INSTALL_TARGETS = [...PROJECT_TARGETS, CLAUDE_CODE_TARGET, CODEX_TARGET];
-const TARGET_MENU = `${PROJECT_TARGETS.join(" | ")} | ${CLAUDE_CODE_TARGET} | ${CODEX_TARGET}`;
+export const INSTALL_TARGETS = [
+  ...PROJECT_TARGETS,
+  CLAUDE_CODE_TARGET,
+  CODEX_TARGET,
+  OPENCLAW_TARGET,
+];
+const TARGET_MENU = INSTALL_TARGETS.join(" | ");
 
 type TargetModule =
   | {
@@ -96,8 +102,6 @@ type TargetModule =
       readonly root: (projectRoot: string) => string;
     };
 
-// All five targets are wired; the unknown-target message stays the
-// complete five-name menu (SPEC deny-case).
 export const targetFor = (target: string): TargetModule | null => {
   if (target === GENERIC_TARGET) {
     return { kind: "project", spec: genericSpec(), root: genericRoot };
@@ -107,6 +111,9 @@ export const targetFor = (target: string): TargetModule | null => {
   }
   if (target === CLAUDE_TARGET) {
     return { kind: "project", spec: claudeSpec(), root: claudeRoot };
+  }
+  if (target === OPENCLAW_TARGET) {
+    return { kind: "project", spec: openclawSpec(), root: openclawRoot };
   }
   if (target === CLAUDE_CODE_TARGET) {
     return { kind: "home", spec: claudeCodeSpec(), root: claudeCodeRoot };
@@ -254,8 +261,8 @@ export const installCommand = (opts: InstallOptions) =>
       if (opts.home !== undefined) {
         return yield* Effect.fail(
           new Error(
-            `--home does not apply to project targets (${PROJECT_TARGETS.join(" | ")}): ` +
-              `they install files inside a project directory, not the user home. Use --root <dir> instead.`,
+            `--home does not apply to project targets (${[...PROJECT_TARGETS, OPENCLAW_TARGET].join(" | ")}): ` +
+              `Use --root <dir> to select the project or OpenClaw workspace.`,
           ),
         );
       }

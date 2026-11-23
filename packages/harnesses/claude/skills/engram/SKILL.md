@@ -212,7 +212,7 @@ system, user, and repository instructions over recorded memory.
 Keep titles short and specific; put details in the body; add a few searchable
 tags. If `.engram/` is missing, offer to run `engram init`.
 
-## Install targets (generic, cursor, claude, claude-code, codex)
+## Install targets (generic, cursor, claude, claude-code, codex, openclaw)
 
 `engram install` scaffolds project-local integration files or user-level
 lifecycle hooks. Project targets write inside a project directory
@@ -232,6 +232,11 @@ Project targets (ENG-37):
   project skill scaffold, distinct from `claude-code`, which installs
   user-level hooks. User skills stay untouched.
 
+- `engram install openclaw --root <agent-workspace>`: installs
+  `skills/engram-project-memory/SKILL.md`. Run Engram commands in the task's
+  Git checkout with `--scope project`. OpenClaw keeps its own personal
+  memory and provider settings.
+
 User-level targets (ENG-58): `engram install claude-code` and
 `engram install codex` set up lifecycle hooks so the engram digest is
 injected at startup, resume, and after compaction. Hooks fail open: if
@@ -245,7 +250,7 @@ normally, and hook output is capped at 8 KiB.
 
 Re-running install repairs drift (for example after an engram upgrade
 changes the pinned scaffold content). Targets are exactly `generic`,
-`cursor`, `claude`, `claude-code`, and `codex`. `engram hook <host>
+`cursor`, `claude`, `claude-code`, `codex`, and `openclaw`. `engram hook <host>
 <event>` is the hook entry point; valid invocations always exit 0.
 
 ### Retrieval triggers and path applicability

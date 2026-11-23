@@ -95,10 +95,39 @@ describe("engram install command", () => {
     return !walk(tmp).some((f) => /\.engram-tmp$|\.bak$|~$/.test(f));
   };
 
-  it("refuses unknown targets, enumerating exactly the five lanes (ENG-68)", async () => {
+  it("refuses unknown targets, enumerating all supported targets", async () => {
     await expect(runInstall({ target: "nope" })).rejects.toThrow(
-      /unknown install target "nope" \(expected: generic \| cursor \| claude \| claude-code \| codex\)/,
+      /unknown install target "nope" \(expected: generic \| cursor \| claude \| claude-code \| codex \| openclaw\)/,
     );
+  });
+
+  it("installs only the OpenClaw workspace skill and preserves local edits on uninstall", async () => {
+    const skill = path.join(tmp, "skills/engram-project-memory/SKILL.md");
+    const opts = { target: "openclaw", root: tmp, yes: true };
+    await runInstall({ ...opts, dryRun: true });
+    expect(output()).toContain("skills/engram-project-memory/SKILL.md");
+    expect(fs.readdirSync(tmp)).toEqual([]);
+
+    await runInstall(opts);
+    const installed = fs.readFileSync(skill, "utf8");
+    expect(installed).toMatch(/^---\nname: engram-project-memory\n/);
+    expect(installed).toContain("engram search");
+    expect(installed).toContain("--scope project");
+    expect(fs.existsSync(path.join(tmp, "openclaw.json"))).toBe(false);
+
+    const edited = installed + "\nLocal instructions.\n";
+    fs.writeFileSync(skill, edited);
+    await expect(runInstall({ ...opts, uninstall: true })).rejects.toThrow(/blocked asset/);
+    expect(fs.readFileSync(skill, "utf8")).toBe(edited);
+  });
+
+  it("refuses to replace or remove a user-owned OpenClaw skill", async () => {
+    const foreign = "---\nname: engram-project-memory\ndescription: My skill\n---\n";
+    const skill = writeHomeFile("skills/engram-project-memory/SKILL.md", foreign);
+    const opts = { target: "openclaw", root: tmp, yes: true };
+    await expect(runInstall(opts)).rejects.toThrow(/blocked asset/);
+    await expect(runInstall({ ...opts, uninstall: true })).rejects.toThrow(/blocked asset/);
+    expect(fs.readFileSync(skill, "utf8")).toBe(foreign);
   });
 
   it("status is read-only and reports state", async () => {

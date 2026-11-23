@@ -11,3 +11,4 @@ export * from "./generic.js";
 export * from "./cursor.js";
 export * from "./claude.js";
 export * from "./guidance-template.js";
+export * from "./openclaw.js";
