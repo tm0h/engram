@@ -943,6 +943,138 @@ step "Packaged repository evidence corrections survive restart and require appro
 node "$audit_source/e2e-repository-evidence.ts" "$run_root/repository-evidence" "$ENGRAM_E2E_BIN" |
   grep -Fx "Repository evidence correction persisted through explicit approval"
 
+step "Packaged project memory diff compares Git snapshots without writes"
+(
+  export HOME="$run_root/diff-home"
+  mkdir -p "$HOME/.engram/engrams" "$run_root/diff-project"
+  cd "$run_root/diff-project"
+  git init --quiet
+  git config user.email "diff@example.invalid"
+  git config user.name "Diff Fixture"
+  engram init --tracked
+  memory=.engram/engrams
+  mkdir -p "$memory"
+
+  write_diff_entry() {
+    local file=$1 id=$2 title=$3 body=$4
+    shift 4
+    {
+      printf -- '---\nid: "%s"\ntitle: "%s"\ntype: note\nscope: project\ntags: []\n' "$id" "$title"
+      printf 'created: 2025-01-01T00:00:00Z\nupdated: 2025-01-01T00:00:00Z\n'
+      if (($#)); then printf '%s\n' "$@"; fi
+      printf -- '---\n%s\n' "$body"
+    } > "$memory/$file"
+  }
+
+  snapshot_diff_state() {
+    git symbolic-ref HEAD
+    git rev-parse HEAD
+    git for-each-ref --format='%(refname) %(objectname)'
+    sha256sum .git/index .git/HEAD
+    tar --sort=name --exclude=./.git -cf - . | sha256sum
+    tar --sort=name -C "$HOME" -cf - .engram | sha256sum
+  }
+
+  printf 'Personal fixture must stay private.\n' > "$HOME/.engram/engrams/0001-personal.md"
+  write_diff_entry 0001-original.md 0001 Original "Opaque synthetic body." 'status: active'
+  write_diff_entry 0002-remove.md 0002 Remove "Obsolete synthetic body."
+  write_diff_entry 0003-reference.md 0003 Reference "Original synthetic body."
+  git add .
+  git commit --quiet -m base
+  base=$(git rev-parse HEAD)
+  git switch --quiet -c left
+  write_diff_entry 0004-left.md 0004 Left "Left synthetic body."
+  git add .
+  git commit --quiet -m left
+  left=$(git rev-parse HEAD)
+  git switch --quiet -c right "$base"
+
+  renamed=$'0001-renamed\tfixture.md'
+  git mv "$memory/0001-original.md" "$memory/$renamed"
+  write_diff_entry "$renamed" 0001 Original "Opaque synthetic body." \
+    'status: superseded' 'reviewAfter: 2025-02-01T00:00:00Z' 'expires: 2025-03-01T00:00:00Z'
+  git rm --quiet "$memory/0002-remove.md"
+  write_diff_entry 0005-successor.md 0005 Successor "Replacement synthetic body." 'supersedes: "0001"'
+  git add .
+  git commit --quiet -m right
+  right=$(git rev-parse HEAD)
+
+  before=$(snapshot_diff_state)
+  engram diff | grep -F '0 changed (0 added, 0 removed, 0 modified)'
+  engram diff left --json | parse_json 'value.mode === "working-tree" && value.to.kind === "working-tree" && value.totals.changed === 4'
+  engram diff "$left..$right" --json | parse_json '
+    value.schemaVersion === 1 && value.mode === "direct" && value.complete &&
+    value.totals.changed === 4 && value.totals.removed === 2 &&
+    value.changes.map(change => change.id).join(",") === "0001,0002,0004,0005"'
+  report=$(engram diff left...right --json)
+  [[ "$report" == "$(engram diff left...right --json)" ]] || fail "memory diff output changed across runs"
+  printf '%s\n' "$report" | parse_json '
+    value.mode === "merge-base" && value.from.sha === "'"$base"'" && value.to.sha === "'"$right"'" &&
+    value.totals.changed === 3 && value.totals.removed === 1 && value.totals.renamed === 1 &&
+    value.totals.statusChanged === 1 && value.totals.supersessionChanged === 1 &&
+    value.totals.lifecycleChanged === 2 && value.changes[0].kind === "modified" &&
+    value.changes[0].afterPath.endsWith("0001-renamed\tfixture.md") &&
+    value.changes[0].lifecycle.status.before === "active" &&
+    value.changes[0].lifecycle.status.after === "superseded" &&
+    value.changes[0].lifecycle.reviewAfter.after === "2025-02-01T00:00:00Z" &&
+    value.changes[0].lifecycle.expires.after === "2025-03-01T00:00:00Z" &&
+    value.changes[2].lifecycle.supersedes.after === "0001" &&
+    !JSON.stringify(value).includes("synthetic body")'
+  engram diff left...right --json --limit 1 | parse_json '
+    value.totals.changed === 3 && value.omitted.changes === 2 && value.changes[0].id === "0001"'
+  [[ "$(snapshot_diff_state)" == "$before" ]] || fail "committed or clean diff changed persisted state"
+
+  git switch --quiet -c malformed
+  write_diff_entry 0001-copy.md 0001 Duplicate "Duplicate synthetic body."
+  printf -- '---\nid: [\n---\nSensitive parse input stays out of reports.\n' > "$memory/0003-reference.md"
+  write_diff_entry 0005-successor.md 0005 Successor "New synthetic body." 'supersedes: "0001"'
+  git add .
+  git commit --quiet -m malformed
+  git switch --quiet right
+
+  before=$(snapshot_diff_state)
+  status=0
+  report=$(engram diff right..malformed --json) || status=$?
+  [[ "$status" == 2 ]] || fail "malformed historical diff should exit 2"
+  printf '%s\n' "$report" | parse_json '
+    !value.complete && value.totals.indeterminate === 2 &&
+    value.totals.changed === 1 && value.totals.removed === 0 && value.totals.diagnostics === 3 &&
+    value.changes[0].id === "0005" && value.changes[0].edited &&
+    value.diagnostics.every(diagnostic => diagnostic.side === "to") &&
+    value.diagnostics.some(diagnostic => diagnostic.code === "duplicate_id") &&
+    value.diagnostics.some(diagnostic => diagnostic.code === "yaml_invalid") &&
+    !JSON.stringify(value).includes("Sensitive parse input")'
+  status=0
+  report=$(engram diff right..malformed --json --limit 0) || status=$?
+  [[ "$status" == 2 ]] || fail "capped malformed diff should exit 2"
+  printf '%s\n' "$report" | parse_json '
+    value.diagnostics.length === 0 && value.changes.length === 0 &&
+    value.omitted.diagnostics === 3 && value.omitted.changes === 1'
+  status=0
+  engram diff --json -- '--missing-ref' > "$run_root/diff-invalid.out" 2> "$run_root/diff-invalid.err" || status=$?
+  [[ "$status" == 1 && ! -s "$run_root/diff-invalid.out" ]] || fail "invalid ref should exit 1 without a report"
+  grep -F 'Cannot resolve a unique commit' "$run_root/diff-invalid.err" >/dev/null
+  [[ "$(snapshot_diff_state)" == "$before" ]] || fail "failed diff changed persisted state"
+
+  write_diff_entry 0006-staged.md 0006 Staged "Staged synthetic body."
+  write_diff_entry 0007-index.md 0007 Index "Index-only synthetic body."
+  git add "$memory/0006-staged.md" "$memory/0007-index.md"
+  rm "$memory/0007-index.md"
+  write_diff_entry 0003-reference.md 0003 Reference "Unstaged synthetic body."
+  write_diff_entry 0008-untracked.md 0008 Untracked "Untracked synthetic body."
+  printf '%s\n' '0009-ignored.md' >> .git/info/exclude
+  write_diff_entry 0009-ignored.md 0009 Ignored "Ignored synthetic body."
+  mkdir -p .engram/pending
+  printf 'Pending fixture must stay out of the report.\n' > .engram/pending/candidate.md
+
+  before=$(snapshot_diff_state)
+  engram diff HEAD --json | parse_json '
+    value.complete && value.totals.added === 3 && value.totals.edited === 1 &&
+    value.totals.diagnostics === 0 &&
+    value.changes.map(change => change.id).join(",") === "0003,0006,0008,0009"'
+  [[ "$(snapshot_diff_state)" == "$before" ]] || fail "dirty diff changed persisted state"
+)
+
 step "Packaged memory-application evaluation records three delivery conditions"
 application_report="$run_root/memory-application.json"
 application_runner="$audit_source/memory-application/evaluate.ts"

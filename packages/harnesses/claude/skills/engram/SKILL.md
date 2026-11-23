@@ -159,6 +159,11 @@ Run `engram review --scope all` to find superseded, archived, expired,
 review-due, and broken-lineage entries. Add `--json` for structured output.
 The command is read-only.
 
+Use `engram diff` to review project memory changes from `HEAD` to disk, or
+`engram diff main...HEAD --json` to review a branch from its merge base.
+Use `A..B` for a direct comparison of two commits. The command is read-only
+and exits 2 if an unreadable snapshot or entry makes the report incomplete.
+
 Run `engram check --scope all` when reads warn about skipped files, before a
 release, or after resolving merge conflicts in `.engram/`. It checks entry
 frontmatter, filenames, duplicate ids, configuration, lifecycle references,
