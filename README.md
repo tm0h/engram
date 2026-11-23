@@ -150,6 +150,9 @@ manual flow when automatic context is unavailable or they need more detail.
 - **OpenClaw**: `engram install openclaw --root <agent-workspace>` installs
   a workspace skill for Git-tracked project memory and preserves OpenClaw
   personal memory. See [OpenClaw setup](docs/openclaw.md).
+- **Hermes Agent**: `engram install hermes --root <profile-directory>` installs
+  a skill for using project memory in a separate local shell. See
+  [Hermes setup](docs/hermes.md).
 - **Generic (AGENTS.md)**: `engram install generic` maintains a managed
   engram section in the project's `AGENTS.md`; foreign content is
   preserved and `--uninstall` removes only the managed block.

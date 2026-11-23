@@ -14,13 +14,16 @@
  * - ENG-37 roots: user-level targets (claude-code, codex) root under the
  *   OS home (or --home). Project-local targets use the project directory
  *   and OpenClaw uses the agent workspace. Both use --root (default cwd)
- *   and reject --home. Config-dir overrides apply only to user-level targets.
+ *   and reject --home. Hermes requires --root for an existing profile.
+ *   Config-dir overrides apply only to user-level targets.
  */
 import { Effect } from "effect";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
 import chalk from "chalk";
+import { lstat } from "node:fs/promises";
 import os from "node:os";
+import { dirname, join, resolve } from "node:path";
 import process from "node:process";
 import readline from "node:readline/promises";
 import {
@@ -33,6 +36,7 @@ import {
   type InstallSpec,
   type JsonValue,
   type ScanResult,
+  TEMP_SUFFIX,
 } from "@engram/harnesses/shared";
 import {
   CLAUDE_CODE_TARGET,
@@ -40,6 +44,8 @@ import {
   CODEX_TARGET,
   CURSOR_TARGET,
   GENERIC_TARGET,
+  HERMES_SKILL_PATH,
+  HERMES_TARGET,
   OPENCLAW_TARGET,
   claudeCodeRoot,
   claudeCodeSpec,
@@ -52,6 +58,7 @@ import {
   cursorSpec,
   genericRoot,
   genericSpec,
+  hermesSpec,
   openclawRoot,
   openclawSpec,
   parseSidecarLedger,
@@ -73,8 +80,8 @@ export interface InstallOptions {
    */
   readonly home?: string;
   /**
-   * Project directory, or the agent workspace for OpenClaw.
-   * Defaults to the process cwd. Never combined with --home.
+   * Project directory, OpenClaw agent workspace, or Hermes profile directory.
+   * Hermes requires an explicit directory. Other --root targets default to cwd.
    */
   readonly root?: string;
 }
@@ -87,6 +94,7 @@ export const INSTALL_TARGETS = [
   CLAUDE_CODE_TARGET,
   CODEX_TARGET,
   OPENCLAW_TARGET,
+  HERMES_TARGET,
 ];
 const TARGET_MENU = INSTALL_TARGETS.join(" | ");
 
@@ -97,7 +105,7 @@ type TargetModule =
       readonly root: (home: string) => string;
     }
   | {
-      readonly kind: "project";
+      readonly kind: "project" | "profile";
       readonly spec: InstallSpec;
       readonly root: (projectRoot: string) => string;
     };
@@ -114,6 +122,9 @@ export const targetFor = (target: string): TargetModule | null => {
   }
   if (target === OPENCLAW_TARGET) {
     return { kind: "project", spec: openclawSpec(), root: openclawRoot };
+  }
+  if (target === HERMES_TARGET) {
+    return { kind: "profile", spec: hermesSpec(), root: resolve };
   }
   if (target === CLAUDE_CODE_TARGET) {
     return { kind: "home", spec: claudeCodeSpec(), root: claudeCodeRoot };
@@ -243,6 +254,34 @@ const ownershipReport = (
   return { owned: [...owned], unownedMatches: [...unowned] };
 };
 
+// A Hermes skill tree can be shared through symlinks. Check the paths the
+// installer reads, creates, replaces, or stages before touching the profile.
+const checkHermesProfilePaths = async (root: string) => {
+  const skill = join(root, HERMES_SKILL_PATH);
+  const directories = [root, join(root, "skills"), dirname(skill)];
+  for (const file of [...directories, skill, skill + TEMP_SUFFIX]) {
+    const info = await lstat(file).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") {
+        if (file !== root) return null;
+        throw new Error(`Hermes profile directory does not exist: ${root}`);
+      }
+      throw error;
+    });
+    if (info === null) continue;
+    if (info.isSymbolicLink())
+      throw new Error(`refusing Hermes profile path through symbolic link: ${file}`);
+    if (directories.includes(file) ? !info.isDirectory() : !info.isFile() || info.nlink !== 1) {
+      throw new Error(`refusing unexpected Hermes profile path: ${file}`);
+    }
+  }
+};
+
+const validateHermesProfile = (root: string) =>
+  Effect.tryPromise({
+    try: () => checkHermesProfilePaths(root),
+    catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+  });
+
 export const installCommand = (opts: InstallOptions) =>
   Effect.gen(function* () {
     chalk.level = 0;
@@ -257,7 +296,17 @@ export const installCommand = (opts: InstallOptions) =>
     // env-override / OS-home precedence; project targets root at the project
     // directory (--root, default cwd) and never consult --home or env dirs.
     let root: string;
-    if (t.kind === "project") {
+    if (t.kind === "profile") {
+      if (opts.home !== undefined || opts.root === undefined || opts.root.trim() === "") {
+        return yield* Effect.fail(
+          new Error(
+            "Use --root <dir> to select the existing Hermes profile directory. --home does not apply.",
+          ),
+        );
+      }
+      root = t.root(opts.root);
+      yield* validateHermesProfile(root);
+    } else if (t.kind === "project") {
       if (opts.home !== undefined) {
         return yield* Effect.fail(
           new Error(
@@ -274,10 +323,20 @@ export const installCommand = (opts: InstallOptions) =>
     } else {
       root = userInstallRoot(opts.target, t.root, opts.home);
     }
-    const scan = yield* scanAssets(root, t.spec);
+    const scanned = yield* scanAssets(root, t.spec);
+    const scan: ScanResult =
+      t.kind === "profile"
+        ? {
+            ...scanned,
+            states: scanned.states.map((state) =>
+              state.status === "drift"
+                ? { ...state, status: "blocked", reasons: ["managed skill has local edits"] }
+                : state,
+            ),
+          }
+        : scanned;
     const verb = opts.uninstall ? "Uninstall" : "Install";
-    // project targets manage files; user-level targets manage hooks
-    const noun = t.kind === "project" ? "files" : "hooks";
+    const noun = t.kind === "home" ? "hooks" : "files";
 
     // status is a strictly read-only view
     if (opts.status) {
@@ -391,8 +450,16 @@ export const installCommand = (opts: InstallOptions) =>
     }
     // A fresh host home may not contain the target directory yet; the core
     // stages writes inside the target directory, so it must exist first.
-    // Project roots must already exist and are never created.
-    if (t.kind === "home") {
+    // Project and profile roots must already exist.
+    if (t.kind === "profile") {
+      yield* validateHermesProfile(root);
+      const latest = yield* scanAssets(root, t.spec);
+      if (latest.states[0]?.current !== scan.states[0]?.current) {
+        return yield* Effect.fail(
+          new Error("Hermes skill changed during confirmation. Re-run the installer."),
+        );
+      }
+    } else if (t.kind === "home") {
       yield* fs.makeDirectory(root, { recursive: true });
     }
     yield* applyPlan(root, plan);

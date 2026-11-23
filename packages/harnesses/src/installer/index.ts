@@ -12,3 +12,4 @@ export * from "./cursor.js";
 export * from "./claude.js";
 export * from "./guidance-template.js";
 export * from "./openclaw.js";
+export * from "./hermes.js";

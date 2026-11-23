@@ -97,7 +97,7 @@ describe("engram install command", () => {
 
   it("refuses unknown targets, enumerating all supported targets", async () => {
     await expect(runInstall({ target: "nope" })).rejects.toThrow(
-      /unknown install target "nope" \(expected: generic \| cursor \| claude \| claude-code \| codex \| openclaw\)/,
+      /unknown install target "nope" \(expected: generic \| cursor \| claude \| claude-code \| codex \| openclaw \| hermes\)/,
     );
   });
 
@@ -128,6 +128,18 @@ describe("engram install command", () => {
     await expect(runInstall(opts)).rejects.toThrow(/blocked asset/);
     await expect(runInstall({ ...opts, uninstall: true })).rejects.toThrow(/blocked asset/);
     expect(fs.readFileSync(skill, "utf8")).toBe(foreign);
+  });
+
+  it("requires an explicit Hermes profile and rejects a shared skills symlink", async () => {
+    await expect(runInstall({ target: "hermes", yes: true })).rejects.toThrow(/--root/);
+    await expect(runInstall({ target: "hermes", home: tmp, root: tmp })).rejects.toThrow(/--home/);
+    const shared = path.join(tmp, "shared");
+    fs.mkdirSync(shared);
+    fs.symlinkSync(shared, path.join(tmp, "skills"), "junction");
+    await expect(runInstall({ target: "hermes", root: tmp, yes: true })).rejects.toThrow(
+      /symbolic link/,
+    );
+    expect(fs.readdirSync(shared)).toEqual([]);
   });
 
   it("status is read-only and reports state", async () => {

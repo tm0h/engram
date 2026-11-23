@@ -101,6 +101,14 @@ describe("guidance / skills stay aligned", () => {
     }
   });
 
+  it("both skills describe the Hermes profile and out-of-session workflow", () => {
+    for (const skill of [piSkill, claudeSkill]) {
+      expect(skill).toContain("engram install hermes --root <profile-directory>");
+      expect(skill).toContain("outside Hermes");
+      expect(skill).toContain("Keep project data and command output out of the Hermes session.");
+    }
+  });
+
   it("both skills describe preview-first migration and managed export", () => {
     for (const skill of [piSkill, claudeSkill]) {
       expect(skill).toContain("engram import <files...>");
