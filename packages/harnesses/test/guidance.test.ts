@@ -93,6 +93,14 @@ describe("guidance / skills stay aligned", () => {
     expect(sessionFlow).toMatch(/engram context/);
   });
 
+  it("both skills describe OpenClaw workspace installation and project scope", () => {
+    for (const skill of [piSkill, claudeSkill]) {
+      expect(skill).toContain("engram install openclaw --root <agent-workspace>");
+      expect(skill).toContain("skills/engram-project-memory/SKILL.md");
+      expect(skill).toContain("Git checkout with `--scope project`");
+    }
+  });
+
   it("both skills describe preview-first migration and managed export", () => {
     for (const skill of [piSkill, claudeSkill]) {
       expect(skill).toContain("engram import <files...>");
