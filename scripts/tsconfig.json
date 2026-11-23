@@ -11,6 +11,7 @@
   },
   "include": [
     "e2e-retrieval.ts",
+    "e2e-migration.ts",
     "e2e-repository-evidence.ts",
     "e2e-pending.ts",
     "e2e-capture.ts",

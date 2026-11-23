@@ -59,12 +59,37 @@ const OpenCodeCaptureSource = Schema.Struct({
 export const CaptureSource = Schema.Union([PiCaptureSource, OpenCodeCaptureSource]);
 export type CaptureSource = typeof CaptureSource.Type;
 
+export const ImportFormat = Schema.Literals([
+  "agents",
+  "claude",
+  "cursor",
+  "readme",
+  "hermes",
+  "openclaw",
+]);
+export type ImportFormat = typeof ImportFormat.Type;
+const ImportSource = Schema.Struct({
+  format: ImportFormat,
+  path: nonBlank,
+  line: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+  fileIdentity: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))),
+});
+export type ImportSource = typeof ImportSource.Type;
+
+export const importSourceRef = ({ path, line, fileIdentity }: ImportSource): string =>
+  `${fileIdentity ? "file-sha256:" + fileIdentity : path}#L${line}`;
+
+export const pendingSourceRef = (pending: PendingCandidate): string =>
+  pending.correction?.sourceRef ??
+  (pending.importSource ? importSourceRef(pending.importSource) : pending.id);
+
 const CandidateInput = Schema.Struct({
   scope: ScopeSchema,
   proposed: Proposed,
   sourceExcerpt: nonBlank,
   provenanceClass: SourceTypeSchema,
   captureSource: Schema.optionalKey(CaptureSource),
+  importSource: Schema.optionalKey(ImportSource),
   correction: Schema.optionalKey(
     Schema.Struct({
       originalId: reference.id,
@@ -131,12 +156,18 @@ const checkQueueContent = (
     (input.scope !== "project" || input.provenanceClass !== "file" || input.captureSource)
   )
     return Effect.fail(invalidCandidate());
+  if (
+    input.importSource &&
+    (input.provenanceClass !== "file" || input.captureSource || input.correction)
+  )
+    return Effect.fail(invalidCandidate());
   const findings = [
     sourceExcerpt,
     proposed.title,
     proposed.body,
     ...proposed.tags,
     input.correction?.sourceRef ?? "",
+    input.importSource?.path ?? "",
   ].flatMap(scanContent);
   return findings.length === 0
     ? Effect.void

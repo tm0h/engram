@@ -41,6 +41,7 @@ import * as Install from "./commands/install.js";
 import * as Hook from "./commands/hook.js";
 import { MIN_CONTEXT_TOKENS, recordHookUsageArgument } from "@engram/harnesses/shared";
 import { captureCommand } from "./commands/capture.js";
+import { exportCommand, importCommand } from "./commands/migration.js";
 import { installEpipeGuard } from "./io.js";
 
 // ENG-39: a piped consumer closing stdout/stderr early (e.g. `| head`) must
@@ -99,6 +100,21 @@ program
   .name("engram")
   .description("Git-native agent memory — personal + team/project memory any harness can use.")
   .version("0.6.0");
+
+program
+  .command("import <files...>")
+  .description("Preview Markdown migration into the pending review queue.")
+  .option("--format <format>", "agents | claude | cursor | readme | hermes | openclaw")
+  .option("-s, --scope <scope>", "project (default) | personal")
+  .option("--apply", "Stage eligible candidates after previewing them.")
+  .option("--json", "Emit a versioned JSON result.")
+  .action((files, opts) => run(importCommand(files, opts)));
+
+program
+  .command("export <files...>")
+  .description("Write a bounded project memory digest into managed Markdown sections.")
+  .option("--json", "Emit a versioned JSON result.")
+  .action((files, opts) => run(exportCommand(files, opts)));
 
 program
   .command("init")

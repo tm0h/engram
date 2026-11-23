@@ -34,3 +34,6 @@ export * from "./contextual-evidence.js";
 export { captureControl } from "./capture-control.js";
 
 export * from "./repository-reference.js";
+
+export * from "./migration.js";
+export { writeAtomicFile } from "./atomic-file.js";

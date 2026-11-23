@@ -210,6 +210,13 @@ step "Packaged Pi and OpenCode require owner evidence and audit automatic record
   node "$audit_source/e2e-capture-graduation.ts" "$run_root/capture-graduation"
 )
 
+step "Packaged migration previews imports, stages review candidates, and updates managed exports"
+(
+  export HOME="$run_root/migration-home"
+  mkdir "$HOME"
+  node "$audit_source/e2e-migration.ts" "$run_root/migration" "$ENGRAM_E2E_BIN"
+)
+
 step "Local diagnostics and usage statistics"
 engram doctor | grep -F "project store: empty"
 engram doctor --json |

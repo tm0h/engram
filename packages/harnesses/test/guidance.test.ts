@@ -93,6 +93,15 @@ describe("guidance / skills stay aligned", () => {
     expect(sessionFlow).toMatch(/engram context/);
   });
 
+  it("both skills describe preview-first migration and managed export", () => {
+    for (const skill of [piSkill, claudeSkill]) {
+      expect(skill).toContain("engram import <files...>");
+      expect(skill).toMatch(/--apply[\s\S]*?pending review/);
+      expect(skill).toContain("engram export <files...>");
+      expect(skill).toContain("canonical project digest in managed Markdown sections");
+    }
+  });
+
   it("both skills keep shared search/show/add and recording guidance", () => {
     for (const [name, skill, search, show, add] of [
       ["pi", piSkill, "engram_search", "engram_show", "engram_add"],
