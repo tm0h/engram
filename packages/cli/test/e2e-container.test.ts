@@ -103,7 +103,7 @@ describe("Docker E2E runner", () => {
     expect(e2e).toContain("engram install cursor --yes");
     expect(e2e).toContain("engram install claude --yes");
     expect(e2e).toContain("sh .claude/skills/engram/bin/engram --version");
-    expect(e2e).toContain("generic | cursor | claude | claude-code | codex | openclaw");
+    expect(e2e).toContain("generic | cursor | claude | claude-code | codex | openclaw | hermes");
     expect(e2e).toContain('--root "$root_view"');
     // R3 pinned at the e2e level: byte-exact uninstall of a no-NL AGENTS.md
     expect(e2e).toContain("sha256sum");
@@ -111,7 +111,17 @@ describe("Docker E2E runner", () => {
     expect(e2e).toContain('"$run_root/deny-home.txt" 2>&1');
     expect(e2e).toContain('grep -F -- "--root" "$run_root/deny-home.txt"');
     expect(e2e).toContain(
-      "grep -F 'generic | cursor | claude | claude-code | codex | openclaw' \"$run_root/deny-menu.txt\"",
+      "grep -F 'generic | cursor | claude | claude-code | codex | openclaw | hermes' \"$run_root/deny-menu.txt\"",
+    );
+  });
+
+  it("runs the Hermes profile scenario against the packaged CLI", () => {
+    const e2e = readRepoFile("scripts/e2e-cli.sh");
+    expect(e2e).toContain(
+      'step "Packaged Hermes skill guides local-only project memory and preserves the profile"',
+    );
+    expect(e2e).toContain(
+      'node "$audit_source/e2e-hermes.ts" "$run_root/hermes" "$ENGRAM_E2E_BIN" "$fixture"',
     );
   });
 

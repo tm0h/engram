@@ -73,12 +73,12 @@ engram init --tracked | grep -F "Already initialized"
 
 # The queue has no public intake command. Seed it with the offline fixture
 # and exercise retrieval and review through the installed package.
+fixture_dir="packages/core/node_modules/.cache/engram-pending-e2e"
+fixture="/workspace/$fixture_dir/pending-queue.mjs"
 (
   cd /workspace
-  fixture_dir="packages/core/node_modules/.cache/engram-pending-e2e"
   pnpm --dir packages/core exec vp pack test/fixtures/pending-queue.ts --no-dts \
     --out-dir node_modules/.cache/engram-pending-e2e
-  fixture="/workspace/$fixture_dir/pending-queue.mjs"
   pending() { node "$fixture" "$@"; }
 
   export HOME="$run_root/pending-home"
@@ -229,6 +229,13 @@ step "Packaged OpenClaw skill keeps personal and project memory separate"
   export HOME="$run_root/openclaw-home"
   mkdir -p "$HOME"
   node "$audit_source/e2e-openclaw.ts" "$run_root/openclaw" "$ENGRAM_E2E_BIN"
+)
+
+step "Packaged Hermes skill guides local-only project memory and preserves the profile"
+(
+  export HOME="$run_root/hermes-home"
+  mkdir "$HOME"
+  node "$audit_source/e2e-hermes.ts" "$run_root/hermes" "$ENGRAM_E2E_BIN" "$fixture"
 )
 
 step "Local diagnostics and usage statistics"
@@ -1320,7 +1327,7 @@ grep -F -- "--root" "$run_root/deny-home.txt"
 if engram install nope >"$run_root/deny-menu.txt" 2>&1; then
   fail "unknown install targets must fail"
 fi
-grep -F 'generic | cursor | claude | claude-code | codex | openclaw' "$run_root/deny-menu.txt"
+grep -F 'generic | cursor | claude | claude-code | codex | openclaw | hermes' "$run_root/deny-menu.txt"
 
 step "Removal and duplicate no-op"
 engram dedupe --scope project | grep -F "No duplicate ids found"
