@@ -10,6 +10,7 @@ import {
   scanContent,
   searchEngrams,
   writeAtomicFile,
+  type ImportConflictNotice,
   type ImportProposal,
 } from "@engram/core";
 import {
@@ -35,7 +36,7 @@ interface Outcome {
   readonly entryId?: string;
   readonly packName?: string;
   readonly packVersion?: number;
-  readonly conflicts?: readonly { readonly id: string; readonly kind: string }[];
+  readonly conflicts?: readonly ImportConflictNotice[];
   readonly reason?: string;
   readonly id?: string;
   readonly rules?: readonly string[];
@@ -61,7 +62,9 @@ const describe = (row: Outcome) =>
     JSON.stringify(row.path) + (row.line === undefined ? "" : ":" + row.line),
     row.packName && `${row.packName}@${row.packVersion}/${row.entryId}`,
     row.reason,
-    row.conflicts?.map(({ kind, id }) => `${kind}:${id}`).join(", "),
+    row.conflicts
+      ?.map((conflict) => `${conflict.kind}:${"id" in conflict ? conflict.id : conflict.entryId}`)
+      .join(", "),
     row.id,
     row.rules?.join(", "),
     row.candidate && JSON.stringify(row.candidate),

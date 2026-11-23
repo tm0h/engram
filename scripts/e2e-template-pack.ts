@@ -69,6 +69,7 @@ const expectRows = (rows: Row[], expected: [string, string, string?][]) =>
 const files = [
   { id: "checkout", file: "entries/checkout.json" },
   { id: "logging", file: "logging.json" },
+  { id: "checkout-alternative", file: "alternative.json" },
   { id: "optional", file: "optional.json" },
   { id: "duplicate", file: "duplicate.json" },
   { id: "escape", file: "../outside.json" },
@@ -91,6 +92,7 @@ const checkoutV1 = {
   expires: "2091-01-01T00:00:00Z",
 };
 write("entries/checkout.json", checkoutV1);
+write("alternative.json", entry(checkoutV1.title, "Use temporary clones for independent tasks."));
 write("logging.json", entry("Fixture logs", "Write build logs under artifacts."));
 write("optional.json", entry("Fixture release calendar", "Run practice releases on Tuesdays."));
 const local = entry("Fixture runner", "Run tests with Juniper.");
@@ -141,6 +143,7 @@ const rejections: [string, string, string][] = [
 expectRows(outcomes(preview), [
   ["checkout", "eligible"],
   ["logging", "eligible"],
+  ["checkout-alternative", "eligible"],
   ["optional", "eligible"],
   ...rejections,
 ]);
@@ -166,10 +169,11 @@ const staged = outcomes(apply);
 expectRows(staged, [
   ["checkout", "staged"],
   ["logging", "staged"],
+  ["checkout-alternative", "staged"],
   ["optional", "staged"],
   ...rejections,
 ]);
-const [checkout, logging, optional] = staged.map(({ id }) => id!);
+const [checkout, logging, alternative, optional] = staged.map(({ id }) => id!);
 const source = pending(checkout).importSource;
 assert.deepEqual(source, {
   format: "pack",
@@ -182,6 +186,14 @@ assert.deepEqual(source, {
 assert.match(source.digest, /^[a-f0-9]{64}$/);
 assert.equal(pending(checkout).proposed.reviewAfter, checkoutV1.reviewAfter);
 assert.equal(pending(logging).proposed.title, "Fixture logs");
+assert.deepEqual(outcomes(preview)[2].conflicts, [
+  { scope: "project", entryId: "checkout", kind: "possible_conflict" },
+]);
+const queuedConflict = [{ scope: "project", id: checkout, kind: "possible_conflict" }];
+assert.deepEqual(staged[2].conflicts, queuedConflict);
+assert.deepEqual(pending(alternative).conflicts, queuedConflict);
+assert.match(apply.stderr, /possible_conflict:checkout/);
+assert.match(cli(["pending", "show", checkout]).stdout, /Fixture checkouts/);
 assert.equal(pending(optional).proposed.title, "Fixture release calendar");
 assert.deepEqual(snapshot(canonical), baseline);
 assert.deepEqual(snapshot(pack), sourceV1);
@@ -206,18 +218,35 @@ const queueBeforeRetry = snapshot(queue);
 expectRows(outcomes(cli([...importArgs, "--apply"], 1)), [
   ["checkout", "skipped", "already_pending"],
   ["logging", "skipped", "already_pending"],
+  ["checkout-alternative", "skipped", "already_pending"],
   ["optional", "skipped", "already_rejected"],
   ...rejections,
 ]);
 assert.deepEqual(snapshot(queue), queueBeforeRetry);
 assert.deepEqual(snapshot(canonical), baseline);
 
+const pendingBeforeDates = snapshot(queue);
+cli(["pending", "edit", checkout, "--patch", '{"expires":"2090-02-30T00:00:00Z"}'], 1);
+cli(["pending", "edit", checkout, "--patch", '{"expires":"2089-01-01T00:00:00Z"}'], 1);
+assert.deepEqual(snapshot(queue), pendingBeforeDates);
+const revisedDate = "2090-02-01T00:00:00Z";
+cli([
+  "pending",
+  "edit",
+  checkout,
+  "--patch",
+  JSON.stringify({ reviewAfter: revisedDate, expires: null }),
+]);
+assert.equal(pending(checkout).proposed.reviewAfter, revisedDate);
+assert.ok(!Object.hasOwn(pending(checkout).proposed, "expires"));
+assert.deepEqual(pending(checkout).importSource, source);
 const approval = JSON.parse(cli(["pending", "approve", checkout, "--dry-run", "--json"]).stdout)
   .results[0];
 assert.equal(approval.status, "preview");
 assert.match(approval.markdown, /Keep unrelated fixture changes/);
 assert.ok(approval.markdown.includes(`pack:${name}@1/checkout#${source.digest}`));
-assert.match(approval.markdown, /reviewAfter: '?2090-01-01T00:00:00Z/);
+assert.ok(approval.markdown.includes(revisedDate));
+assert.doesNotMatch(approval.markdown, /^expires:/m);
 assert.deepEqual(snapshot(canonical), baseline);
 const published = JSON.parse(
   cli(["pending", "approve", checkout, "--yes", "--expect", approval.revision, "--json"]).stdout,
@@ -240,7 +269,10 @@ write(
   entry("Alternate isolation", "Use disposable copies for parallel fixture tasks."),
 );
 assert.equal(outcomes(cli(importArgs, 1))[0].reason, "pack_version_changed");
-saveManifest(2, files.slice(0, 3));
+saveManifest(
+  2,
+  files.filter(({ id }) => ["checkout", "logging", "optional"].includes(id)),
+);
 const sourceV2 = snapshot(pack);
 const upgradePreview = outcomes(cli(importArgs));
 expectRows(upgradePreview, [

@@ -119,7 +119,11 @@ const CandidateInput = Schema.Struct({
     Schema.Struct({ ...reference, kind: Schema.Literals(["exact_duplicate", "likely_duplicate"]) }),
   ),
   conflicts: Schema.Array(
-    Schema.Struct({ ...reference, kind: Schema.Literal("possible_conflict") }),
+    Schema.Struct({
+      ...reference,
+      id: Schema.String.check(Schema.makeFilter((id) => isValidId(id) || isPendingCandidateId(id))),
+      kind: Schema.Literal("possible_conflict"),
+    }),
   ),
 });
 
@@ -138,6 +142,8 @@ const Patch = Schema.Struct({
   type: Schema.optionalKey(Proposed.fields.type),
   tags: Schema.optionalKey(Proposed.fields.tags),
   body: Schema.optionalKey(Proposed.fields.body),
+  reviewAfter: Schema.optionalKey(Schema.NullOr(timestamp)),
+  expires: Schema.optionalKey(Schema.NullOr(timestamp)),
 });
 export type PendingCandidatePatch = typeof Patch.Type;
 
@@ -353,7 +359,7 @@ export const parsePendingPatch = (json: string) =>
       () =>
         new ValidationError({
           message:
-            "Provide a JSON patch with a nonblank title, valid type, array of tags, or a string body.",
+            "Provide a JSON patch with title, type, tags, body, or ISO 8601 reviewAfter and expires dates (null clears a date).",
         }),
     ),
     Effect.filterOrFail(
@@ -428,10 +434,33 @@ export const patchPendingCandidate = Effect.fnUntraced(function* (
   cwd: string = process.cwd(),
 ) {
   const { directory } = yield* candidatePath(candidate.scope, candidate.id, cwd);
-  const proposed = yield* Schema.decodeUnknownEffect(Proposed)(
-    { ...candidate.proposed, ...patch },
-    strict,
-  ).pipe(Effect.mapError(invalidCandidate));
+  const { reviewAfter, expires, ...fields } = patch;
+  const updated = { ...candidate.proposed, ...fields };
+  if (reviewAfter !== undefined || expires !== undefined) {
+    if (candidate.correction) {
+      return yield* Effect.fail(
+        new ValidationError({
+          message: "Repository corrections inherit lifecycle dates from the original memory.",
+        }),
+      );
+    }
+    if (reviewAfter === null) delete updated.reviewAfter;
+    else if (reviewAfter !== undefined) updated.reviewAfter = reviewAfter;
+    if (expires === null) delete updated.expires;
+    else if (expires !== undefined) updated.expires = expires;
+
+    const review =
+      updated.reviewAfter === undefined ? undefined : parseTimestamp(updated.reviewAfter);
+    const expiry = updated.expires === undefined ? undefined : parseTimestamp(updated.expires);
+    if (review !== undefined && expiry !== undefined && review > expiry) {
+      return yield* Effect.fail(
+        new ValidationError({ message: "The review date must be on or before expiry." }),
+      );
+    }
+  }
+  const proposed = yield* Schema.decodeUnknownEffect(Proposed)(updated, strict).pipe(
+    Effect.mapError(invalidCandidate),
+  );
   const next = { ...candidate, proposed };
   yield* checkQueueContent(next);
   yield* ensureIgnored(directory);

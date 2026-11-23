@@ -517,7 +517,10 @@ for (const action of ["show", "edit", "approve", "reject"] as const) {
     .action((ids, opts) => run(pendingCommand(action, ids, opts)));
   if (action === "edit") {
     command
-      .option("--patch <json>", "Patch title, type, tags or body.")
+      .option(
+        "--patch <json>",
+        "Patch title, type, tags, body, reviewAfter or expires. Use null to clear a date.",
+      )
       .addOption(new CommandOption("--stdin", "Read a JSON patch from stdin.").conflicts("patch"));
   }
   if (action === "approve") {

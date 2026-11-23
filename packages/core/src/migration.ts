@@ -35,6 +35,14 @@ export const importLocation = (source: ImportSource) =>
       }
     : { path: source.path, line: source.line };
 
+type ImportConflict = Omit<WriteCandidate, "kind"> & { readonly kind: "possible_conflict" };
+
+export type ImportConflictNotice =
+  | ImportConflict
+  | (Omit<ImportConflict, "id"> & {
+      readonly entryId: string;
+    });
+
 export const reviewImport = (
   proposals: readonly ImportProposal[],
   scope: Scope,
@@ -81,6 +89,7 @@ export const reviewImport = (
       ),
     ];
 
+    const previewEntryIds = new Map<string, string>();
     const hasPacks = proposals.some(({ source }) => source.format === "pack");
     const rejectedPacks = hasPacks ? yield* listPackRejections(scope, cwd) : [];
     const canonicalPacks = hasPacks
@@ -120,7 +129,7 @@ export const reviewImport = (
         const proposed = { ...candidateFields, tags: [] };
         const entry = asEntry("import-preview-" + index, proposed);
         const advisory = findWriteCandidates(entry, existing, now);
-        let conflicts: WriteCandidate[] = [];
+        let conflicts: ImportConflict[] = [];
         let reason: string | undefined;
         if (source.format === "pack") {
           const history = knownPacks.filter((item) => samePackEntry(source, item.source));
@@ -136,7 +145,9 @@ export const reviewImport = (
           if (!reason && history.some((item) => item.source.digest === source.digest))
             reason = "unchanged_pack_entry";
           reason ??= advisory.find(({ kind }) => kind !== "possible_conflict")?.kind;
-          conflicts = advisory.filter(({ kind }) => kind === "possible_conflict");
+          conflicts = advisory.flatMap(({ scope, id, kind }) =>
+            kind === "possible_conflict" ? [{ scope, id, kind }] : [],
+          );
           for (const { id } of history) {
             if (id && !conflicts.some((conflict) => conflict.id === id)) {
               conflicts.push({ scope, id, kind: "possible_conflict" });
@@ -163,13 +174,18 @@ export const reviewImport = (
                   advisory[0]?.kind);
         }
         if (reason) return { ...location, status: "skipped", reason } as const;
-        const notices = conflicts.length ? { conflicts } : {};
-
         if (!apply) {
+          const previewConflicts = conflicts.map((conflict): ImportConflictNotice => {
+            const entryId = previewEntryIds.get(conflict.id);
+            return entryId === undefined
+              ? conflict
+              : { scope: conflict.scope, kind: conflict.kind, entryId };
+          });
+          if (source.format === "pack") previewEntryIds.set(entry.id, source.entryId);
           existing.push(entry);
           return {
             ...location,
-            ...notices,
+            ...(previewConflicts.length ? { conflicts: previewConflicts } : {}),
             status: "eligible",
             candidate: candidateFields,
           } as const;
@@ -182,17 +198,18 @@ export const reviewImport = (
             provenanceClass: "file",
             importSource: proposal.source,
             duplicates: [],
-            conflicts: conflicts.flatMap(({ scope, id, kind }) =>
-              kind === "possible_conflict" && entries.some((entry) => entry.id === id)
-                ? [{ scope, id, kind }]
-                : [],
-            ),
+            conflicts,
           },
           cwd,
         ).pipe(
           Effect.map((candidate) => {
-            existing.push(entry);
-            return { ...location, ...notices, status: "staged", id: candidate.id } as const;
+            existing.push(asEntry(candidate.id, candidate.proposed));
+            return {
+              ...location,
+              ...(conflicts.length ? { conflicts } : {}),
+              status: "staged",
+              id: candidate.id,
+            } as const;
           }),
           Effect.catch(() =>
             Effect.succeed({

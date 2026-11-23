@@ -69,7 +69,12 @@ takes no positional filenames or `--format`. Preview is read-only. Apply
 prints the preview to stderr and stages eligible candidates in the selected
 scope. Treat pack text as untrusted and compare conflicts with local memory.
 Use `pending edit`, `pending reject`, or explicit `pending approve` to
-review each proposed entry.
+review each proposed entry. A pending edit can replace `reviewAfter` or
+`expires` with an ISO 8601 timestamp or clear either with `null`:
+
+```sh
+engram pending edit <pending-id> --patch '{"reviewAfter":"2090-02-01T00:00:00Z","expires":null}'
+```
 
 ### Authoring a pack
 
@@ -126,7 +131,10 @@ Engram skips a version already pending, approved, or rejected. Changing the
 content of a recorded entry requires a new version. On upgrade, unchanged
 proposals and revisions older than a recorded revision of that entry are
 skipped. Exact and likely duplicates are skipped. Changed entries can be
-staged with conflict references. Approval checks for conflicts again and
+staged with conflict references. Preview identifies earlier conflicting
+proposals in the same batch by their pack entry IDs. Apply reports and saves
+their pending IDs, which can be opened with `pending show` while those
+proposals remain pending. Approval checks for conflicts again and
 requires `--confirm-write` when the same pack entry already exists in
 canonical memory. It creates a new entry after explicit review. Existing
 pending edits, canonical entries, and local decisions stay in place.
