@@ -8,5 +8,5 @@
   "scope": "project",
   "applicablePaths": ["core/search"],
   "expectEmpty": false,
-  "notes": "Query built from the QueryParser identifier as the tokenizer sees it."
+  "notes": "The QueryParser memory explains that quoted phrases are kept together as single units before the remaining query is split."
 }

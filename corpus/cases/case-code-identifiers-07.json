@@ -8,5 +8,5 @@
   "scope": "project",
   "applicablePaths": ["cli/config"],
   "expectEmpty": false,
-  "notes": "Query names the mothlight.config.js file as the tokenizer splits it, plus the overrides fact."
+  "notes": "The config resolution memory describes the order in which the root mothlight.config.js file, CLI flags, and defaults are consulted."
 }

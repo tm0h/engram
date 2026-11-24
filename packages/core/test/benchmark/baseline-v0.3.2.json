@@ -1,8 +1,8 @@
 {
   "benchmark": "engram-retrieval-benchmark",
-  "corpusVersion": "0.3.1",
+  "corpusVersion": "0.3.2",
   "schemaVersion": 1,
-  "contractHash": "sha256:ca2df5ed7b459811961941f37540b91f14793144a7200e60b6fbdb57885bb39a",
+  "contractHash": "sha256:42ae522bac8d5396c103674c13baa8d4ffa1342d22c1ce5bea277329b5e48387",
   "source": {
     "branch": "feat/eng-18-bm25",
     "integrationHead": "8a7cc202370491de6d46c6b29f951ab1bf8267da",
@@ -13,7 +13,12 @@
       "eng8Benchmark": "eec4da77aa84b5d21709b301a2d813ac629f7b98"
     },
     "generatedWith": "wired search (ENG-18 BM25 ranker) via evaluateCase from @engram/core/corpus",
-    "note": "source SHAs recorded at generation time; the gate validates corpusVersion + contractHash + measured cases/metrics. Regenerated under ENG-18; the picked SHAs predate the ranker change and are unchanged."
+    "note": "source SHAs recorded at generation time; the gate validates corpusVersion + contractHash + measured cases/metrics. Regenerated under ENG-18; the picked SHAs predate the ranker change and are unchanged.",
+    "snapshotReview": {
+      "baseHead": "0e66520e5a1dcd47d066c8f3c2ad2f5a9a85d190",
+      "verifiedAtUtc": "2026-11-24T17:35:45.943Z",
+      "note": "Case rationale edits leave live results identical to the base commit. Historical measurements are retained to preserve the known case-abstention-11 improvement."
+    }
   },
   "config": {
     "kValues": [1, 3, 5],

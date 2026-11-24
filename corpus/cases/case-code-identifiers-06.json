@@ -8,5 +8,5 @@
   "scope": "project",
   "applicablePaths": ["themes/loader"],
   "expectEmpty": false,
-  "notes": "Query built from the registerFilter identifier as the tokenizer sees it."
+  "notes": "The theme filter memory explains that each theme calls registerFilter for its custom filters inside its init hook."
 }

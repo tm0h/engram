@@ -8,5 +8,5 @@
   "scope": "project",
   "applicablePaths": ["core/time"],
   "expectEmpty": false,
-  "notes": "Query is built from the code identifier parseTimestamp lowercased, exactly as the tokenizer sees it."
+  "notes": "The timestamp parsing note specifies that parseTimestamp accepts ISO 8601 timestamps with explicit zones and rejects date-only or timezone-naive input."
 }

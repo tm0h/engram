@@ -2,7 +2,7 @@
  * Regression gate for the ENG-8 retrieval benchmark.
  *
  * Compares a live benchmark run over the in-repo corpus (wired search)
- * against the checked-in versioned baseline (baseline-v0.3.1.json) using
+ * against the checked-in versioned baseline (baseline-v0.3.2.json) using
  * the SHARED comparison logic in src/benchmark/baseline-compare.ts (the
  * same pure functions unit-tested in baseline-compare.test.ts and available
  * to validators; no copied test bodies).
@@ -57,14 +57,14 @@ import {
 import { corpusSnapshotHash, runRepoBenchmark } from "../../src/benchmark/run.js";
 
 const baseline = JSON.parse(
-  readFileSync(new URL("./baseline-v0.3.1.json", import.meta.url), "utf8"),
+  readFileSync(new URL("./baseline-v0.3.2.json", import.meta.url), "utf8"),
 ) as ComparisonInput;
 
 const live = runRepoBenchmark();
 
 const verdict = compareBaselineToLive(baseline, live);
 
-describe("retrieval baseline regression gate (corpus v0.3.1)", () => {
+describe("retrieval baseline regression gate (corpus v0.3.2)", () => {
   it("pins the corpus snapshot identity (P0)", () => {
     expect(live.corpusVersion).toBe(baseline.corpusVersion);
     expect(live.schemaVersion).toBe(baseline.schemaVersion);

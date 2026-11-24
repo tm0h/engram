@@ -8,5 +8,5 @@
   "scope": "project",
   "applicablePaths": ["core/search"],
   "expectEmpty": false,
-  "notes": "Query built from the ContentIndex.rebuild identifier as the tokenizer splits it."
+  "notes": "The ContentIndex.rebuild memory explains that repeated rebuilds converge to the same index."
 }
