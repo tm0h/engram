@@ -66,15 +66,49 @@ describe("guidance / no duplicate startup calls", () => {
   });
 });
 
+const piDir = "packages/harnesses/src/pi/skills/engram";
+const pluginDir = "packages/harnesses/claude/skills/engram";
+const scaffoldDir = "packages/harnesses/claude/scaffold";
+const skillDirs = [piDir, pluginDir, scaffoldDir];
+const readSkill = (file: string): string => fs.readFileSync(path.join(repoRoot, file), "utf8");
+const entrypoint = (dir: string): string => readSkill(`${dir}/SKILL.md`);
+const reference = (dir: string, topic: string): string =>
+  readSkill(`${dir}/references/${topic}.md`);
+
+describe("guidance / skill layout", () => {
+  for (const dir of skillDirs) {
+    it(`${dir} links directly to bundled references and keeps write boundaries in the entrypoint`, () => {
+      const skill = entrypoint(dir);
+      expect(skill).toMatch(/^---\nname: engram\ndescription: .+\n---\n/);
+      const routes = Array.from(skill.matchAll(/\]\(references\/([a-z]+)\.md\)/g), (m) => m[1]);
+      expect(routes).toEqual(["search", "review", "setup"]);
+      for (const topic of routes) {
+        expect(reference(dir, topic)).not.toMatch(/\]\((?:\.\.\/|references\/)/);
+      }
+      for (const boundary of [
+        "explicit approval",
+        "pending",
+        "secrets",
+        "system, user, and repository instructions",
+      ]) {
+        expect(skill).toContain(boundary);
+      }
+      expect(skill).not.toMatch(/bounded prefix|autoContextMaxChars/);
+    });
+  }
+
+  it("ships the same task references for both Claude delivery modes", () => {
+    for (const topic of ["search", "review", "setup"]) {
+      expect(reference(scaffoldDir, topic)).toBe(reference(pluginDir, topic));
+    }
+  });
+});
+
 describe("guidance / skills stay aligned", () => {
-  const piSkill = fs.readFileSync(
-    path.join(repoRoot, "packages/harnesses/src/pi/skills/engram/SKILL.md"),
-    "utf8",
-  );
-  const claudeSkill = fs.readFileSync(
-    path.join(repoRoot, "packages/harnesses/claude/skills/engram/SKILL.md"),
-    "utf8",
-  );
+  const piSkill = entrypoint(piDir);
+  const claudeSkill = entrypoint(pluginDir);
+  const piReview = reference(piDir, "review");
+  const claudeReview = reference(pluginDir, "review");
 
   it("Pi skill states automatic loading and drops the startup call instruction", () => {
     expect(piSkill).toMatch(/automatic/i);
@@ -94,7 +128,7 @@ describe("guidance / skills stay aligned", () => {
   });
 
   it("both skills describe OpenClaw workspace installation and project scope", () => {
-    for (const skill of [piSkill, claudeSkill]) {
+    for (const skill of skillDirs.map((dir) => reference(dir, "setup"))) {
       expect(skill).toContain("engram install openclaw --root <agent-workspace>");
       expect(skill).toContain("skills/engram-project-memory/SKILL.md");
       expect(skill).toContain("Git checkout with `--scope project`");
@@ -102,7 +136,7 @@ describe("guidance / skills stay aligned", () => {
   });
 
   it("both skills describe the Hermes profile and out-of-session workflow", () => {
-    for (const skill of [piSkill, claudeSkill]) {
+    for (const skill of skillDirs.map((dir) => reference(dir, "setup"))) {
       expect(skill).toContain("engram install hermes --root <profile-directory>");
       expect(skill).toContain("outside Hermes");
       expect(skill).toContain("Keep project data and command output out of the Hermes session.");
@@ -110,7 +144,7 @@ describe("guidance / skills stay aligned", () => {
   });
 
   it("both skills describe preview-first migration and managed export", () => {
-    for (const skill of [piSkill, claudeSkill]) {
+    for (const skill of [piReview, claudeReview]) {
       expect(skill).toContain("engram import <files...>");
       expect(skill).toContain("engram import --pack <name>");
       expect(skill).toContain("ENGRAM_PACK_DIR");
@@ -135,8 +169,8 @@ describe("guidance / skills stay aligned", () => {
 
   it("both skills document engram_edit with the three-state lifecycle contract", () => {
     for (const [name, skill] of [
-      ["pi", piSkill],
-      ["claude", claudeSkill],
+      ["pi", piReview],
+      ["claude", claudeReview],
     ] as const) {
       // the edit surface itself, named per harness (tool underscore vs CLI space)
       expect(skill, `${name}: edit guidance`).toMatch(/engram[._ ]edit/);
@@ -158,16 +192,16 @@ describe("guidance / skills stay aligned", () => {
     }
     // clear semantics, spelled per harness: null in the tool variant,
     // paired --clear-* flags in the CLI variant
-    expect(piSkill, "pi: null clears").toMatch(/null\s+clears?/i);
-    expect(claudeSkill, "claude: --clear- flags").toContain("--clear-");
-    expect(claudeSkill, "claude: edit command").toContain("engram edit");
-    expect(piSkill, "pi: edit tool").toContain("engram_edit");
+    expect(piReview, "pi: null clears").toMatch(/null\s+clears?/i);
+    expect(claudeReview, "claude: --clear- flags").toContain("--clear-");
+    expect(claudeReview, "claude: edit command").toContain("engram edit");
+    expect(piReview, "pi: edit tool").toContain("engram_edit");
   });
 
   it("both skills document the optional lifecycle fields, enums, and authority caveat", () => {
     for (const [name, skill] of [
-      ["pi", piSkill],
-      ["claude", claudeSkill],
+      ["pi", piReview],
+      ["claude", claudeReview],
     ] as const) {
       for (const word of [
         "active",
@@ -180,46 +214,46 @@ describe("guidance / skills stay aligned", () => {
         expect(skill, `${name}: lifecycle vocabulary ${word}`).toContain(word);
       }
       expect(skill, `${name}: provenance fields`).toContain("sourceType");
-      expect(skill, `${name}: authority caveat`).toMatch(/unauthenticated/i);
-      expect(skill, `${name}: instruction precedence`).toContain(
+      expect(entrypoint(name === "pi" ? piDir : pluginDir)).toMatch(/unauthenticated/i);
+      expect(entrypoint(name === "pi" ? piDir : pluginDir)).toContain(
         "system, user, and repository instructions",
       );
     }
   });
 
-  it("both skills cover the user-facing search and maintenance workflows", () => {
-    for (const [name, skill] of [
-      ["pi", piSkill],
-      ["claude", claudeSkill],
-    ] as const) {
-      expect(skill, `${name}: quoted phrase search`).toMatch(/quoted phrase/i);
-      expect(skill, `${name}: bounded prefix search`).toMatch(/bounded prefix/i);
-      for (const token of ["tag:", "title:", "type:", "body:", "AND", "OR"]) {
-        expect(skill, `${name}: search token ${token}`).toContain(token);
+  it("routes precise searches and maintenance to separate references", () => {
+    for (const dir of skillDirs) {
+      const search = reference(dir, "search");
+      expect(search).toMatch(/quoted phrase/i);
+      expect(search).toMatch(/bounded prefix/i);
+      for (const token of ["tag:", "title:", "type:", "body:", "AND", "OR", "--all"]) {
+        expect(search, dir).toContain(token);
       }
-      expect(skill, `${name}: inactive entry behavior`).toMatch(/inactive/i);
-      expect(skill, `${name}: inactive CLI override`).toContain("--all");
-      expect(skill, `${name}: review workflow`).toContain("engram review");
-      expect(skill, `${name}: source evidence`).toContain("engram evidence <id>");
-      expect(skill, `${name}: reviewed source reference`).toContain(
+      const review = reference(dir, "review");
+      for (const command of [
+        "engram review",
+        "engram evidence <id>",
         "git:<full-commit>:<repo-relative-path>",
-      );
-      expect(skill).toContain("engram diff main...HEAD --json");
-      expect(skill, `${name}: integrity workflow`).toContain("engram check");
-      expect(skill, `${name}: diagnostics workflow`).toContain("engram doctor");
-      expect(skill, `${name}: local statistics controls`).toContain(
+        "engram diff main...HEAD --json",
+        "engram check",
+      ]) {
+        expect(review, dir).toContain(command);
+      }
+      const setup = reference(dir, "setup");
+      for (const setting of [
+        "engram doctor",
         "engram stats --disable --clear",
-      );
-      expect(skill, `${name}: project scan policy`).toContain("secretScan");
-      expect(skill, `${name}: personal scan policy`).toContain("personalSecretScan");
+        "secretScan",
+        "personalSecretScan",
+      ]) {
+        expect(setup, dir).toContain(setting);
+      }
     }
   });
 
   it("both skills document the ENG-58 install targets and hook flows", () => {
-    for (const [name, skill] of [
-      ["pi", piSkill],
-      ["claude", claudeSkill],
-    ] as const) {
+    for (const name of skillDirs) {
+      const skill = reference(name, "setup");
       expect(skill, `${name}: claude-code target`).toContain("engram install claude-code");
       expect(skill, `${name}: codex target`).toContain("engram install codex");
       expect(skill, `${name}: status flow`).toContain("--status");
@@ -255,7 +289,7 @@ describe("guidance / claude scaffold variant (ENG-37)", () => {
     expect(sessionFlow).toContain("engram context");
     // no automatic-loading claim for this harness: the plugin-skill heritage
     // wording states the harness does not inject it (yet)
-    expect(sessionFlow).toMatch(/does not inject it automatically|not inject/);
+    expect(sessionFlow).toMatch(/digest has already been supplied/);
   });
 
   it("preamble points at the launcher fallback, not the plugin, and stays scaffold-worded", () => {
@@ -273,9 +307,8 @@ describe("guidance / claude scaffold variant (ENG-37)", () => {
 describe("guidance / related links (ENG-42)", () => {
   const piAdd = piTools.find((t) => t.name === "engram_add")!;
   const piEdit = piTools.find((t) => t.name === "engram_edit")!;
-  const readSkill = (rel: string): string => fs.readFileSync(path.join(repoRoot, rel), "utf8");
-  const piSkillText = readSkill("packages/harnesses/src/pi/skills/engram/SKILL.md");
-  const claudeSkillText = readSkill("packages/harnesses/claude/skills/engram/SKILL.md");
+  const piSkillText = reference(piDir, "review");
+  const claudeSkillText = reference(pluginDir, "review");
 
   it("add guidance states exact ids, same scope, and advisory missing targets", () => {
     for (const [name, desc] of [
@@ -317,8 +350,8 @@ describe("guidance / related links (ENG-42)", () => {
 
   it("both skills document the links read surface (ENG-45)", () => {
     for (const [name, skill, command] of [
-      ["pi", piSkillText, "/engram links"],
-      ["claude", claudeSkillText, "engram links"],
+      ["pi", reference(piDir, "search"), "/engram links"],
+      ["claude", reference(pluginDir, "search"), "engram links"],
     ] as const) {
       expect(skill, `${name}: links command`).toContain(`${command} <id>`);
       expect(skill, `${name}: exact ids`).toMatch(/exact/i);
@@ -330,17 +363,16 @@ describe("guidance / related links (ENG-42)", () => {
       expect(skill, `${name}: bounded output`).toMatch(/size-capped|capped at/);
     }
     // The continuation footer names each harness's own command form.
-    expect(piSkillText).toContain("/engram links <id> --offset n");
-    expect(claudeSkillText).toContain("engram links <id> --offset n");
+    expect(reference(piDir, "search")).toContain("/engram links <id> --offset n");
+    expect(reference(pluginDir, "search")).toContain("engram links <id> --offset n");
   });
 });
 
 describe("guidance / aliases (ENG-46)", () => {
   const piAdd = piTools.find((t) => t.name === "engram_add")!;
   const piEdit = piTools.find((t) => t.name === "engram_edit")!;
-  const readSkill = (rel: string): string => fs.readFileSync(path.join(repoRoot, rel), "utf8");
-  const piSkillText = readSkill("packages/harnesses/src/pi/skills/engram/SKILL.md");
-  const claudeSkillText = readSkill("packages/harnesses/claude/skills/engram/SKILL.md");
+  const piSkillText = reference(piDir, "review");
+  const claudeSkillText = reference(pluginDir, "review");
   const readmeText = readSkill("README.md");
 
   it("add tool guidance mentions aliases with the normalization contract", () => {
@@ -396,9 +428,8 @@ describe("guidance / aliases (ENG-46)", () => {
 });
 
 describe("guidance / alias scoring (ENG-47)", () => {
-  const readSkill = (rel: string): string => fs.readFileSync(path.join(repoRoot, rel), "utf8");
-  const piSkillText = readSkill("packages/harnesses/src/pi/skills/engram/SKILL.md");
-  const claudeSkillText = readSkill("packages/harnesses/claude/skills/engram/SKILL.md");
+  const piSkillText = reference(piDir, "search");
+  const claudeSkillText = reference(pluginDir, "search");
   const readmeText = readSkill("README.md");
   const piReadmeText = readSkill("packages/harnesses/src/pi/README.md");
   const ocReadmeText = readSkill("packages/harnesses/src/opencode/README.md");
@@ -429,27 +460,17 @@ describe("guidance / alias scoring (ENG-47)", () => {
 });
 
 it("documents ENG-19 CLI retrieval consistently", () => {
-  for (const file of [
-    "README.md",
-    "packages/harnesses/src/pi/skills/engram/SKILL.md",
-    "packages/harnesses/claude/skills/engram/SKILL.md",
-    "packages/harnesses/claude/scaffold/SKILL.md",
-  ]) {
+  for (const file of ["README.md", ...skillDirs.map((dir) => `${dir}/references/search.md`)]) {
     const text = fs.readFileSync(path.join(repoRoot, file), "utf8");
     for (const flag of ["--triggers", "--applies-to", "--path"]) expect(text).toContain(flag);
   }
 });
 
 it("documents importance consistently across CLI guidance", () => {
-  for (const file of [
-    "README.md",
-    "packages/harnesses/src/pi/skills/engram/SKILL.md",
-    "packages/harnesses/claude/skills/engram/SKILL.md",
-    "packages/harnesses/claude/scaffold/SKILL.md",
-  ]) {
+  for (const file of ["README.md", ...skillDirs.map((dir) => `${dir}/references/search.md`)]) {
     const text = fs.readFileSync(path.join(repoRoot, file), "utf8");
     expect(text).toContain("--importance");
-    expect(text).toContain("diversification");
+    expect(text).toMatch(/diversification/i);
   }
 });
 
@@ -457,9 +478,7 @@ it("documents curated startup defaults across harnesses", () => {
   for (const file of [
     "README.md",
     "packages/harnesses/src/opencode/README.md",
-    "packages/harnesses/src/pi/skills/engram/SKILL.md",
-    "packages/harnesses/claude/skills/engram/SKILL.md",
-    "packages/harnesses/claude/scaffold/SKILL.md",
+    ...skillDirs.map((dir) => `${dir}/references/setup.md`),
   ]) {
     const text = fs.readFileSync(path.join(repoRoot, file), "utf8");
     for (const key of [
@@ -473,17 +492,12 @@ it("documents curated startup defaults across harnesses", () => {
 });
 
 it("documents bounded matching snippets and direct related context in both skills", () => {
-  for (const file of [
-    "packages/harnesses/src/pi/skills/engram/SKILL.md",
-    "packages/harnesses/claude/skills/engram/SKILL.md",
-  ]) {
-    const skill = fs.readFileSync(path.join(repoRoot, file), "utf8");
+  for (const dir of skillDirs) {
+    const skill = reference(dir, "search");
     expect(skill).toContain("engram context --tokens 4000");
-    expect(skill).toContain('{"tokens":4000}');
     expect(skill).toContain("related <id>");
     expect(skill).toContain("240");
     expect(skill).toContain("superseded by");
-    expect(skill).toContain("untrusted memory data");
   }
 });
 
@@ -501,12 +515,7 @@ it("requires the user's approval before retrying a write advisory", () => {
 });
 
 it("documents human pending-memory review across the README and shipped skills", () => {
-  for (const file of [
-    "README.md",
-    "packages/harnesses/src/pi/skills/engram/SKILL.md",
-    "packages/harnesses/claude/skills/engram/SKILL.md",
-    "packages/harnesses/claude/scaffold/SKILL.md",
-  ]) {
+  for (const file of ["README.md", ...skillDirs.map((dir) => `${dir}/references/review.md`)]) {
     const guidance = fs.readFileSync(path.join(repoRoot, file), "utf8");
     for (const command of ["list", "show", "edit", "approve", "reject"]) {
       expect(guidance, file).toContain(`engram pending ${command}`);

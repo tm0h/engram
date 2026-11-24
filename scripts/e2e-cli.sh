@@ -1453,25 +1453,136 @@ engram install cursor --status --root "$root_view" | grep -F "engram.mdc: absent
 [[ -z "$(find "$root_view" -mindepth 1 -print -quit)" ]] ||
   fail "status with --root wrote into the target directory"
 
-# claude (project skill scaffold): frontmatter-first skill, shebang-first
-# launcher. The container has the real engram on PATH, so the scaffolded
-# launcher must exec it and report the candidate version live.
-mkdir -p .claude/skills/my-skill
-printf -- '---\nname: my-skill\ndescription: user skill\n---\n\nDo things.\n' \
-  > .claude/skills/my-skill/SKILL.md
-engram install claude --yes | grep -F "Installed"
-[[ "$(head -n 1 .claude/skills/engram/SKILL.md)" == "---" ]] ||
-  fail "claude skill is not frontmatter-first"
-[[ "$(head -n 1 .claude/skills/engram/bin/engram)" == "#!/bin/sh" ]] ||
-  fail "claude launcher is not shebang-first"
-claude_version=$(PATH="$(dirname "$ENGRAM_E2E_BIN"):$PATH" \
-  sh .claude/skills/engram/bin/engram --version)
-[[ "$claude_version" == "$cli_version" ]] ||
-  fail "scaffolded launcher did not exec the real engram ($claude_version)"
-engram install claude --yes --uninstall | grep -F "Uninstalled"
-[[ ! -e .claude/skills/engram/SKILL.md ]] || fail "claude uninstall left the skill"
-[[ ! -e .claude/skills/engram/bin/engram ]] || fail "claude uninstall left the launcher"
-[[ -f .claude/skills/my-skill/SKILL.md ]] || fail "claude uninstall removed a user skill"
+step "Packaged skill references and Claude scaffold upgrades"
+(
+  # Resolve links from the shipped skill directory while commands run from
+  # a separate project directory. The audit container has no network.
+  cd "$project_root"
+  package_dir=$(dirname "$(dirname "$(readlink -f "$ENGRAM_E2E_BIN")")")
+  assert_skill_references() {
+    node --input-type=module - "$@" <<'JS'
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+
+const [skillDir, sourceDir] = process.argv.slice(2);
+assert.notEqual(process.cwd(), skillDir);
+const skillPath = resolve(skillDir, "SKILL.md");
+const skill = readFileSync(skillPath, "utf8");
+assert.match(skill, /^---\nname: engram\n/);
+const links = [...skill.matchAll(/\]\(([^)]+)\)/g)].map((match) => match[1]);
+assert.deepEqual(links, ["references/search.md", "references/review.md", "references/setup.md"]);
+for (const link of links) {
+  const body = readFileSync(resolve(dirname(skillPath), link), "utf8");
+  const source = readFileSync(resolve(sourceDir, link), "utf8");
+  if (skillDir === sourceDir) {
+    assert.match(body, /^# /);
+  } else {
+    const topic = link.split("/").at(-1).replace(/\.md$/, "");
+    const id = `engram-claude-reference-${topic}`;
+    assert.equal(body, `<!-- BEGIN: ${id} -->\n${source}<!-- END: ${id} -->\n`);
+  }
+}
+console.log("Resolved all three skill references from " + skillDir);
+JS
+  }
+
+  pi_skill="$package_dir/skills/engram"
+  marketplace_skill=/workspace/packages/harnesses/claude/skills/engram
+  scaffold_source=/workspace/packages/harnesses/claude/scaffold
+  assert_skill_references "$pi_skill" "$pi_skill"
+  assert_skill_references "$marketplace_skill" "$marketplace_skill"
+
+  clean="$run_root/clean claude"
+  mkdir -p "$clean"
+  skill="$clean/.claude/skills/engram"
+  refs=(search review setup)
+  preview=$(engram install claude --dry-run --root "$clean")
+  status=$(engram install claude --status --root "$clean")
+  grep -F "Dry run: no changes were written." <<<"$preview"
+  for topic in "${refs[@]}"; do
+    grep -F "write .claude/skills/engram/references/$topic.md (new file" <<<"$preview"
+    grep -F "references/$topic.md: absent" <<<"$status"
+  done
+  [[ ! -e "$clean/.claude" ]] || fail "Claude preview or status wrote files"
+
+  engram install claude --yes --root "$clean" | grep -F "Installed 5 change(s) for claude"
+  assert_skill_references "$skill" "$scaffold_source"
+  [[ "$(head -n 1 "$skill/bin/engram")" == "#!/bin/sh" ]] || fail "Claude launcher lost its shebang"
+  claude_version=$(PATH="$(dirname "$ENGRAM_E2E_BIN"):$PATH" sh "$skill/bin/engram" --version)
+  [[ "$claude_version" == "$cli_version" ]] || fail "Claude launcher ran the wrong CLI"
+
+  # Recreate the previous two-asset layout with its original ownership
+  # markers and a representative single-file skill body.
+  upgrade="$run_root/upgrade claude"
+  previous="$upgrade/.claude/skills/engram"
+  mkdir -p "$previous/bin" "$previous/references"
+  cp "$skill/bin/engram" "$previous/bin/engram"
+  cat > "$previous/SKILL.md" <<'LEGACY'
+---
+name: engram
+description: Record and recall durable memory for this codebase with the engram CLI.
+---
+<!-- BEGIN: engram-claude-skill -->
+
+# Engram memory
+
+Run `engram context`, then `engram search` and `engram show`.
+<!-- END: engram-claude-skill -->
+LEGACY
+  cp "$previous/SKILL.md" "$run_root/legacy-claude.md"
+  printf '# User search notes\n' > "$previous/references/search.md"
+  preview=$(engram install claude --dry-run --root "$upgrade")
+  grep -F "BLOCKED engram-claude-reference-search (blocked)" <<<"$preview"
+  if engram install claude --yes --root "$upgrade" >"$run_root/claude-collision.log" 2>&1; then
+    fail "Claude upgrade overwrote a colliding user reference"
+  else
+    [[ $? -eq 1 ]] || fail "Claude upgrade returned an unexpected collision exit status"
+  fi
+  grep -F "blocked asset(s): engram-claude-reference-search" "$run_root/claude-collision.log"
+  cmp "$previous/SKILL.md" "$run_root/legacy-claude.md"
+  grep -Fx '# User search notes' "$previous/references/search.md"
+  [[ ! -e "$previous/references/review.md" && ! -e "$previous/references/setup.md" ]] ||
+    fail "Claude upgrade applied a partial plan"
+
+  mv "$previous/references/search.md" "$previous/references/user-search.md"
+  engram install claude --yes --root "$upgrade" | grep -F "Installed 4 change(s) for claude"
+  assert_skill_references "$previous" "$scaffold_source"
+  status=$(engram install claude --status --root "$upgrade")
+  before=$(sha256sum "$previous/SKILL.md" "$previous/bin/engram" "$previous/references/"*.md)
+  for topic in "${refs[@]}"; do
+    grep -F "references/$topic.md: current" <<<"$status"
+  done
+  engram install claude --yes --root "$upgrade" |
+    grep -F "Nothing to do: files for claude are already up to date."
+  [[ "$(sha256sum "$previous/SKILL.md" "$previous/bin/engram" "$previous/references/"*.md)" == "$before" ]] ||
+    fail "Claude reinstall changed persisted files"
+
+  printf '\nLocal edit outside the managed block.\n' >> "$previous/references/review.md"
+  cp "$previous/references/review.md" "$run_root/edited-claude.md"
+  if engram install claude --yes --uninstall --root "$upgrade" >"$run_root/claude-uninstall.log" 2>&1; then
+    fail "Claude uninstall accepted an edited managed reference"
+  else
+    [[ $? -eq 1 ]] || fail "Claude uninstall returned an unexpected blocked exit status"
+  fi
+  grep -F "blocked asset(s): engram-claude-reference-review" "$run_root/claude-uninstall.log"
+  cmp "$previous/references/review.md" "$run_root/edited-claude.md"
+  [[ -f "$previous/SKILL.md" && -f "$previous/references/search.md" ]] ||
+    fail "Claude uninstall applied a partial plan"
+
+  mv "$previous/references/review.md" "$previous/references/user-review.md"
+  mkdir -p "$upgrade/.claude/skills/my-skill"
+  printf '# User skill\n' > "$upgrade/.claude/skills/my-skill/SKILL.md"
+  engram install claude --yes --uninstall --root "$upgrade" | grep -F "Uninstalled 4 change(s) for claude"
+  [[ ! -e "$previous/SKILL.md" && ! -e "$previous/bin/engram" ]] ||
+    fail "Claude uninstall left the managed entrypoint or launcher"
+  for topic in "${refs[@]}"; do
+    [[ ! -e "$previous/references/$topic.md" ]] || fail "Claude uninstall left $topic.md"
+  done
+  grep -Fx '# User skill' "$upgrade/.claude/skills/my-skill/SKILL.md"
+  grep -Fx '# User search notes' "$previous/references/user-search.md"
+  cmp "$previous/references/user-review.md" "$run_root/edited-claude.md"
+)
 
 # deny-cases: --home is a project-target error naming --root; unknown
 # targets enumerate all supported targets. Expected-failing commands are

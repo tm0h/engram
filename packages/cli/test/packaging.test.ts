@@ -257,7 +257,7 @@ describe("engram-cli packaging (pi extension)", () => {
         [bin, "install", "claude", "--yes", "--root", proj],
         { cwd: pkgRoot, encoding: "utf8" },
       );
-      expect(out).toContain("Installed 2 change(s) for claude");
+      expect(out).toContain("Installed 5 change(s) for claude");
 
       // the scaffold resolves the payload assets: frontmatter-first skill,
       // shebang-first launcher with the release pin, markers in between
