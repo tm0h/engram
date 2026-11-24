@@ -204,6 +204,7 @@ describe("guidance / skills stay aligned", () => {
       expect(skill, `${name}: reviewed source reference`).toContain(
         "git:<full-commit>:<repo-relative-path>",
       );
+      expect(skill).toContain("engram diff main...HEAD --json");
       expect(skill, `${name}: integrity workflow`).toContain("engram check");
       expect(skill, `${name}: diagnostics workflow`).toContain("engram doctor");
       expect(skill, `${name}: local statistics controls`).toContain(

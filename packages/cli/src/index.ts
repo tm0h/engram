@@ -32,6 +32,7 @@ import * as Inject from "./commands/inject.js";
 import * as Where from "./commands/where.js";
 import * as Dedupe from "./commands/dedupe.js";
 import * as Check from "./commands/check.js";
+import { diffCommand } from "./commands/diff.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { statsCommand } from "./commands/stats.js";
 // ENG-58 (WU-5 lane): user-level lifecycle hook installation and the
@@ -582,6 +583,16 @@ program
         json: Boolean(opts.json),
       }),
     ),
+  );
+
+program
+  .command("diff [revision]")
+  .description("Compare project memory by ID across Git snapshots or the working tree. Read-only.")
+  .option("--json", "Emit one versioned JSON report.")
+  .option("--limit <count>", "Cap change and diagnostic detail separately (0–100, default 100).")
+  .addHelpText("after", "\nExamples: engram diff main | engram diff main...HEAD --json")
+  .action((revision: string | undefined, opts: { json?: boolean; limit?: string }) =>
+    run(diffCommand(revision, opts)),
   );
 
 program
