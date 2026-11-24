@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -23,21 +23,25 @@ export interface SnapshotSource {
   readonly list: () => Promise<ReadonlyArray<SnapshotFile>>;
 }
 
-function gitAt(cwd: string) {
+function gitEnvironment() {
   const env = Object.fromEntries(
     Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")),
   );
+  return {
+    ...env,
+    GIT_NO_REPLACE_OBJECTS: "1",
+    GIT_NO_LAZY_FETCH: "1",
+    // Older Git versions can attempt a promisor fetch despite NO_LAZY_FETCH.
+    GIT_ALLOW_PROTOCOL: "",
+    GIT_OPTIONAL_LOCKS: "0",
+  };
+}
+
+function gitAt(cwd: string) {
   return (args: string[], maxBuffer = 16 * 1024 * 1024) =>
     exec("git", ["--literal-pathspecs", "-c", "core.warnAmbiguousRefs=true", ...args], {
       cwd,
-      env: {
-        ...env,
-        GIT_NO_REPLACE_OBJECTS: "1",
-        GIT_NO_LAZY_FETCH: "1",
-        // Older Git versions can attempt a promisor fetch despite NO_LAZY_FETCH.
-        GIT_ALLOW_PROTOCOL: "",
-        GIT_OPTIONAL_LOCKS: "0",
-      },
+      env: gitEnvironment(),
       encoding: "buffer",
       maxBuffer,
       timeout: 10000,
@@ -150,15 +154,131 @@ export async function memorySnapshots(cwd: string, revision?: string) {
   const segments = [...prefix, ".engram", "engrams"];
   const git = gitAt(root);
   const comparison = await resolveComparison(git, revision);
+  const blobs = new GitBlobReader(root, git);
   return {
+    close: () => blobs.close(),
     comparison,
     project: prefix.join("/") || ".",
-    from: gitSnapshot(git, comparison.from, segments),
+    from: gitSnapshot(git, blobs, comparison.from, segments),
     to:
       comparison.to.kind === "commit"
-        ? gitSnapshot(git, comparison.to, segments)
+        ? gitSnapshot(git, blobs, comparison.to, segments)
         : workingSnapshot(root, segments),
   };
+}
+
+// One process serves both committed endpoints. Requests are serialized so the
+// batch protocol can be parsed incrementally without buffering oversized blobs.
+class GitBlobReader {
+  private child: ReturnType<typeof spawn> | undefined;
+  private iterator: AsyncIterator<Buffer> | undefined;
+  private pending = Buffer.alloc(0);
+  private queue: Promise<void> = Promise.resolve();
+  private cache = new Map<string, Promise<Buffer>>();
+  private failed = false;
+
+  constructor(
+    private readonly cwd: string,
+    private readonly git: Git,
+  ) {}
+
+  read(sha: string): Promise<Buffer> {
+    const cached = this.cache.get(sha);
+    if (cached) return cached;
+    const result = this.queue.then(() => this.readBlob(sha));
+    this.cache.set(sha, result);
+    this.queue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  private start() {
+    if (this.failed) throw new Error("Git blob reader unavailable");
+    if (this.child) return this.child;
+    const child = spawn("git", ["cat-file", "--batch-command"], {
+      cwd: this.cwd,
+      env: gitEnvironment(),
+      stdio: ["pipe", "pipe", "ignore"],
+    });
+    child.stdin!.on("error", () => {});
+    child.on("error", () => {
+      this.failed = true;
+    });
+    this.child = child;
+    this.iterator = child.stdout![Symbol.asyncIterator]() as AsyncIterator<Buffer>;
+    return child;
+  }
+
+  private async take(size: number) {
+    while (this.pending.length < size) {
+      const chunk = await this.iterator!.next();
+      if (chunk.done) throw new Error("Git batch output ended early");
+      this.pending = Buffer.concat([this.pending, chunk.value]);
+    }
+    const result = this.pending.subarray(0, size);
+    this.pending = this.pending.subarray(size);
+    return result;
+  }
+
+  private async header() {
+    while (true) {
+      const end = this.pending.indexOf(10);
+      if (end >= 0) {
+        const line = this.pending.subarray(0, end).toString("ascii");
+        this.pending = this.pending.subarray(end + 1);
+        return line;
+      }
+      if (this.pending.length > 256) throw new Error("Invalid Git batch header");
+      const chunk = await this.iterator!.next();
+      if (chunk.done) throw new Error("Git batch output ended early");
+      this.pending = Buffer.concat([this.pending, chunk.value]);
+    }
+  }
+
+  private async readBlob(sha: string): Promise<Buffer> {
+    if (this.failed) return (await this.git(["cat-file", "blob", sha], maxEntryBytes)).stdout;
+    const child = this.start();
+    const timeout = setTimeout(() => {
+      this.failed = true;
+      child.kill();
+    }, 10000);
+    let streamAligned = false;
+    try {
+      child.stdin!.write(`info ${sha}\n`);
+      const info = await this.header();
+      streamAligned = true;
+      const match = /^([0-9a-f]+) blob ([0-9]+)$/.exec(info);
+      if (!match || match[1] !== sha) throw new Error("Blob unavailable");
+      const size = Number(match[2]);
+      if (!Number.isSafeInteger(size) || size > maxEntryBytes) {
+        throw new Error("Blob exceeds size limit");
+      }
+      streamAligned = false;
+      child.stdin!.write(`contents ${sha}\n`);
+      if ((await this.header()) !== info) throw new Error("Invalid Git batch response");
+      const bytes = await this.take(size);
+      if ((await this.take(1))[0] !== 10) throw new Error("Invalid Git batch terminator");
+      return bytes;
+    } catch (error) {
+      if (!streamAligned) {
+        // Older Git versions lack --batch-command. A protocol failure also
+        // makes the stream unusable, so fall back to bounded individual reads.
+        this.failed = true;
+        child.kill();
+        return (await this.git(["cat-file", "blob", sha], maxEntryBytes)).stdout;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async close() {
+    await this.queue;
+    this.child?.stdin?.end();
+  }
 }
 
 interface TreeEntry {
@@ -193,7 +313,12 @@ async function treeEntries(git: Git, tree: string, name?: string): Promise<TreeE
     });
 }
 
-function gitSnapshot(git: Git, commit: Commit, segments: string[]): SnapshotSource {
+function gitSnapshot(
+  git: Git,
+  blobs: GitBlobReader,
+  commit: Commit,
+  segments: string[],
+): SnapshotSource {
   const directory = segments.join("/");
   return {
     directory,
@@ -218,7 +343,7 @@ function gitSnapshot(git: Git, commit: Commit, segments: string[]): SnapshotSour
               if (decoded === null || (mode !== "100644" && mode !== "100755")) {
                 throw new Error("Expected a regular blob with a UTF-8 path");
               }
-              return (await git(["cat-file", "blob", sha], maxEntryBytes)).stdout;
+              return blobs.read(sha);
             },
           };
         });

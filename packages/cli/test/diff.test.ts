@@ -1,5 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
@@ -138,5 +146,114 @@ describe("project memory diff", () => {
     await expect(compareProjectMemory(repo, "ambiguous", 100)).rejects.toThrow("unique commit");
     await expect(compareProjectMemory(repo, tree, 100)).rejects.toThrow("unique commit");
     await expect(compareProjectMemory(repo, "HEAD..", 100)).rejects.toThrow("both range endpoints");
+  });
+
+  it("batches and deduplicates committed blob reads while preserving oversized diagnostics", async () => {
+    for (let index = 1; index <= 120; index++) {
+      const id = String(index).padStart(4, "0");
+      put(`${id}-entry.md`, id);
+    }
+    writeFileSync(join(repo, ".engram/engrams/0121-oversized.md"), "x".repeat(1024 * 1024 + 1));
+    put("0122-readable.md", "0122");
+    const from = commit();
+    put("0122-readable.md", "0122", { pinned: true });
+    const to = commit();
+
+    const toolDir = mkdtempSync(join(tmpdir(), "engram-diff-git-"));
+    const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+    const log = join(toolDir, "requests");
+    const wrapper = join(toolDir, "git");
+    writeFileSync(
+      wrapper,
+      `#!/bin/sh
+if [ "$1" = "cat-file" ] && [ "$2" = "--batch-command" ]; then
+  printf 'batch\n' >> "${log}"
+  tee -a "${log}" | "${realGit}" "$@"
+else
+  exec "${realGit}" "$@"
+fi
+`,
+    );
+    chmodSync(wrapper, 0o755);
+    const oldPath = process.env.PATH;
+    process.env.PATH = toolDir + ":" + oldPath;
+    try {
+      const report = await compareProjectMemory(repo, `${from}..${to}`, 100);
+      expect(report.complete).toBe(false);
+      expect(report.changes).toMatchObject([{ id: "0122", edited: true }]);
+      expect(report.diagnostics).toEqual([
+        {
+          side: "from",
+          path: ".engram/engrams/0121-oversized.md",
+          code: "file_unreadable",
+          severity: "error",
+        },
+        {
+          side: "to",
+          path: ".engram/engrams/0121-oversized.md",
+          code: "file_unreadable",
+          severity: "error",
+        },
+      ]);
+      const requests = readFileSync(log, "utf8").trim().split("\n");
+      expect(requests.filter((line) => line === "batch")).toHaveLength(1);
+      const infos = requests.filter((line) => line.startsWith("info "));
+      expect(infos).toHaveLength(123);
+      expect(new Set(infos).size).toBe(infos.length);
+      expect(requests.filter((line) => line.startsWith("contents "))).toHaveLength(122);
+    } finally {
+      process.env.PATH = oldPath;
+      rmSync(toolDir, { recursive: true, force: true });
+    }
+  });
+
+  it("continues comparing readable blobs when an object is missing", async () => {
+    put("0001-missing.md", "0001");
+    put("0002-readable.md", "0002");
+    const from = commit();
+    put("0002-readable.md", "0002", { pinned: true });
+    const to = commit();
+    const blob = git("rev-parse", `${from}:.engram/engrams/0001-missing.md`);
+    rmSync(join(repo, ".git/objects", blob.slice(0, 2), blob.slice(2)));
+
+    const report = await compareProjectMemory(repo, `${from}..${to}`, 100);
+    expect(report.complete).toBe(false);
+    expect(report.totals).toMatchObject({ changed: 1, indeterminate: 1 });
+    expect(report.changes).toMatchObject([{ id: "0002", edited: true }]);
+    expect(report.diagnostics.map(({ code }) => code)).toEqual([
+      "file_unreadable",
+      "file_unreadable",
+    ]);
+  });
+
+  it("falls back to bounded blob reads when batch-command is unavailable", async () => {
+    put("0001-entry.md", "0001");
+    const from = commit();
+    put("0001-entry.md", "0001", { pinned: true });
+    const to = commit();
+
+    const toolDir = mkdtempSync(join(tmpdir(), "engram-diff-legacy-git-"));
+    const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+    const wrapper = join(toolDir, "git");
+    writeFileSync(
+      wrapper,
+      `#!/bin/sh
+if [ "$1" = "cat-file" ] && [ "$2" = "--batch-command" ]; then
+  exit 129
+fi
+exec "${realGit}" "$@"
+`,
+    );
+    chmodSync(wrapper, 0o755);
+    const oldPath = process.env.PATH;
+    process.env.PATH = toolDir + ":" + oldPath;
+    try {
+      const report = await compareProjectMemory(repo, `${from}..${to}`, 100);
+      expect(report.complete).toBe(true);
+      expect(report.changes).toMatchObject([{ id: "0001", edited: true }]);
+    } finally {
+      process.env.PATH = oldPath;
+      rmSync(toolDir, { recursive: true, force: true });
+    }
   });
 });

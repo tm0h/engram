@@ -173,10 +173,16 @@ export async function compareProjectMemory(
   limit: number,
 ) {
   const sources = await memorySnapshots(cwd, revision);
-  const [from, to] = await Promise.all([
-    readSnapshot(sources.from, "from"),
-    readSnapshot(sources.to, "to"),
-  ]);
+  let from: Awaited<ReturnType<typeof readSnapshot>>;
+  let to: Awaited<ReturnType<typeof readSnapshot>>;
+  try {
+    [from, to] = await Promise.all([
+      readSnapshot(sources.from, "from"),
+      readSnapshot(sources.to, "to"),
+    ]);
+  } finally {
+    await sources.close();
+  }
   const diagnostics = [...from.diagnostics, ...to.diagnostics];
   const omitted = { changes: 0, diagnostics: Math.max(0, diagnostics.length - limit) };
   const changes: Change[] = [];

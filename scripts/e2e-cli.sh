@@ -1073,6 +1073,31 @@ step "Packaged project memory diff compares Git snapshots without writes"
     value.totals.diagnostics === 0 &&
     value.changes.map(change => change.id).join(",") === "0003,0006,0008,0009"'
   [[ "$(snapshot_diff_state)" == "$before" ]] || fail "dirty diff changed persisted state"
+
+  git reset --quiet --hard
+  git clean --quiet -fdx
+  for number in $(seq 100 199); do
+    id=$(printf '%04d' "$number")
+    write_diff_entry "$id-batch.md" "$id" "Batch $id" "Shared synthetic body."
+  done
+  write_diff_entry 0201-changed.md 0201 Changed "Original synthetic body."
+  node -e 'require("node:fs").writeFileSync(process.argv[1], "x".repeat(1048577))' "$memory/0200-large.md"
+  git add .
+  git commit --quiet -m "Batch baseline"
+  batch_base=$(git rev-parse HEAD)
+  write_diff_entry 0201-changed.md 0201 Changed "Changed synthetic body."
+  git add .
+  git commit --quiet -m "Batch update"
+  before=$(snapshot_diff_state)
+  status=0
+  report=$(engram diff "$batch_base..HEAD" --json) || status=$?
+  [[ "$status" == 2 ]] || fail "oversized batch entry should exit 2"
+  printf '%s\n' "$report" | parse_json '
+    !value.complete && value.totals.changed === 1 && value.totals.indeterminate === 1 &&
+    value.changes[0].id === "0201" && value.changes[0].edited &&
+    value.diagnostics.length === 2 &&
+    value.diagnostics.every(diagnostic => diagnostic.code === "file_unreadable")'
+  [[ "$(snapshot_diff_state)" == "$before" ]] || fail "batch diff changed persisted state"
 )
 
 step "Packaged memory-application evaluation records three delivery conditions"
