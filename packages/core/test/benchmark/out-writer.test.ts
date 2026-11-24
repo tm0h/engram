@@ -15,7 +15,7 @@ import {
 import type { BenchmarkResult, QueryOutcome } from "../../src/benchmark/types.js";
 import { engram, queryCase } from "./helpers.js";
 
-const baselinePath = fileURLToPath(new URL("./baseline-v0.3.1.json", import.meta.url));
+const baselinePath = fileURLToPath(new URL("./baseline-v0.3.2.json", import.meta.url));
 
 const outcome = (over: Partial<QueryOutcome> & { queryId: string }): QueryOutcome => ({
   rankedIds: [],

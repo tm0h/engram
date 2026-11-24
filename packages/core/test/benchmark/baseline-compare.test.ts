@@ -42,7 +42,7 @@ const K_VALUES = [1, 3, 5] as const;
 /* ------------------------------------------------------------------ */
 
 const baseline = JSON.parse(
-  readFileSync(new URL("./baseline-v0.3.1.json", import.meta.url), "utf8"),
+  readFileSync(new URL("./baseline-v0.3.2.json", import.meta.url), "utf8"),
 ) as ComparisonInput;
 const live = runRepoBenchmark();
 

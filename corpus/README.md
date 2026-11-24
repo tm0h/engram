@@ -255,8 +255,15 @@ if (corpus.issues.length > 0) {
 pnpm exec vp test run packages/core/test/corpus.test.ts
 ```
 
-The suite validates every fixture and case, asserts id resolution, scope
-agreement, category coverage, abstention invariants, both superseded
-visibility modes, determinism (two loads deep-equal), and runs every seed
-case through the pinned evaluation. It prints seed and per-category
-counts.
+The suite validates the structure of every fixture and case, including id
+resolution, scope agreement, category coverage, abstention invariants,
+both superseded visibility modes, deterministic loading, and the snapshot
+hash. Focused fixtures exercise evaluator mechanics such as scope, expiry,
+inactive visibility, and result limits. The suite prints corpus and
+per-category counts.
+
+The full-corpus retrieval gate in
+[`packages/core/test/benchmark/baseline-gate.test.ts`](../packages/core/test/benchmark/baseline-gate.test.ts)
+runs the production retrieval evaluator on every case and compares the
+results against the versioned benchmark baseline. To generate the full
+benchmark report, run `pnpm --filter @engram/core benchmark`.

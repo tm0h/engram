@@ -508,7 +508,7 @@ describe("corpus fixtures: snapshot identity", () => {
    * <relpath>\n<byte length>\n<bytes>. Any byte change to the corpus
    * requires updating this constant in the same reviewed change. */
   const RECORDED_SNAPSHOT_SHA256 =
-    "ca2df5ed7b459811961941f37540b91f14793144a7200e60b6fbdb57885bb39a";
+    "42ae522bac8d5396c103674c13baa8d4ffa1342d22c1ce5bea277329b5e48387";
 
   const snapshotHash = (dir: string): string => {
     const entries: Array<{ rel: string; bytes: Buffer }> = [

@@ -9,5 +9,5 @@
   "applicablePaths": ["core/cache"],
   "expectEmpty": false,
   "includeInactive": true,
-  "notes": "includeInactive mode: the superseded tmpfs decision is back in the candidate set, but the query tokens appear only in the current decision, so the forbidden id scores zero. Pins pass-under-inclusion."
+  "notes": "The current decision puts the fragment cache in the repo-root .mothlight-cache directory so it survives restarts and redeploys. The superseded tmpfs decision describes an earlier design for instant clears, which does not answer where the persistent cache lives."
 }

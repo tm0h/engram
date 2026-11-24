@@ -8,6 +8,6 @@
   "scope": "project",
   "applicablePaths": ["core/cache"],
   "expectEmpty": false,
-  "notes": "includeInactive mode: audit of the middle generation; query tokens isolate the var-tree decision so the forbidden tmpDirectories generation scores zero.",
+  "notes": "This audit asks about the superseded per-workspace var tree decision, which kept cache shards out of tmp cleanup passes. The earlier tmp directory decision was designed for instant clears and does not explain the var tree or its cleanup behavior.",
   "includeInactive": true
 }

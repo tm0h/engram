@@ -5,14 +5,15 @@
  * queries are tokenized with it, and every indexed field (title, body, type,
  * tags) must be folded with it before token or substring comparison. The
  * fold is NFKD, then strip combining marks only directly after a Latin
- * letter, then NFC, then lowercase. It is identity-plus-lowercase for ASCII,
- * so ASCII matching behavior is unchanged.
+ * letter, then NFC, then lowercase. For ASCII, normalization only changes
+ * case. Query token expansion and deduplication can still change which
+ * tokens contribute to scoring and affect rankings.
  *
  * Caveats: (1) NFKD can change string length (e.g. accented letters
  * decompose, ligatures expand), so there is no index alignment between raw
- * input and folded output. (2) German sharp-s is not folded: "strasse"
- * never matches "Strasse", because NFKD does not decompose the character;
- * this is symmetric on query and document sides. (3) Diacritic marks are
+ * input and folded output. (2) "strasse" and "Strasse" normalize to the
+ * same string after lowercasing. "Straße" normalizes to "straße" because
+ * NFKD preserves the sharp s (U+00DF). (3) Diacritic marks are
  * only stripped directly after a Latin letter, so Cyrillic, Greek, Arabic,
  * Indic, and CJK text passes through without data loss.
  *
