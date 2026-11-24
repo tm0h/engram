@@ -12,7 +12,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 import { stringifyFrontmatter } from "@engram/core";
-import { compareProjectMemory } from "../src/memory-diff.js";
+import { Effect } from "effect";
+import { compareProjectMemory as compareEffect } from "../src/memory-diff.js";
+
+const compareProjectMemory = (...args: Parameters<typeof compareEffect>) =>
+  Effect.runPromise(compareEffect(...args));
 
 let repo: string;
 const git = (...args: string[]) =>

@@ -60,15 +60,15 @@ export const diffCommand = (
         }),
       );
     }
-    const report = yield* Effect.tryPromise({
-      try: () => compareProjectMemory(process.cwd(), revision, limit),
-      catch: (error) =>
+    const report = yield* compareProjectMemory(process.cwd(), revision, limit).pipe(
+      Effect.mapError((error) =>
         error instanceof ValidationError
           ? error
           : new ValidationError({
               message: "Cannot locate or compare project memory in this working tree.",
             }),
-    });
+      ),
+    );
     yield* out(opts.json ? JSON.stringify(report, null, 2) : human(report));
     if (!report.complete) process.exitCode = 2;
   });
