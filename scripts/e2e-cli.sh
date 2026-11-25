@@ -51,11 +51,17 @@ expected_version=$(node -p "require('./packages/cli/package.json').version")
 [[ "$cli_version" == "$expected_version" ]] || fail "installed CLI version drifted"
 
 step "Repository gate"
-pnpm check
+if [[ "${ENGRAM_E2E_SKIP_REPOSITORY_CHECKS:-0}" != 1 ]]; then
+  pnpm check
+fi
 pnpm exec tsc -p "$audit_source/tsconfig.json"
-pnpm test
+if [[ "${ENGRAM_E2E_SKIP_REPOSITORY_CHECKS:-0}" != 1 ]]; then
+  pnpm test
+fi
 pnpm --filter @engram/core benchmark
-pnpm --filter engram-cli build
+if [[ "${ENGRAM_E2E_SKIP_REPOSITORY_CHECKS:-0}" != 1 ]]; then
+  pnpm --filter engram-cli build
+fi
 
 step "Disposable stores"
 run_root=$(mktemp -d /var/tmp/engram-e2e.XXXXXX)
