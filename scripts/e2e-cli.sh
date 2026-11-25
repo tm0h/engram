@@ -305,6 +305,21 @@ for budget in invalid 512.5 0 -1 511 9007199254740992; do
 done
 engram inject | grep -F "engram context"
 
+step "Pinned-only context and list"
+for command in context list; do
+  pinned_output=$(engram "$command" --pinned)
+  [[ "$pinned_output" == *"Use the release database"* &&
+    "$pinned_output" != *"Current release endpoint"* ]] ||
+    fail "unexpected pinned $command output"
+done
+[[ "$(engram config get contextPinned)" == "off" ]] || fail "contextPinned did not default to off"
+engram config set contextPinned on
+[[ "$(engram context)" == "$(engram context --pinned)" ]] ||
+  fail "configured context did not default to pins"
+engram context --no-pinned | grep -F "Current release endpoint"
+engram list | grep -F "Current release endpoint"
+engram config set contextPinned off
+
 step "BM25 query syntax and pagination"
 search_json=$(engram search release --json --explain --limit 2 --offset 0)
 printf '%s\n' "$search_json" |

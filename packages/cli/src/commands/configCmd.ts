@@ -56,6 +56,7 @@ export const configCommand = (action?: string, key?: string, value?: string) =>
       yield* out(chalk.bold("Global") + chalk.gray(` (${globalConfigPath()})`));
       yield* out(`  author:  ${g.author ?? "(not set)"}`);
       yield* out(`  editor:  ${g.editor ?? "$EDITOR"}`);
+      yield* out(`  contextPinned: ${g.contextPinned ?? "off"}`);
       yield* out(
         `  autoContext:      ${g.autoContext === "off" ? chalk.yellow("off") : chalk.green("on")}`,
       );
@@ -112,6 +113,7 @@ export const configCommand = (action?: string, key?: string, value?: string) =>
       const g = yield* cfg.loadGlobal();
       if (key === "author") yield* out(g.author ?? "");
       else if (key === "editor") yield* out(g.editor ?? "");
+      else if (key === "contextPinned") yield* out(g.contextPinned ?? "off");
       else if (key === "autoContext") yield* out(g.autoContext === "off" ? "off" : "on");
       else if (key === "autoContextScope")
         yield* out(g.autoContextScope ?? DEFAULT_AUTO_CONTEXT_SCOPE);
@@ -196,11 +198,11 @@ export const configCommand = (action?: string, key?: string, value?: string) =>
         return;
       }
 
-      // global keys (author, editor, autoContext*, personalSecretScan)
       const g = yield* cfg.loadGlobal();
       if (
         key !== "author" &&
         key !== "editor" &&
+        key !== "contextPinned" &&
         !isAutoContextKey(key) &&
         !isPersonalSecretScanKey(key)
       ) {
@@ -238,6 +240,7 @@ export const configCommand = (action?: string, key?: string, value?: string) =>
           );
         updated = { ...g, autoContextMaxChars: budget };
       } else if (
+        key === "contextPinned" ||
         key === "autoContext" ||
         key === "autoContextIncludeScoped" ||
         key === "autoContextIncludeInactive"
@@ -245,9 +248,7 @@ export const configCommand = (action?: string, key?: string, value?: string) =>
         const on = /^(1|true|on|yes)$/i.test(value);
         const off = /^(0|false|off|no)$/i.test(value);
         if (!on && !off) {
-          return yield* Effect.fail(
-            new ValidationError({ message: "autoContext must be on or off" }),
-          );
+          return yield* Effect.fail(new ValidationError({ message: `${key} must be on or off` }));
         }
         updated = { ...g, [key]: on ? "on" : "off" };
       } else if (key === "autoContextScope") {

@@ -176,6 +176,21 @@ describe("engram config / auto-context keys", () => {
     }
   });
 
+  it("lists, validates, and persists the manual context pin default", async () => {
+    await run(configCommand("list"));
+    expect(output()).toContain("contextPinned: off");
+    for (const value of ["on", "off"]) {
+      await run(configCommand("set", "contextPinned", value));
+      expect(readGlobal(home)).toMatchObject({ contextPinned: value });
+      lines = [];
+      await run(configCommand("get", "contextPinned"));
+      expect(output()).toBe(value);
+    }
+    const error = await runFail(configCommand("set", "contextPinned", "maybe"));
+    expect(error.message).toBe("contextPinned must be on or off");
+    expect(readGlobal(home)).toMatchObject({ contextPinned: "off" });
+  });
+
   it("set autoContextLimit persists 1..100 integers and rejects the rest", async () => {
     await run(configCommand("set", "autoContextLimit", "50"));
     expect(readGlobal(home)).toMatchObject({ autoContextLimit: 50 });
