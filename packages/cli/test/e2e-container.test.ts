@@ -102,7 +102,7 @@ describe("Docker E2E runner", () => {
     expect(e2e).toContain("engram install generic --yes --uninstall");
     expect(e2e).toContain("engram install cursor --yes");
     expect(e2e).toContain("engram install claude --yes");
-    expect(e2e).toContain("sh .claude/skills/engram/bin/engram --version");
+    expect(e2e).toContain('sh "$skill/bin/engram" --version');
     expect(e2e).toContain("generic | cursor | claude | claude-code | codex | openclaw | hermes");
     expect(e2e).toContain('--root "$root_view"');
     // R3 pinned at the e2e level: byte-exact uninstall of a no-NL AGENTS.md
@@ -113,6 +113,16 @@ describe("Docker E2E runner", () => {
     expect(e2e).toContain(
       "grep -F 'generic | cursor | claude | claude-code | codex | openclaw | hermes' \"$run_root/deny-menu.txt\"",
     );
+  });
+
+  it("runs the packaged skill references and scaffold upgrade scenario", () => {
+    const e2e = readRepoFile("scripts/e2e-cli.sh");
+    expect(e2e).toContain('step "Packaged skill references and Claude scaffold upgrades"');
+    expect(e2e).toContain('assert_skill_references "$pi_skill" "$pi_skill"');
+    expect(e2e).toContain('assert_skill_references "$marketplace_skill" "$marketplace_skill"');
+    expect(e2e).toContain('assert_skill_references "$previous" "$scaffold_source"');
+    expect(e2e).toContain("blocked asset(s): engram-claude-reference-search");
+    expect(e2e).toContain("blocked asset(s): engram-claude-reference-review");
   });
 
   it("runs the Hermes profile scenario against the packaged CLI", () => {

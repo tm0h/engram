@@ -1,6 +1,6 @@
 /**
  * ENG-37 `claude` install target (SPEC decision 4, amended): scaffold the
- * project skill at `.claude/skills/engram/` as two wholly-owned markered
+ * project skill at `.claude/skills/engram/` as wholly-owned markered
  * `file` assets over the ENG-34 core:
  *
  * - `SKILL.md` (id `engram-claude-skill`): the curated scaffold variant of
@@ -14,6 +14,9 @@
  *   interpreter as `sh "${CLAUDE_SKILL_DIR}/bin/engram" <args>` (quoted:
  *   project paths may contain spaces), so no exec-bit support exists or
  *   is needed.
+ *
+ * - `references/*.md`: task-specific Markdown files with their own ownership
+ *   markers so a user file at the same path blocks the install.
  *
  * Markered ownership means release updates classify as drift and repair
  * through a plain previewed re-run instead of force-only overwrites.
@@ -52,27 +55,31 @@ export const CLAUDE_LAUNCHER_END_MARKER = "# END: engram-claude-launcher";
  * CLI payload (`<pkg>/claude-scaffold/SKILL.md`, written by prepack).
  */
 const SCAFFOLD_LAYOUTS = [
-  { dir: "claude", skill: "scaffold/SKILL.md" },
-  { dir: "claude-scaffold", skill: "SKILL.md" },
+  { dir: "claude", skillDir: "scaffold" },
+  { dir: "claude-scaffold", skillDir: "." },
 ] as const;
 const SCAFFOLD_LAUNCHER_RELPATH = "bin/engram";
+const REFERENCE_TOPICS = ["search", "review", "setup"] as const;
 
 interface ScaffoldAssets {
+  readonly skillDir: string;
   readonly skillSource: string;
   readonly launcherSource: string;
 }
 
 const looksLikeScaffoldRoot = (root: string, layout: (typeof SCAFFOLD_LAYOUTS)[number]): boolean =>
   existsSync(join(root, layout.dir, SCAFFOLD_LAUNCHER_RELPATH)) &&
-  existsSync(join(root, layout.dir, layout.skill));
+  existsSync(join(root, layout.dir, layout.skillDir, "SKILL.md"));
 
 const findScaffoldAssets = (): ScaffoldAssets => {
   let dir = dirname(fileURLToPath(import.meta.url));
   for (let depth = 0; depth < 10; depth += 1) {
     for (const layout of SCAFFOLD_LAYOUTS) {
       if (looksLikeScaffoldRoot(dir, layout)) {
+        const skillDir = join(dir, layout.dir, layout.skillDir);
         return {
-          skillSource: readFileSync(join(dir, layout.dir, layout.skill), "utf8"),
+          skillDir,
+          skillSource: readFileSync(join(skillDir, "SKILL.md"), "utf8"),
           launcherSource: readFileSync(join(dir, layout.dir, SCAFFOLD_LAUNCHER_RELPATH), "utf8"),
         };
       }
@@ -107,7 +114,7 @@ const splitLauncher = (source: string): { shebang: string; body: string } => {
 };
 
 export const claudeSpec = (): InstallSpec => {
-  const { skillSource, launcherSource } = findScaffoldAssets();
+  const { skillDir, skillSource, launcherSource } = findScaffoldAssets();
   const { header, body } = splitSkill(skillSource);
   const { shebang, body: launcherBody } = splitLauncher(launcherSource);
 
@@ -127,7 +134,18 @@ export const claudeSpec = (): InstallSpec => {
     markers: { begin: CLAUDE_LAUNCHER_BEGIN_MARKER, end: CLAUDE_LAUNCHER_END_MARKER },
     header: shebang,
   };
-  return { assets: [skill, launcher] };
+  const references = REFERENCE_TOPICS.map((topic): AssetSpec => {
+    const id = `engram-claude-reference-${topic}`;
+    const file = `references/${topic}.md`;
+    return {
+      kind: "file",
+      id,
+      path: `.claude/skills/engram/${file}`,
+      content: readFileSync(join(skillDir, file), "utf8"),
+      markers: { begin: `<!-- BEGIN: ${id} -->`, end: `<!-- END: ${id} -->` },
+    };
+  });
+  return { assets: [skill, launcher, ...references] };
 };
 
 /** Project targets install into the project directory itself. Trailing

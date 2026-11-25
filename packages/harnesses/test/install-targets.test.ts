@@ -1169,6 +1169,9 @@ describe("cursor install target (ENG-37)", () => {
 /* --------------------- claude target (ENG-37 turn 3) --------------------- */
 
 describe("claude install target (ENG-37)", () => {
+  const refs = ["search", "review", "setup"];
+  const referencePath = (topic: string): string => `.claude/skills/engram/references/${topic}.md`;
+
   /** Source-of-truth scaffold assets, read from their in-repo locations. */
   const repoSkill = (): string =>
     fs.readFileSync(fileURLToPath(new URL("../claude/scaffold/SKILL.md", import.meta.url)), "utf8");
@@ -1190,9 +1193,16 @@ describe("claude install target (ENG-37)", () => {
     return `#!/bin/sh\n${CLAUDE_LAUNCHER_BEGIN_MARKER}\n${rest}${CLAUDE_LAUNCHER_END_MARKER}\n`;
   };
 
-  it("declares two valid markered assets sourced from the repo files, no hard-coded versions", () => {
+  it("declares valid markered assets sourced from the repo files, no hard-coded versions", () => {
     const spec = claudeSpec();
-    expect(spec.assets).toHaveLength(2);
+    expect(spec.assets).toHaveLength(5);
+    for (const [index, topic] of refs.entries()) {
+      expect(spec.assets[index + 2]).toMatchObject({
+        kind: "file",
+        id: `engram-claude-reference-${topic}`,
+        path: referencePath(topic),
+      });
+    }
     const skill = spec.assets[0] as Extract<AssetSpec, { kind: "file" }>;
     const launcher = spec.assets[1] as Extract<AssetSpec, { kind: "file" }>;
 
@@ -1230,12 +1240,20 @@ describe("claude install target (ENG-37)", () => {
   it("fresh install scaffolds .claude/skills/engram/ and reports current", async () => {
     const spec = claudeSpec();
     let scan = await run(scanAssets(tmp, spec));
-    expect(scan.states.map((s) => s.status)).toEqual(["absent", "absent"]);
+    expect(scan.states.map((s) => s.status)).toEqual([
+      "absent",
+      "absent",
+      "absent",
+      "absent",
+      "absent",
+    ]);
     const plan = planInstall(scan);
     expect(plan.blocked).toHaveLength(0);
-    expect(plan.actions).toEqual([
+    expect(plan.actions).toHaveLength(8);
+    expect(plan.actions.slice(0, 5)).toEqual([
       { op: "mkdir", path: ".claude/skills/engram" },
       { op: "mkdir", path: ".claude/skills/engram/bin" },
+      { op: "mkdir", path: ".claude/skills/engram/references" },
       { op: "write", path: ".claude/skills/engram/SKILL.md", before: null, after: skillFile() },
       {
         op: "write",
@@ -1247,8 +1265,24 @@ describe("claude install target (ENG-37)", () => {
     await run(applyPlan(tmp, plan));
     expect(readRoot(".claude/skills/engram/SKILL.md")).toBe(skillFile());
     expect(readRoot(".claude/skills/engram/bin/engram")).toBe(launcherFile());
+    for (const topic of refs) {
+      const source = fs.readFileSync(
+        new URL(`../claude/scaffold/references/${topic}.md`, import.meta.url),
+        "utf8",
+      );
+      const marker = `engram-claude-reference-${topic}`;
+      expect(readRoot(referencePath(topic))).toBe(
+        `<!-- BEGIN: ${marker} -->\n${source}<!-- END: ${marker} -->\n`,
+      );
+    }
     scan = await run(scanAssets(tmp, spec));
-    expect(scan.states.map((s) => s.status)).toEqual(["current", "current"]);
+    expect(scan.states.map((s) => s.status)).toEqual([
+      "current",
+      "current",
+      "current",
+      "current",
+      "current",
+    ]);
     expect(planInstall(scan).actions).toHaveLength(0);
   });
 
@@ -1265,7 +1299,13 @@ describe("claude install target (ENG-37)", () => {
     );
 
     let scan = await run(scanAssets(tmp, spec));
-    expect(scan.states.map((s) => s.status)).toEqual(["drift", "drift"]);
+    expect(scan.states.map((s) => s.status)).toEqual([
+      "drift",
+      "drift",
+      "absent",
+      "absent",
+      "absent",
+    ]);
     await run(applyPlan(tmp, planInstall(scan)));
     expect(readRoot(".claude/skills/engram/SKILL.md")).toBe(skillFile());
     expect(readRoot(".claude/skills/engram/bin/engram")).toBe(launcherFile());
@@ -1279,7 +1319,13 @@ describe("claude install target (ENG-37)", () => {
     expect(readRoot(".claude/skills/engram/SKILL.md")).toBe(skillFile());
 
     scan = await run(scanAssets(tmp, spec));
-    expect(scan.states.map((s) => s.status)).toEqual(["current", "current"]);
+    expect(scan.states.map((s) => s.status)).toEqual([
+      "current",
+      "current",
+      "current",
+      "current",
+      "current",
+    ]);
   });
 
   it("a foreign SKILL.md is blocked and never clobbered", async () => {
@@ -1292,16 +1338,12 @@ describe("claude install target (ENG-37)", () => {
     expect(scan.states[1]!.status).toBe("absent");
     const plan = planInstall(scan);
     expect(plan.blocked.map((b) => b.id)).toEqual([CLAUDE_SKILL_ASSET_ID]);
-    // only the launcher side is planned; the foreign skill is never touched
-    expect(plan.actions.map((a) => a.path)).toEqual([
-      ".claude/skills/engram/bin",
-      ".claude/skills/engram/bin/engram",
-    ]);
+    expect(plan.actions.map((a) => a.path)).not.toContain(CLAUDE_SKILL_PATH);
     await run(applyPlan(tmp, plan));
     expect(readRoot(".claude/skills/engram/SKILL.md")).toBe(foreign);
   });
 
-  it("uninstall removes exactly our two files; user skills survive untouched", async () => {
+  it("uninstall removes only our files; user skills survive untouched", async () => {
     const userSkill = "---\nname: my-skill\ndescription: user skill\n---\n\nDo things.\n";
     writeRoot(".claude/skills/other-skill/SKILL.md", userSkill);
     const spec = claudeSpec();
@@ -1315,13 +1357,16 @@ describe("claude install target (ENG-37)", () => {
 
     scan = await run(scanAssets(tmp, spec));
     const plan = planUninstall(scan);
-    expect(plan.actions).toEqual([
+    expect(plan.actions).toHaveLength(5);
+    expect(plan.actions.slice(0, 2)).toEqual([
       { op: "remove", path: ".claude/skills/engram/SKILL.md", before: skillFile() },
       { op: "remove", path: ".claude/skills/engram/bin/engram", before: launcherFile() },
     ]);
     await run(applyPlan(tmp, plan));
     expect(fs.existsSync(path.join(tmp, ".claude/skills/engram/SKILL.md"))).toBe(false);
     expect(fs.existsSync(path.join(tmp, ".claude/skills/engram/bin/engram"))).toBe(false);
+    for (const topic of refs)
+      expect(fs.existsSync(path.join(tmp, referencePath(topic)))).toBe(false);
     expect(readRoot(".claude/skills/other-skill/SKILL.md")).toBe(userSkill);
 
     // trailing hand-edit on one file blocks it without force; the other removes
@@ -1329,8 +1374,9 @@ describe("claude install target (ENG-37)", () => {
     writeRoot(".claude/skills/engram/SKILL.md", `${skillFile()}\nextra\n`);
     scan = await run(scanAssets(tmp, spec));
     const blockedPlan = planUninstall(scan);
-    expect(blockedPlan.actions).toEqual([
-      { op: "remove", path: ".claude/skills/engram/bin/engram", before: launcherFile() },
+    expect(blockedPlan.actions.map((action) => action.path)).toEqual([
+      CLAUDE_LAUNCHER_PATH,
+      ...refs.map(referencePath),
     ]);
     expect(blockedPlan.blocked.map((b) => b.id)).toEqual([CLAUDE_SKILL_ASSET_ID]);
     await run(applyPlan(tmp, planUninstall(scan, { force: true })));

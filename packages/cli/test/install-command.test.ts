@@ -694,7 +694,7 @@ describe("engram install command", () => {
     expect(fs.existsSync(path.join(proj, ".claude"))).toBe(false);
 
     await runInstall({ target: "claude", yes: true, root: proj });
-    expect(output()).toContain("Installed 2 change(s) for claude");
+    expect(output()).toContain("Installed 5 change(s) for claude");
     expect(output()).not.toMatch(/\bhooks\b/);
     const skill = fs.readFileSync(claudeSkillFile(proj), "utf8");
     const launcher = fs.readFileSync(claudeLauncherFile(proj), "utf8");
@@ -743,7 +743,7 @@ describe("engram install command", () => {
 
     outLines = [];
     await runInstall({ target: "claude", yes: true, uninstall: true, root: proj });
-    expect(output()).toContain("Uninstalled 2 change(s) for claude");
+    expect(output()).toContain("Uninstalled 5 change(s) for claude");
     expect(fs.existsSync(claudeSkillFile(proj))).toBe(false);
     expect(fs.existsSync(claudeLauncherFile(proj))).toBe(false);
     expect(fs.readFileSync(userSkill, "utf8")).toBe(userContent);
