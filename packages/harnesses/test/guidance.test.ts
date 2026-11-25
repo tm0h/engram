@@ -373,7 +373,7 @@ describe("guidance / aliases (ENG-46)", () => {
   const piEdit = piTools.find((t) => t.name === "engram_edit")!;
   const piSkillText = reference(piDir, "review");
   const claudeSkillText = reference(pluginDir, "review");
-  const readmeText = readSkill("README.md");
+  const formatGuide = readSkill("docs/memory-format.md");
 
   it("add tool guidance mentions aliases with the normalization contract", () => {
     for (const [name, desc] of [
@@ -419,18 +419,18 @@ describe("guidance / aliases (ENG-46)", () => {
     expect(claudeSkillText).toMatch(/comma/i);
   });
 
-  it("the README file-format section documents aliases", () => {
-    expect(readmeText).toMatch(/^aliases:/m);
-    expect(readmeText).toMatch(/alternate names/i);
-    expect(readmeText).toMatch(/aliases_invalid/);
-    expect(readmeText).toContain("--clear-aliases");
+  it("the memory format guide documents aliases", () => {
+    expect(formatGuide).toMatch(/^aliases:/m);
+    expect(formatGuide).toMatch(/alternate names/i);
+    expect(formatGuide).toMatch(/aliases_invalid/);
+    expect(formatGuide).toContain("--clear-aliases");
   });
 });
 
 describe("guidance / alias scoring (ENG-47)", () => {
   const piSkillText = reference(piDir, "search");
   const claudeSkillText = reference(pluginDir, "search");
-  const readmeText = readSkill("README.md");
+  const searchGuide = readSkill("docs/search.md");
   const piReadmeText = readSkill("packages/harnesses/src/pi/README.md");
   const ocReadmeText = readSkill("packages/harnesses/src/opencode/README.md");
 
@@ -449,25 +449,25 @@ describe("guidance / alias scoring (ENG-47)", () => {
     }
   });
 
-  it("README surfaces carry the alias weight order and caps", () => {
-    expect(readmeText).toMatch(/aliases, titles, types, and bodies/);
-    expect(readmeText).toMatch(/alias 4/);
-    expect(readmeText).toMatch(/20 aliases of 80 characters/);
-    expect(readmeText).toMatch(/phrase bonus/);
+  it("search and harness guides carry the alias weight order and caps", () => {
+    expect(searchGuide).toMatch(/aliases, titles, types, and bodies/);
+    expect(searchGuide).toMatch(/alias 4/);
+    expect(searchGuide).toMatch(/20 aliases of 80 characters/);
+    expect(searchGuide).toMatch(/phrase bonus/);
     expect(piReadmeText).toMatch(/tags > alias > title > type > body/);
     expect(ocReadmeText).toMatch(/tags > alias > title > type > body/);
   });
 });
 
 it("documents ENG-19 CLI retrieval consistently", () => {
-  for (const file of ["README.md", ...skillDirs.map((dir) => `${dir}/references/search.md`)]) {
+  for (const file of ["docs/search.md", ...skillDirs.map((dir) => `${dir}/references/search.md`)]) {
     const text = fs.readFileSync(path.join(repoRoot, file), "utf8");
     for (const flag of ["--triggers", "--applies-to", "--path"]) expect(text).toContain(flag);
   }
 });
 
 it("documents importance consistently across CLI guidance", () => {
-  for (const file of ["README.md", ...skillDirs.map((dir) => `${dir}/references/search.md`)]) {
+  for (const file of ["docs/search.md", ...skillDirs.map((dir) => `${dir}/references/search.md`)]) {
     const text = fs.readFileSync(path.join(repoRoot, file), "utf8");
     expect(text).toContain("--importance");
     expect(text).toMatch(/diversification/i);
@@ -476,7 +476,7 @@ it("documents importance consistently across CLI guidance", () => {
 
 it("documents curated startup defaults across harnesses", () => {
   for (const file of [
-    "README.md",
+    "docs/startup-context.md",
     "packages/harnesses/src/opencode/README.md",
     ...skillDirs.map((dir) => `${dir}/references/setup.md`),
   ]) {
@@ -514,8 +514,11 @@ it("requires the user's approval before retrying a write advisory", () => {
   }
 });
 
-it("documents human pending-memory review across the README and shipped skills", () => {
-  for (const file of ["README.md", ...skillDirs.map((dir) => `${dir}/references/review.md`)]) {
+it("documents human pending-memory review across the review guide and shipped skills", () => {
+  for (const file of [
+    "docs/review-and-capture.md",
+    ...skillDirs.map((dir) => `${dir}/references/review.md`),
+  ]) {
     const guidance = fs.readFileSync(path.join(repoRoot, file), "utf8");
     for (const command of ["list", "show", "edit", "approve", "reject"]) {
       expect(guidance, file).toContain(`engram pending ${command}`);
