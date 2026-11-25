@@ -85,5 +85,5 @@ if [[ "$mode" == "shell" ]]; then
   printf 'Opening isolated shell for %s\n' "$candidate_sha"
   docker run "${run_args[@]}" --entrypoint bash "$image_name"
 else
-  docker run "${run_args[@]}" "$image_name"
+  docker run "${run_args[@]}" --env ENGRAM_E2E_SKIP_REPOSITORY_CHECKS "$image_name"
 fi

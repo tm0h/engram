@@ -74,4 +74,6 @@ jobs:
           persist-credentials: false
 
       - name: Run isolated E2E audit
+        env:
+          ENGRAM_E2E_SKIP_REPOSITORY_CHECKS: ${{ github.event_name == 'pull_request' && '1' || '0' }}
         run: bash scripts/run-e2e-container.sh
