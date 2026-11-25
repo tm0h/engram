@@ -110,7 +110,7 @@ paths, including symlinked intermediate directories. Files are limited to
 ```
 
 An entry requires a nonblank title and Markdown body and a supported
-[entry type](../README.md#commands). Optional lifecycle fields are
+[entry type](memory-format.md#entry-types). Optional lifecycle fields are
 `status: "active"`, `reviewAfter`, and `expires`. Dates must have an explicit
 ISO 8601 time zone, expiry must be in the future at import, and review must
 be due by expiry when both are set. Schema version 1 rejects unknown fields,

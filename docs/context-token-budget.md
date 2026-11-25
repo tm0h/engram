@@ -1,5 +1,8 @@
 # Context token budget
 
+Use this budget for a digest you request from the CLI or a harness tool. For
+startup hooks and automatic recall, see [automatic startup context](startup-context.md).
+
 ```sh
 engram context --tokens 4000
 engram context --tokens 4000 --scope all --query "tag:release" --limit 5
