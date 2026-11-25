@@ -9,6 +9,21 @@ Engram is a git-native memory tool for AI agents. It stores personal or project 
 - `packages/harnesses/` contains shared serializable operations, the host-neutral installer, and Pi, OpenCode, and Claude Code integrations. Keep the Pi and Claude `SKILL.md` guidance synchronized. Update the relevant skills and guidance tests when adding user-facing CLI features. Follow the [skill authoring guide](docs/skill-authoring.md) for entrypoints and bundled references.
 - Tests are colocated under each package's `test/` directory. `corpus/` holds synthetic retrieval fixtures and labeled cases. Follow `corpus/README.md` when changing them.
 
+## README and Documentation
+
+- Keep the root `README.md` focused on what Engram does, the project and personal
+  storage boundary, the minimum install and first-run example, generic agent
+  setup, and links to documentation, help, and project resources.
+- For feature changes, update the existing guide or reference that owns the
+  behavior. Add a topic page when a suitable one does not exist and link it
+  from [the documentation index](docs/index.md). Put advanced workflows,
+  flags and output contracts, troubleshooting, and evaluations in their
+  topic pages. Use `CHANGELOG.md` for release history.
+- Update the root README when a change affects first-run instructions,
+  prerequisites, the core storage model, or navigation. The npm package
+  ships this README, so use absolute repository URLs there and relative
+  links between repository documentation pages.
+
 ## Build, Test, and Development Commands
 
 ```bash
