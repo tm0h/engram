@@ -1,7 +1,7 @@
 /** `engram context` — emit an agent-ready digest for injection. */
 import { Effect, Option } from "effect";
 import chalk from "chalk";
-import { EngramStore, type Engram } from "@engram/core";
+import { ConfigRepo, EngramStore, type Engram } from "@engram/core";
 import { incompleteMemoryWarning, renderContext, scopesToQuery } from "@engram/core";
 import { searchEngrams } from "@engram/core";
 import { findProjectRoot } from "@engram/core";
@@ -20,6 +20,7 @@ export interface ContextOptions {
   readonly scope?: string;
   readonly query?: string;
   readonly full?: boolean;
+  readonly pinned?: boolean;
   readonly limit?: number;
   readonly tokens?: string | number;
   /** ENG-17 R13: re-include inactive entries (superseded, archived, expired). */
@@ -39,6 +40,12 @@ const buildContextDigest = (opts: ContextOptions) =>
         typeof opts.tokens === "string" && !/^-?\d+$/.test(opts.tokens) ? NaN : tokens,
       );
       if (invalid) return yield* Effect.fail(new Error(invalid));
+    }
+
+    let pinned = opts.pinned;
+    if (pinned === undefined) {
+      const config = yield* ConfigRepo;
+      pinned = (yield* config.loadGlobal()).contextPinned === "on";
     }
 
     const store = yield* EngramStore;
@@ -61,7 +68,7 @@ const buildContextDigest = (opts: ContextOptions) =>
       omitted += scanned.omittedFiles;
       duplicateIds += scanned.duplicateIds.length;
       const engrams = searchEngrams(
-        scanned.entries,
+        pinned ? scanned.entries.filter((entry) => entry.pinned) : scanned.entries,
         opts.query,
         tokens === undefined ? opts.limit : undefined,
         { includeInactive: opts.all === true, now },

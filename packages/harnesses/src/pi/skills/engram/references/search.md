@@ -74,6 +74,15 @@ Engram uses conservative, versioned accounting for the digest text, including
 headers and truncation notices. Use `engram show <id>` or `engram_show` to
 read a complete entry when the digest truncates it.
 
+### Pinned entries
+
+Use `engram context --pinned --full --tokens 4000` when the agent needs a
+bounded digest of pinned memory bodies, or `engram list --pinned` to find IDs
+for `engram show <id>`. Both accept `--scope all` and `--all` for inactive
+pins. Explicit flags keep the intent clear across machines. Use
+`engram context --no-pinned` to include unpinned entries when a user has
+enabled the manual CLI default with `engram config set contextPinned on`.
+
 ### Matching snippets and related context
 
 Search summaries include a deterministic body snippet of at most 240 characters,

@@ -501,6 +501,20 @@ it("documents bounded matching snippets and direct related context in both skill
   }
 });
 
+it("documents pinned memory commands and the config override across skills", () => {
+  for (const dir of skillDirs) {
+    const skill = reference(dir, "search");
+    for (const command of [
+      "engram context --pinned",
+      "engram context --no-pinned",
+      "engram list --pinned",
+      "engram config set contextPinned on",
+    ]) {
+      expect(skill).toContain(command);
+    }
+  }
+});
+
 it("requires the user's approval before retrying a write advisory", () => {
   for (const [file, flag] of [
     ["packages/harnesses/src/pi/skills/engram/SKILL.md", "confirmWrite: true"],

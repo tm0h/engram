@@ -9,6 +9,7 @@ export interface ListOptions {
   readonly scope?: string;
   readonly type?: string;
   readonly tag?: string;
+  readonly pinned?: boolean;
   /** ENG-17 R13: re-include inactive entries (superseded, archived, expired).
    * Default excludes them, before type/tag filters and counts. */
   readonly all?: boolean;
@@ -41,6 +42,7 @@ export const listCommand = (opts: ListOptions) =>
       hiddenByLifecycle += scanned.entries.length - visible.length;
       readable += visible.length;
       const engrams = visible.filter((m) => {
+        if (opts.pinned && !m.pinned) return false;
         if (typeFilter && m.type !== typeFilter) return false;
         if (tagFilter && !m.tags.includes(tagFilter)) return false;
         return true;

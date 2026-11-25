@@ -292,6 +292,8 @@ export const GlobalConfigSchema = Schema.Struct({
   version: Schema.Number,
   author: Schema.optional(Schema.String),
   editor: Schema.optional(Schema.String),
+  /** Default pin filter for the manual context command. */
+  contextPinned: Schema.optional(Schema.Literals(["on", "off"])),
   autoContext: Schema.optional(AutoContextToggleSchema),
   autoContextScope: Schema.optional(AutoContextScopeSchema),
   autoContextLimit: Schema.optional(AutoContextLimitSchema),
@@ -319,6 +321,7 @@ export const DEFAULT_AUTO_CONTEXT_LIMIT: AutoContextLimit = 25;
 export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
   version: 1,
   editor: undefined,
+  contextPinned: "off",
   autoContext: DEFAULT_AUTO_CONTEXT,
   autoContextScope: DEFAULT_AUTO_CONTEXT_SCOPE,
   autoContextLimit: DEFAULT_AUTO_CONTEXT_LIMIT,

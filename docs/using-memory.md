@@ -62,3 +62,22 @@ engram edit 01jb3 --clear-review-after --clear-expires --clear-source-type
 ## Load a memory digest
 
 `engram list` lists recorded entries. Use `engram context` for an agent-ready digest, or `engram context --tokens 4000` to [limit its size](context-token-budget.md). For individual entries, use [search and related links](search.md).
+
+### Load pinned entries
+
+```sh
+engram context --pinned --full --tokens 4000
+engram list --pinned --scope all
+```
+
+Both commands select explicitly pinned entries in the requested scope. Add
+`--all` to include inactive pins. The context command applies the pin filter
+before query ranking, result limits, and the token budget. The list command
+can combine it with `--type` and `--tag`.
+
+Set `engram config set contextPinned on` to make manual `engram context` calls
+pinned-only by default. The setting is stored as `"contextPinned": "on"` in
+`~/.engram/config.json` and defaults to `off`. Use `engram context --no-pinned`
+to include unpinned entries for a single call. This preference applies to
+manual CLI context. Automatic startup context and `engram list` have their
+own defaults.

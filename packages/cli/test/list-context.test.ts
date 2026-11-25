@@ -11,7 +11,7 @@ import { Effect } from "effect";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { MainLive, projectConfigPath, projectEngramsDir } from "@engram/core";
+import { MainLive, globalConfigPath, projectConfigPath, projectEngramsDir } from "@engram/core";
 import { EngramStore, ConfigRepo } from "@engram/core";
 import { FileSystem } from "effect/FileSystem";
 import { Path } from "effect/Path";
@@ -476,6 +476,103 @@ describe("engram --all opt-in (ENG-17 R13)", () => {
       fm("0004", "Expired note", { expires: "2020-01-01T00:00:00.000Z", type: "decision" }),
     );
   };
+
+  const seedPins = (): void => {
+    const dir = projectEngramsDir(tmp);
+    fs.writeFileSync(
+      path.join(dir, "0001-pinned.md"),
+      fm("0001", "Pinned note", {
+        pinned: true,
+        tags: ["release"],
+      }),
+    );
+    fs.writeFileSync(
+      path.join(dir, "0002-decision.md"),
+      fm("0002", "Unpinned release decision", {
+        pinned: false,
+        type: "decision",
+        importance: 5,
+        tags: ["release"],
+      }),
+    );
+    fs.writeFileSync(
+      path.join(dir, "0003-archived.md"),
+      fm("0003", "Archived pin", {
+        pinned: true,
+        status: "archived",
+        tags: ["release"],
+      }),
+    );
+    fs.writeFileSync(
+      path.join(home, ".engram", "engrams", "0004-personal.md"),
+      fm("0004", "Personal pin", { pinned: true, scope: "personal" }),
+    );
+  };
+
+  it("list composes pinned with scope, type, tag, and lifecycle filters", async () => {
+    seedPins();
+    await run(listCommand({ pinned: true, scope: "all" }));
+    expect(output()).toContain("Pinned note");
+    expect(output()).toContain("Personal pin");
+    expect(output()).not.toContain("Archived pin");
+    expect(output()).not.toContain("Unpinned release decision");
+
+    outLines = [];
+    await run(listCommand({ pinned: true, scope: "all", all: true, type: "note", tag: "release" }));
+    expect(output()).toContain("Pinned note");
+    expect(output()).toContain("Archived pin");
+    expect(output()).not.toContain("Personal pin");
+    expect(output()).not.toContain("Unpinned release decision");
+  });
+
+  it("context filters pins before query limits and token budgeting", async () => {
+    seedPins();
+    await run(contextCommand({ query: "release", limit: 1 }));
+    expect(output()).toContain("Unpinned release decision");
+    for (const tokens of [undefined, 512]) {
+      outLines = [];
+      await run(
+        contextCommand({
+          pinned: true,
+          query: "release",
+          limit: 1,
+          tokens,
+        }),
+      );
+      expect(output()).toContain("Pinned note");
+      expect(output()).not.toContain("Unpinned release decision");
+      expect(output()).not.toContain("Archived pin");
+      expect(output()).not.toContain("Personal pin");
+    }
+
+    outLines = [];
+    await run(contextCommand({ pinned: true, scope: "all", all: true, full: true, tokens: 4000 }));
+    expect(output()).toContain("Pinned note");
+    expect(output()).toContain("Archived pin");
+    expect(output()).toContain("Personal pin");
+    expect(output()).not.toContain("Unpinned release decision");
+  });
+
+  it("context flags override the global default and list has an independent default", async () => {
+    seedPins();
+    for (const [saved, override, showsUnpinned] of [
+      ["off", true, false],
+      ["on", undefined, false],
+      ["on", false, true],
+      ["off", undefined, true],
+    ] as const) {
+      fs.writeFileSync(globalConfigPath(), JSON.stringify({ version: 1, contextPinned: saved }));
+      outLines = [];
+      await run(contextCommand({ pinned: override }));
+      expect(output()).toContain("Pinned note");
+      expect(output().includes("Unpinned release decision")).toBe(showsUnpinned);
+    }
+
+    fs.writeFileSync(globalConfigPath(), JSON.stringify({ version: 1, contextPinned: "on" }));
+    outLines = [];
+    await run(listCommand({}));
+    expect(output()).toContain("Unpinned release decision");
+  });
 
   it("list hides inactive entries by default and --all re-includes them", async () => {
     seedFixtures();

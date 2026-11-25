@@ -208,13 +208,15 @@ program
   .option("-s, --scope <scope>", "personal | project | all")
   .option("--type <type>", "Filter by type.")
   .option("--tag <tag>", "Filter by tag.")
+  .option("--pinned", "Include only pinned entries.")
   .option("--all", "Include inactive entries (superseded, archived, expired).")
-  .action((opts: Record<string, string | undefined>) =>
+  .action((opts: List.ListOptions) =>
     run(
       List.listCommand({
         scope: opts.scope,
         type: opts.type,
         tag: opts.tag,
+        pinned: opts.pinned,
         all: Boolean(opts.all),
       }),
     ),
@@ -427,6 +429,8 @@ program
   .option("-s, --scope <scope>", "personal | project | all")
   .option("-q, --query <query>", "Return full bodies of engrams matching a query.")
   .option("--full", "Include full bodies of every engram.")
+  .option("--pinned", "Include only pinned entries. Defaults to the contextPinned config value.")
+  .option("--no-pinned", "Include pinned and unpinned entries.")
   .option("-n, --limit <n>", "Max engrams.", (v: string) => parseInt(v, 10))
   .option("--all", "Include inactive entries (superseded, archived, expired).")
   .option(
@@ -442,6 +446,7 @@ program
         full: Boolean(opts.full),
         limit: opts.limit as number | undefined,
         tokens: opts.tokens as string | undefined,
+        pinned: opts.pinned as boolean | undefined,
         all: Boolean(opts.all),
       }),
     ),
@@ -541,7 +546,7 @@ for (const action of ["show", "edit", "approve", "reject"] as const) {
 program
   .command("config [action] [key] [value]")
   .description(
-    "View/edit config. Keys: tracked, defaultType, author, editor, autoContext, autoContextScope, autoContextLimit, autoContextSelection, autoContextMaxChars, autoContextIncludeScoped, autoContextIncludeInactive.",
+    "View/edit config. Keys: tracked, defaultType, author, editor, contextPinned, autoContext, autoContextScope, autoContextLimit, autoContextSelection, autoContextMaxChars, autoContextIncludeScoped, autoContextIncludeInactive.",
   )
   .action((action: string | undefined, key: string | undefined, value: string | undefined) =>
     run(Config.configCommand(action, key, value)),
