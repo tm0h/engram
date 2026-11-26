@@ -11,60 +11,110 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Matching body snippets and compact relevance reasons in search summaries.
-- `engram related <id>` for direct lifecycle lineage and explicit links, with
-  exact same-scope resolution and bounded pagination.
-- Untrusted-memory framing and whole-entry pagination for harness search output.
+- **Project-local installers** for generic agents, Cursor, and Claude manage
+  project instructions, rules, or skills. OpenClaw and Hermes installers add
+  local project-memory skills alongside those hosts' existing memory providers.
+  Installers offer preview, status, and managed uninstall. ([#56], [#82], [#83])
+- **Search and related context.** Search summaries include matching excerpts and
+  concise relevance reasons. `engram related <id>` shows direct lifecycle
+  lineage and explicit links with exact same-scope resolution and pagination.
+  Harness search frames memory as untrusted data and paginates by whole
+  entries. ([#61])
+- **Retrieval triggers and path applicability.** Use `--triggers` and
+  `--applies-to` on add or edit. Search with `--path` to filter path-scoped
+  memories and `--explain` to see exact trigger contributions. ([#58])
+- **Active-turn recall in Pi and OpenCode** uses the current prompt and
+  workspace to select confident memory excerpts within a budget. Recall honors
+  automatic-context settings and refreshes after memory writes. ([#62], [#63], [#64])
+- **Manual context controls.** `engram context --tokens` bounds the full digest
+  using versioned token accounting. Pi and OpenCode expose the same budget in
+  their context tools. `engram context --pinned` and `engram list --pinned`
+  select explicitly pinned memories. Set `contextPinned` to make manual
+  context pinned-only by default and use `--no-pinned` to override it. ([#66], [#88])
+- **Local diagnostics.** `engram doctor` reports store health, configuration,
+  and integration status. `engram stats` summarizes local usage and delivery
+  from a bounded event log that can be disabled or cleared. ([#65])
+- **Reviewable capture.** Local, Git-ignored project and personal queues keep
+  candidates outside search and context until approval. Use `engram pending`
+  to list, inspect, edit, approve, or reject candidates. Pi lifecycle events
+  and OpenCode's `/engram-capture` stage eligible user statements with source
+  evidence. Project owners can opt in to automatic recording for a checkout
+  after submitting a passing review sample. Uncertain candidates stay queued
+  for review, and decisions are recorded in a bounded local audit.
+  ([#70], [#71], [#73], [#74], [#75], [#76])
+- **Repository evidence review.** `engram evidence` reports whether a
+  previously reviewed Git file has changed. Replacement claims can be staged
+  for approval, which publishes a linked successor and supersedes the original.
+  ([#78])
+- **Memory migration and template packs.** Preview Markdown imports and
+  configured local packs, then explicitly stage eligible proposals for
+  review with provenance. Export a bounded project digest into managed
+  Markdown sections while preserving surrounding content. ([#80], [#81])
+- **Git memory diff.** `engram diff` compares the working tree with a ref or
+  compares commits using `A..B` or `A...B`. It follows entry IDs across
+  renames and reports additions, edits, removals, lifecycle transitions, and
+  unreadable or duplicate entries in human-readable or versioned JSON output.
+  ([#84])
+- Added offline evaluations for capture quality and retrieval abstention, plus
+  coding-agent fixtures for comparing how agents apply startup memory and
+  query-aware recall. ([#72], [#77], [#79])
 
 ### Changed
 
-- Automatic startup context now selects pinned memories, important decisions and
-  critical preferences within a configurable 4,800-character budget. All harness
-  startup paths share the policy, with explicit legacy selection and eligibility
-  opt-ins for path-specific and inactive entries.
+- **Startup memory** prioritizes pinned entries, important decisions, and
+  critical preferences within a configurable 4,800-character budget. All
+  harness startup paths share the selection policy, with opt-ins for legacy
+  selection, path-specific entries, and inactive entries. Pi and OpenCode
+  also compact automatic context to fit the active prompt and available
+  model headroom. ([#60], [#67])
+- **Search ranking** incorporates author importance, path applicability, and
+  bounded freshness bonuses for notes and issues, and diversifies near-duplicate
+  results. Durable decisions do not lose relevance with age. Default lexical
+  search returns no results for unstructured multiword queries when the best
+  candidate covers less than a tenth of their IDF-weighted informative mass.
+  Single-term and explicitly structured queries are exempt. ([#57], [#59])
+- **Memory writes** reject exact duplicates in the destination scope. Likely
+  duplicates and possible active conflicts identify the existing entries and
+  require an explicit confirmation to proceed. ([#68])
+- **Documentation and skills.** The README is a first-run guide with a
+  task-based documentation index. Pi and Claude skills keep routine recall
+  and recording guidance in their entrypoints and bundle references for
+  advanced workflows. Claude project installs manage those references.
+  Retrieval documentation now explains corpus cases and tokenizer behavior.
+  ([#85], [#86], [#87])
 
-### Added
-
-- Lifecycle-aware search ranking: author importance, path applicability and bounded
-  note/issue freshness bonuses with explanations, plus conservative near-duplicate
-  diversification. Durable decisions never lose relevance merely because of age.
-
-### Added
-
-- Exact retrieval triggers and repository-relative path applicability (ENG-19).
-  Add/edit `--triggers` and `--applies-to`; search `--path` filters scoped memories
-  and `--explain` exposes exact trigger contributions.
-
-### Changed
-
-- **Search abstains on near-match queries whose candidates cover almost
-  none of the query's informative mass (ENG-59).** A query-level policy on
-  the default BM25 search path (`searchEngrams`) returns no results,
-  exactly like a no-match query, when the query is a multi-word
-  natural-language query and the best-matching entry covers less than a
-  tenth of the query's idf-weighted informative mass. Queries with explicit
-  structure (phrases, prefix stems, field filters, `AND` groups) and
-  single-term queries never abstain; scores, ordering, and all other
-  surfaces are unchanged.
-
-### Added
-
-- **Project-local install targets: `generic`, `cursor`, `claude` (ENG-37).**
-  `engram install generic` maintains a managed engram section in the
-  project's `AGENTS.md`, `engram install cursor` scaffolds
-  `.cursor/rules/engram.mdc` as an always-applied project rule, and
-  `engram install claude` scaffolds the `.claude/skills/engram/` project
-  skill (`SKILL.md` plus a `bin/engram` launcher invoked via
-  `sh "${CLAUDE_SKILL_DIR}/bin/engram"`). All three are project targets
-  rooted at `--root <dir>` (default: the current directory) and never
-  touch the OS home; `--home` with a project target is a hard error.
-  Status, dry-run preview, confirmation, drift repair on re-run (release
-  updates to the scaffolded files classify as drift, not force-only
-  overwrites), and owned-only uninstall over the ENG-34 installer core.
-  The packaged CLI ships the scaffold assets. User content beside the
-  managed files is preserved byte-for-byte, and unknown-target errors
-  enumerate exactly `generic | cursor | claude | claude-code | codex`.
-
+[#56]: https://github.com/tm0h/engram/pull/56
+[#57]: https://github.com/tm0h/engram/pull/57
+[#58]: https://github.com/tm0h/engram/pull/58
+[#59]: https://github.com/tm0h/engram/pull/59
+[#60]: https://github.com/tm0h/engram/pull/60
+[#61]: https://github.com/tm0h/engram/pull/61
+[#62]: https://github.com/tm0h/engram/pull/62
+[#63]: https://github.com/tm0h/engram/pull/63
+[#64]: https://github.com/tm0h/engram/pull/64
+[#65]: https://github.com/tm0h/engram/pull/65
+[#66]: https://github.com/tm0h/engram/pull/66
+[#67]: https://github.com/tm0h/engram/pull/67
+[#68]: https://github.com/tm0h/engram/pull/68
+[#70]: https://github.com/tm0h/engram/pull/70
+[#71]: https://github.com/tm0h/engram/pull/71
+[#72]: https://github.com/tm0h/engram/pull/72
+[#73]: https://github.com/tm0h/engram/pull/73
+[#74]: https://github.com/tm0h/engram/pull/74
+[#75]: https://github.com/tm0h/engram/pull/75
+[#76]: https://github.com/tm0h/engram/pull/76
+[#77]: https://github.com/tm0h/engram/pull/77
+[#78]: https://github.com/tm0h/engram/pull/78
+[#79]: https://github.com/tm0h/engram/pull/79
+[#80]: https://github.com/tm0h/engram/pull/80
+[#81]: https://github.com/tm0h/engram/pull/81
+[#82]: https://github.com/tm0h/engram/pull/82
+[#83]: https://github.com/tm0h/engram/pull/83
+[#84]: https://github.com/tm0h/engram/pull/84
+[#85]: https://github.com/tm0h/engram/pull/85
+[#86]: https://github.com/tm0h/engram/pull/86
+[#87]: https://github.com/tm0h/engram/pull/87
+[#88]: https://github.com/tm0h/engram/pull/88
 [0.7.0]: https://github.com/tm0h/engram/releases/tag/v0.7.0
 
 ## [0.6.0] - 2026-10-23
