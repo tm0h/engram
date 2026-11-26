@@ -14,26 +14,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Project-local installers** for generic agents, Cursor, and Claude manage
   project instructions, rules, or skills. OpenClaw and Hermes installers add
   local project-memory skills alongside those hosts' existing memory providers.
-  Installers offer preview, status, and managed uninstall. ([#56], [#82], [#83])
+  Installers offer preview, status, and managed uninstall. ([#56](https://github.com/tm0h/engram/pull/56), [#82](https://github.com/tm0h/engram/pull/82), [#83](https://github.com/tm0h/engram/pull/83))
 - **Search and related context.** Search summaries include matching excerpts and
   concise relevance reasons. `engram related <id>` shows direct lifecycle
   lineage and explicit links with exact same-scope resolution and pagination.
   Harness search frames memory as untrusted data and paginates by whole
-  entries. ([#61])
+  entries. ([#61](https://github.com/tm0h/engram/pull/61))
 - **Retrieval triggers and path applicability.** Use `--triggers` and
   `--applies-to` on add or edit. Search with `--path` to filter path-scoped
-  memories and `--explain` to see exact trigger contributions. ([#58])
+  memories and `--explain` to see exact trigger contributions. ([#58](https://github.com/tm0h/engram/pull/58))
 - **Active-turn recall in Pi and OpenCode** uses the current prompt and
   workspace to select confident memory excerpts within a budget. Recall honors
-  automatic-context settings and refreshes after memory writes. ([#62], [#63], [#64])
+  automatic-context settings and refreshes after memory writes. ([#62](https://github.com/tm0h/engram/pull/62), [#63](https://github.com/tm0h/engram/pull/63), [#64](https://github.com/tm0h/engram/pull/64))
 - **Manual context controls.** `engram context --tokens` bounds the full digest
   using versioned token accounting. Pi and OpenCode expose the same budget in
   their context tools. `engram context --pinned` and `engram list --pinned`
   select explicitly pinned memories. Set `contextPinned` to make manual
-  context pinned-only by default and use `--no-pinned` to override it. ([#66], [#88])
+  context pinned-only by default and use `--no-pinned` to override it. ([#66](https://github.com/tm0h/engram/pull/66), [#88](https://github.com/tm0h/engram/pull/88))
 - **Local diagnostics.** `engram doctor` reports store health, configuration,
   and integration status. `engram stats` summarizes local usage and delivery
-  from a bounded event log that can be disabled or cleared. ([#65])
+  from a bounded event log that can be disabled or cleared. ([#65](https://github.com/tm0h/engram/pull/65))
 - **Reviewable capture.** Local, Git-ignored project and personal queues keep
   candidates outside search and context until approval. Use `engram pending`
   to list, inspect, edit, approve, or reject candidates. Pi lifecycle events
@@ -41,23 +41,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   evidence. Project owners can opt in to automatic recording for a checkout
   after submitting a passing review sample. Uncertain candidates stay queued
   for review, and decisions are recorded in a bounded local audit.
-  ([#70], [#71], [#73], [#74], [#75], [#76])
+  ([#70](https://github.com/tm0h/engram/pull/70), [#71](https://github.com/tm0h/engram/pull/71), [#73](https://github.com/tm0h/engram/pull/73), [#74](https://github.com/tm0h/engram/pull/74), [#75](https://github.com/tm0h/engram/pull/75), [#76](https://github.com/tm0h/engram/pull/76))
 - **Repository evidence review.** `engram evidence` reports whether a
   previously reviewed Git file has changed. Replacement claims can be staged
   for approval, which publishes a linked successor and supersedes the original.
-  ([#78])
+  ([#78](https://github.com/tm0h/engram/pull/78))
 - **Memory migration and template packs.** Preview Markdown imports and
   configured local packs, then explicitly stage eligible proposals for
   review with provenance. Export a bounded project digest into managed
-  Markdown sections while preserving surrounding content. ([#80], [#81])
+  Markdown sections while preserving surrounding content. ([#80](https://github.com/tm0h/engram/pull/80), [#81](https://github.com/tm0h/engram/pull/81))
 - **Git memory diff.** `engram diff` compares the working tree with a ref or
   compares commits using `A..B` or `A...B`. It follows entry IDs across
   renames and reports additions, edits, removals, lifecycle transitions, and
   unreadable or duplicate entries in human-readable or versioned JSON output.
-  ([#84])
+  ([#84](https://github.com/tm0h/engram/pull/84))
 - Added offline evaluations for capture quality and retrieval abstention, plus
   coding-agent fixtures for comparing how agents apply startup memory and
-  query-aware recall. ([#72], [#77], [#79])
+  query-aware recall. ([#72](https://github.com/tm0h/engram/pull/72), [#77](https://github.com/tm0h/engram/pull/77), [#79](https://github.com/tm0h/engram/pull/79))
 
 ### Changed
 
@@ -66,55 +66,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   harness startup paths share the selection policy, with opt-ins for legacy
   selection, path-specific entries, and inactive entries. Pi and OpenCode
   also compact automatic context to fit the active prompt and available
-  model headroom. ([#60], [#67])
+  model headroom. ([#60](https://github.com/tm0h/engram/pull/60), [#67](https://github.com/tm0h/engram/pull/67))
 - **Search ranking** incorporates author importance, path applicability, and
   bounded freshness bonuses for notes and issues, and diversifies near-duplicate
   results. Durable decisions do not lose relevance with age. Default lexical
   search returns no results for unstructured multiword queries when the best
   candidate covers less than a tenth of their IDF-weighted informative mass.
-  Single-term and explicitly structured queries are exempt. ([#57], [#59])
+  Single-term and explicitly structured queries are exempt. ([#57](https://github.com/tm0h/engram/pull/57), [#59](https://github.com/tm0h/engram/pull/59))
 - **Memory writes** reject exact duplicates in the destination scope. Likely
   duplicates and possible active conflicts identify the existing entries and
-  require an explicit confirmation to proceed. ([#68])
+  require an explicit confirmation to proceed. ([#68](https://github.com/tm0h/engram/pull/68))
 - **Documentation and skills.** The README is a first-run guide with a
   task-based documentation index. Pi and Claude skills keep routine recall
   and recording guidance in their entrypoints and bundle references for
   advanced workflows. Claude project installs manage those references.
   Retrieval documentation now explains corpus cases and tokenizer behavior.
-  ([#85], [#86], [#87])
+  ([#85](https://github.com/tm0h/engram/pull/85), [#86](https://github.com/tm0h/engram/pull/86), [#87](https://github.com/tm0h/engram/pull/87))
 
-[#56]: https://github.com/tm0h/engram/pull/56
-[#57]: https://github.com/tm0h/engram/pull/57
-[#58]: https://github.com/tm0h/engram/pull/58
-[#59]: https://github.com/tm0h/engram/pull/59
-[#60]: https://github.com/tm0h/engram/pull/60
-[#61]: https://github.com/tm0h/engram/pull/61
-[#62]: https://github.com/tm0h/engram/pull/62
-[#63]: https://github.com/tm0h/engram/pull/63
-[#64]: https://github.com/tm0h/engram/pull/64
-[#65]: https://github.com/tm0h/engram/pull/65
-[#66]: https://github.com/tm0h/engram/pull/66
-[#67]: https://github.com/tm0h/engram/pull/67
-[#68]: https://github.com/tm0h/engram/pull/68
-[#70]: https://github.com/tm0h/engram/pull/70
-[#71]: https://github.com/tm0h/engram/pull/71
-[#72]: https://github.com/tm0h/engram/pull/72
-[#73]: https://github.com/tm0h/engram/pull/73
-[#74]: https://github.com/tm0h/engram/pull/74
-[#75]: https://github.com/tm0h/engram/pull/75
-[#76]: https://github.com/tm0h/engram/pull/76
-[#77]: https://github.com/tm0h/engram/pull/77
-[#78]: https://github.com/tm0h/engram/pull/78
-[#79]: https://github.com/tm0h/engram/pull/79
-[#80]: https://github.com/tm0h/engram/pull/80
-[#81]: https://github.com/tm0h/engram/pull/81
-[#82]: https://github.com/tm0h/engram/pull/82
-[#83]: https://github.com/tm0h/engram/pull/83
-[#84]: https://github.com/tm0h/engram/pull/84
-[#85]: https://github.com/tm0h/engram/pull/85
-[#86]: https://github.com/tm0h/engram/pull/86
-[#87]: https://github.com/tm0h/engram/pull/87
-[#88]: https://github.com/tm0h/engram/pull/88
 [0.7.0]: https://github.com/tm0h/engram/releases/tag/v0.7.0
 
 ## [0.6.0] - 2026-10-23
