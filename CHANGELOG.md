@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-26
+
 ### Added
 
 - Matching body snippets and compact relevance reasons in search summaries.
@@ -62,6 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The packaged CLI ships the scaffold assets. User content beside the
   managed files is preserved byte-for-byte, and unknown-target errors
   enumerate exactly `generic | cursor | claude | claude-code | codex`.
+
+[0.7.0]: https://github.com/tm0h/engram/releases/tag/v0.7.0
 
 ## [0.6.0] - 2026-10-23
 
