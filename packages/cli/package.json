@@ -1,19 +1,27 @@
 {
   "name": "engram-cli",
   "version": "0.7.0",
-  "description": "A git-native memory tool for AI agents. Personal + team/project memory that any harness (Pi, Claude Code, cloud review bots) can use. Built with Effect.",
+  "description": "Persistent memory for Pi and AI coding agents. Remember project decisions, preferences, and lessons across sessions with local, Git-native Markdown storage.",
   "keywords": [
     "adr",
     "agent",
+    "agent-memory",
     "ai",
     "cli",
+    "coding-agent",
     "context",
+    "context-engineering",
     "decisions",
     "effect",
     "engram",
+    "git-native",
     "knowledge",
     "llm",
-    "pi-package"
+    "local-first",
+    "persistent-memory",
+    "pi-coding-agent",
+    "pi-package",
+    "project-memory"
   ],
   "homepage": "https://github.com/tm0h/engram#readme",
   "bugs": {
@@ -81,6 +89,7 @@
     ],
     "skills": [
       "./skills"
-    ]
+    ],
+    "image": "https://raw.githubusercontent.com/tm0h/engram/main/docs/assets/pi-preview.webp"
   }
 }
