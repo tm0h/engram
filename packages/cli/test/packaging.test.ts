@@ -68,12 +68,13 @@ describe("engram-cli packaging (pi extension)", () => {
     expect(existsSync(join(pkgRoot, "claude-scaffold", "bin", "engram"))).toBe(true);
     expect(existsSync(join(pkgRoot, "claude-scaffold", "SKILL.md"))).toBe(true);
 
-    // manifest declares the extension, skill, and gallery keyword
+    // manifest declares the extension, skill, and gallery metadata
     const manifest = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"));
     expect(manifest.keywords).toContain("pi-package");
     expect(manifest.pi).toEqual({
       extensions: ["./dist/pi-extension.js"],
       skills: ["./skills"],
+      image: "https://raw.githubusercontent.com/tm0h/engram/main/docs/assets/pi-preview.webp",
     });
 
     // typebox is host-provided: Pi maps it into extensions at runtime. It
